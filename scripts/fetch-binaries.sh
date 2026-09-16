@@ -143,12 +143,30 @@ install_one() {
 	info "$name $version — installed"
 }
 
+# The manifest travels with the binaries into the .app bundle. packages/binaries
+# reads it at runtime to decide what to install and to stamp what it installed,
+# so the lock file stays the single source of truth for versions.
+write_manifest() {
+	local plat="$1" dest="$BIN_BASE/$1/manifest.json"
+	node -e '
+		const lock = require(process.argv[1]);
+		const plat = process.argv[2];
+		const out = { schemaVersion: 1, platform: plat, binaries: {} };
+		for (const [name, b] of Object.entries(lock.binaries)) {
+			out.binaries[name] = { version: b.version, layout: b.layout, entrypoint: b.entrypoint };
+		}
+		process.stdout.write(JSON.stringify(out, null, 2) + "\n");
+	' "$LOCK" "$plat" > "$dest"
+	info "manifest.json — written"
+}
+
 for plat in "${PLATFORMS[@]}"; do
 	printf '\nFetching sidecar binaries for %s\n' "$plat"
 	while IFS=$'\t' read -r name version layout entrypoint url sha archive; do
 		[ -n "$name" ] || continue
 		install_one "$plat" "$name" "$version" "$layout" "$entrypoint" "$url" "$sha" "$archive"
 	done < <(lock_rows "$plat")
+	write_manifest "$plat"
 done
 
 printf '\nAll sidecar binaries verified against binaries.lock.json.\n'
