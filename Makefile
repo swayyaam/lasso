@@ -3,6 +3,14 @@ SHELL := /bin/bash
 
 GO_MODULES := packages/core packages/binaries packages/presets apps/desktop
 
+# `go install` puts wails in GOPATH/bin (or GOBIN), which is frequently not on
+# PATH. Resolve it explicitly so the build does not depend on shell setup.
+GOBIN := $(shell go env GOBIN)
+ifeq ($(strip $(GOBIN)),)
+GOBIN := $(shell go env GOPATH)/bin
+endif
+WAILS := $(shell command -v wails 2>/dev/null || echo $(GOBIN)/wails)
+
 .PHONY: help setup doctor dev build test test-go test-js lint lint-go lint-js fetch-binaries clean
 
 help: ## Show available targets
@@ -23,28 +31,32 @@ doctor: ## Verify Go, Node, pnpm and Wails are present
 	@command -v go   >/dev/null 2>&1 || { echo "  missing: go — install from https://go.dev/dl/"; exit 1; }
 	@command -v node >/dev/null 2>&1 || { echo "  missing: node — install Node 20+"; exit 1; }
 	@command -v pnpm >/dev/null 2>&1 || { echo "  missing: pnpm — npm install -g pnpm"; exit 1; }
-	@command -v wails >/dev/null 2>&1 || { \
+	@test -x "$(WAILS)" || { \
 		echo "  missing: wails"; \
 		echo "     go install github.com/wailsapp/wails/v2/cmd/wails@latest"; \
-		echo "     (then make sure \$$(go env GOPATH)/bin is on your PATH)"; \
 		exit 1; }
 	@echo "  go    $$(go version | awk '{print $$3}')"
 	@echo "  node  $$(node --version)"
 	@echo "  pnpm  $$(pnpm --version)"
+	@echo "  wails $(WAILS)"
+	@command -v wails >/dev/null 2>&1 || \
+		echo "        note: wails is not on your PATH; make uses it directly. To run it yourself, add $(GOBIN) to PATH."
 	@echo
-	@wails doctor
+	@"$(WAILS)" doctor
 
 dev: ## Run the app in development mode (hot reload)
-	@test -f apps/desktop/wails.json || { \
-		echo "apps/desktop/wails.json does not exist yet — the Wails app is wired up in phase D."; \
+	@test -x "$(WAILS)" || { \
+		echo "wails not found at $(WAILS)"; \
+		echo "  go install github.com/wailsapp/wails/v2/cmd/wails@latest"; \
 		exit 1; }
-	cd apps/desktop && wails dev
+	cd apps/desktop && "$(WAILS)" dev
 
 build: ## Build Lasso.app into apps/desktop/build/bin
-	@test -f apps/desktop/wails.json || { \
-		echo "apps/desktop/wails.json does not exist yet — packaging lands in phase F."; \
+	@test -x "$(WAILS)" || { \
+		echo "wails not found at $(WAILS)"; \
+		echo "  go install github.com/wailsapp/wails/v2/cmd/wails@latest"; \
 		exit 1; }
-	cd apps/desktop && wails build -platform darwin/arm64
+	cd apps/desktop && "$(WAILS)" build -platform darwin/arm64
 	./scripts/bundle-binaries.sh
 
 test: test-go test-js ## Run all tests
