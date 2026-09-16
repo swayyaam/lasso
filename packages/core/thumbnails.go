@@ -314,6 +314,9 @@ func (c *ThumbnailCache) evict() {
 	}
 }
 
+// Dir is where cached images are stored, so the app can serve them.
+func (c *ThumbnailCache) Dir() string { return c.dir }
+
 // Clear empties the cache.
 func (c *ThumbnailCache) Clear() error {
 	c.mu.Lock()

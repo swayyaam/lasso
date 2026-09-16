@@ -36,12 +36,14 @@ const MaxConcurrency = 8
 
 // Item is one entry in the download queue.
 type Item struct {
-	ID       string    `json:"id"`
-	Options  Options   `json:"options"`
-	Title    string    `json:"title"`
-	State    State     `json:"state"`
-	Progress Progress  `json:"progress"`
-	AddedAt  time.Time `json:"addedAt"`
+	ID       string   `json:"id"`
+	Options  Options  `json:"options"`
+	Title    string   `json:"title"`
+	State    State    `json:"state"`
+	Progress Progress `json:"progress"`
+	// AddedAt is Unix milliseconds rather than a time.Time: the frontend gets
+	// a real number from the generated bindings instead of an untyped value.
+	AddedAt int64 `json:"addedAt"`
 
 	// Message is a plain-language explanation when the item failed.
 	Message string `json:"message"`
@@ -156,7 +158,7 @@ func (q *Queue) Add(o Options, title string) (Item, error) {
 		Options: o,
 		Title:   title,
 		State:   StateQueued,
-		AddedAt: time.Now(),
+		AddedAt: time.Now().UnixMilli(),
 	}
 	q.items[id] = item
 	q.order = append(q.order, id)

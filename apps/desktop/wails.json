@@ -1,0 +1,17 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Lasso",
+  "outputfilename": "Lasso",
+  "frontend:install": "pnpm install",
+  "frontend:build": "pnpm run build",
+  "frontend:dev:watcher": "pnpm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Swayam Mishra"
+  },
+  "info": {
+    "productName": "Lasso",
+    "productVersion": "0.1.0",
+    "comments": "A minimal front end for yt-dlp."
+  }
+}

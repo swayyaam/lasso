@@ -77,6 +77,31 @@ adapts into a Wails event.
 - On startup, verify each binary runs (`--version`) and show a clear, actionable
   error if one does not.
 
+## Wails bindings
+
+`apps/desktop` is the only package that imports Wails. It adapts core,
+binaries and presets into bound methods and events; the logic stays in those
+packages.
+
+- **Payload types are the core types.** Bound methods take and return
+  `core.Options`, `core.Item`, `core.Metadata`, `binaries.Status` and so on
+  directly. Do not introduce parallel DTOs — there should be one definition of
+  each shape, and the TypeScript is generated from it.
+- **Regenerate bindings** with `wails generate module` in `apps/desktop` after
+  changing a bound method signature or any type it mentions.
+  `frontend/wailsjs/` is generated but committed, so a fresh clone can
+  typecheck without running Wails.
+- **Avoid `time.Time` in bound types.** Wails cannot model it and emits `any`.
+  `core.Item.AddedAt` is Unix milliseconds for this reason.
+- **Event names live in `events.go`** and reach the frontend through
+  `App.Events()`. Never hardcode an event string in TypeScript.
+- **Thumbnails are served by the app's own asset handler** at `/thumbs/<hash>.jpg`,
+  not from a file:// path, which the webview cannot load from the asset scheme.
+  The handler matches a strict sha256 filename pattern; that is what prevents a
+  crafted request escaping the cache directory.
+- **`frontend/dist` must exist** for `go build` to work, because `main.go`
+  embeds it. A committed `.gitkeep` keeps it present on a fresh clone.
+
 ## Performance requirements
 
 These are standing requirements, not optimisations to consider later.

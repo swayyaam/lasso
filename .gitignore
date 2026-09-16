@@ -10,11 +10,19 @@ apps/desktop/build/bin/
 dist/
 build/Release/
 *.app/
-apps/desktop/frontend/dist/
+# main.go embeds frontend/dist, so the directory must exist for `go build` to
+# work on a fresh clone even though its contents are generated.
+apps/desktop/frontend/dist/*
+!apps/desktop/frontend/dist/.gitkeep
 
 # Go
 *.test
 *.out
+# `go build ./...` drops a binary named after the directory.
+/apps/desktop/desktop
+
+# Wails bookkeeping
+apps/desktop/frontend/package.json.md5
 
 # Coverage
 coverage/

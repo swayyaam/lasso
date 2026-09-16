@@ -10,8 +10,9 @@ templates — it just stays behind an advanced drawer until you want it.
 Lasso bundles its own yt-dlp, ffmpeg, ffprobe and deno. It does not use, or
 need, anything installed on your system.
 
-> **Status:** in development. Phase A (scaffold) is complete; the app itself is
-> being built phase by phase. `make dev` starts working in phase D.
+> **Status:** in development. The app builds and runs — `make dev` and
+> `make build` both work — but the interface is still a bare smoke-test screen.
+> The designed UI arrives in the next phase.
 
 ## Requirements
 
