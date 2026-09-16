@@ -543,3 +543,46 @@ func TestArcWithoutProfileEmitsNoCookieFlag(t *testing.T) {
 		t.Errorf("--cookies-from-browser = %q, want none without a profile path", got)
 	}
 }
+
+func TestCappedPicksSortByResolutionFirst(t *testing.T) {
+	// Resolution must outrank codec preference: asking for 1080p means 1080p
+	// in whatever codec, not the preferred codec at some other size.
+	o := baseOptions()
+	o.Pick = Pick1080p
+	o.VideoCodec = VideoCodecAV1
+
+	sort, ok := argValue(BuildArgs(o), "-S")
+	if !ok {
+		t.Fatal("no -S emitted for a capped pick")
+	}
+	if want := "res:1080,vcodec:av01"; sort != want {
+		t.Errorf("-S = %q, want %q", sort, want)
+	}
+}
+
+func TestBestPickHasNoResolutionSort(t *testing.T) {
+	// "Best" means whatever the source has; pinning a resolution would cap it.
+	o := baseOptions()
+	o.Pick = PickBest
+
+	if sort, ok := argValue(BuildArgs(o), "-S"); ok && strings.Contains(sort, "res:") {
+		t.Errorf("-S = %q, want no resolution pin for Best", sort)
+	}
+}
+
+func TestEveryCappedPickPinsItsResolution(t *testing.T) {
+	for pick, want := range map[QuickPick]string{
+		Pick2160p: "res:2160",
+		Pick1440p: "res:1440",
+		Pick1080p: "res:1080",
+		Pick720p:  "res:720",
+	} {
+		o := baseOptions()
+		o.Pick = pick
+
+		sort, _ := argValue(BuildArgs(o), "-S")
+		if !strings.Contains(sort, want) {
+			t.Errorf("%s: -S = %q, want it to contain %q", pick, sort, want)
+		}
+	}
+}

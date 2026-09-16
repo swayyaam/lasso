@@ -31,9 +31,10 @@ func main() {
 		MinHeight: 600,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
-			// Anything the embedded frontend does not answer falls through to
-			// here, which is how cached thumbnails reach the webview.
-			Handler: app.assetHandler(),
+			// Middleware, not Handler: it runs ahead of asset serving, so
+			// cached thumbnails are served the same way in development, where
+			// the Vite dev server would otherwise answer every unknown path.
+			Middleware: app.assetMiddleware,
 		},
 		// The design system is a dark canvas; anything lighter shows as a
 		// flash while the window paints.

@@ -116,6 +116,14 @@ func audioSelector(format string) string {
 func sortArgs(o Options) []string {
 	var fields []string
 
+	// Resolution first, so it outranks codec preference: a user who asked for
+	// 1080p wants 1080p in whatever codec, not AV1 at some other size. The -f
+	// selector already caps the set; this orders what is left and makes the
+	// fallback pick the closest rung rather than the smallest.
+	if height := o.Pick.maxHeight(); height > 0 {
+		fields = append(fields, "res:"+strconv.Itoa(height))
+	}
+
 	if o.VideoCodec != VideoCodecAuto && !o.Pick.IsAudioOnly() {
 		fields = append(fields, "vcodec:"+string(o.VideoCodec))
 	}

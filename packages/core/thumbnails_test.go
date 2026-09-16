@@ -380,3 +380,33 @@ func TestPathForIsStableAndDistinct(t *testing.T) {
 		t.Error("different widths collided")
 	}
 }
+
+// TestThumbnailAcceptsWebP is a regression test.
+//
+// YouTube serves most of its sized thumbnails as WebP, which the standard
+// library cannot decode. Before x/image/webp was imported these failed as
+// "unknown format" and every preview fell back to a blank frame — the kind of
+// break that is invisible until the app is actually run.
+func TestThumbnailAcceptsWebP(t *testing.T) {
+	webpBytes, err := os.ReadFile("testdata/thumb.webp")
+	if err != nil {
+		t.Skipf("no webp fixture: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/webp")
+		w.Write(webpBytes)
+	}))
+	defer server.Close()
+
+	c, _ := newTestCache(t)
+	path, err := c.getForTest(context.Background(), server.URL+"/thumb.webp", 200)
+	if err != nil {
+		t.Fatalf("WebP thumbnail rejected: %v", err)
+	}
+
+	// It is re-encoded as JPEG, so the cached file is decodable by anything.
+	if got := decodeFile(t, path).Bounds().Dx(); got != 200 {
+		t.Errorf("width = %d, want 200", got)
+	}
+}

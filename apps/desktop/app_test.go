@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -118,3 +120,21 @@ func errOf(_ presets.Preset, err error) error              { return err }
 func errOfString(_ string, err error) error                { return err }
 func errOfItem(_ core.Item, err error) error               { return err }
 func errOfUpdate(_ binaries.UpdateResult, err error) error { return err }
+
+// TestAssetMiddlewarePassesOtherPathsThrough confirms the middleware only
+// claims thumbnail requests and leaves the rest of the app's assets alone.
+func TestAssetMiddlewarePassesOtherPathsThrough(t *testing.T) {
+	app := NewApp()
+	var reached bool
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	rec := httptest.NewRecorder()
+	app.assetMiddleware(next).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/index.html", nil))
+
+	if !reached {
+		t.Error("middleware swallowed a request that was not for a thumbnail")
+	}
+}

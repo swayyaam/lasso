@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/swayyaam/lasso/packages/core"
 )
 
 const validThumbName = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.jpg"
@@ -92,16 +94,45 @@ func TestThumbnailURL(t *testing.T) {
 	}
 }
 
-func TestAssetHandlerReturns404BeforeStartup(t *testing.T) {
+func TestAssetMiddlewareReturns404BeforeStartup(t *testing.T) {
 	// Before startup finishes there is no cache, and the handler must answer
 	// rather than panic on a nil dependency.
 	app := NewApp()
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, thumbURLPrefix+validThumbName, nil)
-	app.assetHandler().ServeHTTP(rec, req)
+	app.assetMiddleware(http.NotFoundHandler()).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+// TestThumbnailMiddlewareServesFromCache exercises the production wiring: the
+// same middleware runs in the built app and under `wails dev`, so serving a
+// real file through it here covers both.
+func TestThumbnailMiddlewareServesFromCache(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, validThumbName), []byte("\xff\xd8jpeg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	app := NewApp()
+	app.thumbs = core.NewThumbnailCache(dir, 0)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, thumbURLPrefix+validThumbName, nil)
+	// A next handler that would 404 proves the middleware answered, not the
+	// asset server behind it.
+	app.assetMiddleware(http.NotFoundHandler()).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/jpeg" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if rec.Body.Len() == 0 {
+		t.Error("no bytes served")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/swayyaam/lasso/packages/binaries"
@@ -482,11 +483,22 @@ func arcProfileDir() string {
 	return dir
 }
 
-// assetHandler serves the runtime files the embedded frontend does not
+// assetMiddleware serves the runtime files the embedded frontend does not
 // contain — currently just cached thumbnails.
-func (a *App) assetHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle(thumbURLPrefix, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//
+// This is middleware rather than the asset server's fallback Handler because
+// the fallback is only reached when nothing else answers. Under `wails dev`
+// the Vite dev server answers everything, including unknown paths, with the
+// SPA index page — so a thumbnail request would come back as HTML and every
+// preview would be blank in development. Middleware runs first, so the same
+// code serves both modes.
+func (a *App) assetMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, thumbURLPrefix) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		a.mu.RLock()
 		cache := a.thumbs
 		a.mu.RUnlock()
@@ -496,6 +508,5 @@ func (a *App) assetHandler() http.Handler {
 			return
 		}
 		thumbnailHandler{dir: cache.Dir()}.ServeHTTP(w, r)
-	}))
-	return mux
+	})
 }

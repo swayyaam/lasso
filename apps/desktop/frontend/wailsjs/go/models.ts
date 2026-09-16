@@ -383,32 +383,48 @@ export namespace core {
 		    return a;
 		}
 	}
-	export class Metadata {
-	    kind: string;
-	    id: string;
-	    title: string;
-	    uploader: string;
-	    webpageUrl: string;
-	    duration: number;
-	    thumbnails: Thumbnail[];
-	    formats: Format[];
-	    entries: Entry[];
+	export class ResolutionTier {
+	    height: number;
+	    label: string;
+	    detail: string;
+	    hasHighFrameRate: boolean;
+	    hasHDR: boolean;
 	
 	    static createFrom(source: any = {}) {
-	        return new Metadata(source);
+	        return new ResolutionTier(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.kind = source["kind"];
-	        this.id = source["id"];
-	        this.title = source["title"];
-	        this.uploader = source["uploader"];
-	        this.webpageUrl = source["webpageUrl"];
-	        this.duration = source["duration"];
-	        this.thumbnails = this.convertValues(source["thumbnails"], Thumbnail);
-	        this.formats = this.convertValues(source["formats"], Format);
-	        this.entries = this.convertValues(source["entries"], Entry);
+	        this.height = source["height"];
+	        this.label = source["label"];
+	        this.detail = source["detail"];
+	        this.hasHighFrameRate = source["hasHighFrameRate"];
+	        this.hasHDR = source["hasHDR"];
+	    }
+	}
+	export class QualityOptions {
+	    tiers: ResolutionTier[];
+	    hasVideo: boolean;
+	    hasAudio: boolean;
+	    bestHeight: number;
+	    bestLabel: string;
+	    approximate: boolean;
+	    countedFormats: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new QualityOptions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tiers = this.convertValues(source["tiers"], ResolutionTier);
+	        this.hasVideo = source["hasVideo"];
+	        this.hasAudio = source["hasAudio"];
+	        this.bestHeight = source["bestHeight"];
+	        this.bestLabel = source["bestLabel"];
+	        this.approximate = source["approximate"];
+	        this.countedFormats = source["countedFormats"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -429,6 +445,56 @@ export namespace core {
 		    return a;
 		}
 	}
+	export class Metadata {
+	    kind: string;
+	    id: string;
+	    title: string;
+	    uploader: string;
+	    webpageUrl: string;
+	    duration: number;
+	    thumbnails: Thumbnail[];
+	    formats: Format[];
+	    entries: Entry[];
+	    quality: QualityOptions;
+	
+	    static createFrom(source: any = {}) {
+	        return new Metadata(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.uploader = source["uploader"];
+	        this.webpageUrl = source["webpageUrl"];
+	        this.duration = source["duration"];
+	        this.thumbnails = this.convertValues(source["thumbnails"], Thumbnail);
+	        this.formats = this.convertValues(source["formats"], Format);
+	        this.entries = this.convertValues(source["entries"], Entry);
+	        this.quality = this.convertValues(source["quality"], QualityOptions);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
 	
 	
 	

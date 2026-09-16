@@ -78,6 +78,11 @@ type Metadata struct {
 	Thumbnails []Thumbnail `json:"thumbnails"`
 	Formats    []Format    `json:"formats"`
 	Entries    []Entry     `json:"entries"`
+
+	// Quality is what this link can actually be downloaded as, derived from
+	// Formats. The UI offers exactly these rungs, so it can never present a
+	// resolution the source does not have.
+	Quality QualityOptions `json:"quality"`
 }
 
 // IsPlaylist reports whether this resolved to more than one item.
@@ -172,6 +177,10 @@ func ParseMetadata(data []byte) (*Metadata, error) {
 				Thumbnails: convertThumbnails(e.Thumbnails),
 			})
 		}
+		// A flat playlist has not visited its videos, so there are no formats
+		// to measure: offer the standard ladder and let yt-dlp fall back per
+		// item.
+		m.Quality = GenericQualityOptions()
 		return m, nil
 	}
 
@@ -191,6 +200,7 @@ func ParseMetadata(data []byte) (*Metadata, error) {
 			TBR:            deref(f.TBR),
 		})
 	}
+	m.Quality = AnalyseFormats(m.Formats)
 	return m, nil
 }
 

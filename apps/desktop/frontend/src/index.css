@@ -1,0 +1,6 @@
+@import "@lasso/ui/styles.css";
+
+/* Tailwind scans from this file's location, so the app's own sources and the
+   shared components both have to be named. */
+@source "./";
+@source "../../../../packages/ui/src";

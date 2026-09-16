@@ -70,7 +70,7 @@ test-go: ## Run Go tests across every workspace module
 test-js: ## Run JS tests via Turborepo
 	pnpm run test
 
-lint: lint-go lint-js ## Lint everything
+lint: lint-go lint-js lint-tokens ## Lint everything
 
 lint-go: ## go vet + gofmt across every workspace module
 	@for m in $(GO_MODULES); do \
@@ -84,6 +84,9 @@ lint-go: ## go vet + gofmt across every workspace module
 
 lint-js: ## Lint JS via Turborepo
 	pnpm run lint
+
+lint-tokens: ## Fail if any component hardcodes a colour
+	@node scripts/check-tokens.mjs
 
 fetch-binaries: ## Download + verify sidecar binaries for this machine
 	./scripts/fetch-binaries.sh

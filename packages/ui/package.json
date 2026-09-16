@@ -5,12 +5,22 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens": "./src/tokens.ts"
+    "./styles.css": "./src/styles.css",
+    "./tokens.css": "./src/tokens.css"
   },
   "scripts": {
-    "build": "echo \"@lasso/ui: nothing to build yet (phase E)\"",
-    "lint": "echo \"@lasso/ui: no lint config yet (phase E)\"",
-    "test": "echo \"@lasso/ui: no tests yet (phase E)\"",
-    "typecheck": "echo \"@lasso/ui: no typecheck yet (phase E)\""
+    "build": "echo \"@lasso/ui: consumed as source by the app\"",
+    "lint": "tsc --noEmit",
+    "test": "echo \"@lasso/ui: no tests yet\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "react": "^19.2.0",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^5.9.0"
   }
 }

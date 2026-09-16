@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
 	"io"
@@ -22,6 +23,10 @@ import (
 	"time"
 
 	"golang.org/x/image/draw"
+	// YouTube serves most of its sized thumbnails as WebP, which the standard
+	// library cannot decode. Without this they fail as "unknown format" and the
+	// preview silently falls back to a blank frame.
+	_ "golang.org/x/image/webp"
 )
 
 // Thumbnail fetching is the only outbound network Lasso performs besides
