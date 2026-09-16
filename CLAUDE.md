@@ -77,6 +77,34 @@ adapts into a Wails event.
 - On startup, verify each binary runs (`--version`) and show a clear, actionable
   error if one does not.
 
+## Performance requirements
+
+These are standing requirements, not optimisations to consider later.
+
+- **Throttle progress events per queue item.** yt-dlp emits far faster than
+  anyone can read, and a large playlist has every item emitting at once.
+  `core.ProgressEmitter` coalesces to `DefaultProgressInterval` (150 ms) per
+  item. Terminal states must bypass the throttle: always `Flush` when a
+  download finishes, fails or is cancelled, or the UI freezes short of 100%.
+- **Virtualise the queue list** (phase E). A playlist can add hundreds of rows;
+  only the visible ones should be mounted.
+- **Lazy-load thumbnails at display size** (phase E, enabled by core). Never
+  point an `<img>` at a remote URL. Ask the backend for the width you are
+  rendering: `core.BestThumbnail` picks the closest source and
+  `core.ThumbnailCache` fetches, downscales once and caches it.
+
+## Network policy
+
+Lasso makes exactly three kinds of outbound request: yt-dlp's own traffic, the
+binary updater, and thumbnail fetches through `core.ThumbnailCache`. There is
+no telemetry and no analytics.
+
+The thumbnail cache is the only one written in Go, and it is deliberately the
+only place that fetches remote images — the webview never talks to a CDN
+directly. Thumbnail URLs come from yt-dlp metadata, which the site being
+downloaded from ultimately controls, so the cache requires https and refuses to
+connect to loopback or private addresses. Do not relax either check.
+
 ## Design
 
 `docs/design.md` is the visual language and is **read-only**. It documents
