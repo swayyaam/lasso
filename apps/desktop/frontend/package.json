@@ -1,0 +1,15 @@
+{
+  "name": "@lasso/desktop-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo \"@lasso/desktop-frontend: Vite build arrives in phase E\"",
+    "lint": "echo \"@lasso/desktop-frontend: no lint config yet (phase E)\"",
+    "test": "echo \"@lasso/desktop-frontend: no tests yet (phase E)\"",
+    "typecheck": "echo \"@lasso/desktop-frontend: no typecheck yet (phase E)\""
+  },
+  "dependencies": {
+    "@lasso/ui": "workspace:*"
+  }
+}

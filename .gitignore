@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Sidecar binaries — never committed. `make setup` fetches them.
+# This also covers the Wails build output (build/bin/Lasso.app).
+apps/desktop/build/bin/
+.cache/
+
+# Build output
+dist/
+build/Release/
+*.app/
+apps/desktop/frontend/dist/
+
+# Go
+*.test
+*.out
+
+# Coverage
+coverage/
+coverage.out
+coverage.html
+*.lcov
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.idea/
+*.swp
+
+# Turborepo
+.turbo/

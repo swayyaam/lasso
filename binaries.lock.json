@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "_comment": [
+    "Pinned sidecar binaries for Lasso. Never commit the binaries themselves.",
+    "Run `make setup` (or scripts/fetch-binaries.sh) to download and verify them.",
+    "Every sha256 here was verified against a real download; see docs/binaries.md."
+  ],
+  "platforms": ["darwin-arm64", "darwin-amd64"],
+  "binaries": {
+    "yt-dlp": {
+      "version": "2026.08.19",
+      "layout": "dir",
+      "entrypoint": "yt-dlp_macos",
+      "_note": "onedir PyInstaller build (yt-dlp_macos.zip), NOT the onefile yt-dlp_macos. The onefile asset re-extracts a 37MB archive on every exec (~5.8s per invocation); onedir starts in ~0.16s once warm. Universal2, so one artifact serves both arches.",
+      "artifacts": {
+        "darwin-arm64": {
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos.zip",
+          "sha256": "07e54b0865303c864006925913bce2604f8ee8cc6f18699bac9c309f9328a6d8",
+          "archive": "zip"
+        },
+        "darwin-amd64": {
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos.zip",
+          "sha256": "07e54b0865303c864006925913bce2604f8ee8cc6f18699bac9c309f9328a6d8",
+          "archive": "zip"
+        }
+      }
+    },
+    "ffmpeg": {
+      "version": "9.0.1",
+      "layout": "file",
+      "entrypoint": "ffmpeg",
+      "_note": "martin-riedl.de static build. GPLv3 (--enable-gpl --enable-version3). Includes libass, libx264, libx265, libopus, libmp3lame, libvorbis, libaom, libsvtav1.",
+      "artifacts": {
+        "darwin-arm64": {
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1787073674_9.0.1/ffmpeg.zip",
+          "sha256": "8287a1b2229e05eb41859f073e18e6c52c60a778f2f5e6881070fe51b79407fe",
+          "archive": "zip"
+        },
+        "darwin-amd64": {
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1787081194_9.0.1/ffmpeg.zip",
+          "sha256": "5bdead62ff504ab9b447cc72b212c4fb481e3f7de5877d427a51bee8136dda40",
+          "archive": "zip"
+        }
+      }
+    },
+    "ffprobe": {
+      "version": "9.0.1",
+      "layout": "file",
+      "entrypoint": "ffprobe",
+      "artifacts": {
+        "darwin-arm64": {
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1787073674_9.0.1/ffprobe.zip",
+          "sha256": "102a26b8940a053298d9929bfaae71e4b6ef65ba5f19a99a88c433108560741a",
+          "archive": "zip"
+        },
+        "darwin-amd64": {
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1787081194_9.0.1/ffprobe.zip",
+          "sha256": "34511bbcf1988ad2886023bf5ace4f44cf62e6defeb3d194d6f7619e5b061f7f",
+          "archive": "zip"
+        }
+      }
+    },
+    "deno": {
+      "version": "2.9.6",
+      "layout": "file",
+      "entrypoint": "deno",
+      "_note": "JS runtime yt-dlp uses for YouTube's JS challenges. Must be on the yt-dlp subprocess PATH.",
+      "artifacts": {
+        "darwin-arm64": {
+          "url": "https://github.com/denoland/deno/releases/download/v2.9.6/deno-aarch64-apple-darwin.zip",
+          "sha256": "213a2f304f04d3c9cb5220669afad138f60a5aab1fe80962abdeb8f35807a472",
+          "archive": "zip"
+        },
+        "darwin-amd64": {
+          "url": "https://github.com/denoland/deno/releases/download/v2.9.6/deno-x86_64-apple-darwin.zip",
+          "sha256": "7d4524b82bcc557fe020a1a5b56956ed42b992ae5b28026e8ad5d17329533f5f",
+          "archive": "zip"
+        }
+      }
+    }
+  }
+}
