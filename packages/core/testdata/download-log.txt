@@ -1,0 +1,14 @@
+[youtube] Extracting URL: https://www.youtube.com/watch?v=jNQXAC9IVRw
+[youtube] jNQXAC9IVRw: Downloading webpage
+[youtube] jNQXAC9IVRw: Downloading visionos player API JSON
+[youtube] jNQXAC9IVRw: Downloading m3u8 information
+[info] jNQXAC9IVRw: Downloading 1 format(s): 251
+[download] Destination: Me at the zoo.webm
+{"stage":"downloading","downloaded":1024,"total":252182,"estimate":0,"speed":32066.11340814239,"eta":7,"fragment":0,"fragments":0}
+{"stage":"downloading","downloaded":3072,"total":252182,"estimate":0,"speed":91488.69527677582,"eta":2,"fragment":0,"fragments":0}
+{"stage":"downloading","downloaded":15360,"total":252182,"estimate":0,"speed":437271.41536519316,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","downloaded":130048,"total":252182,"estimate":0,"speed":781266.6546238407,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","downloaded":252182,"total":252182,"estimate":0,"speed":562708.062056381,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","downloaded":252182,"total":252182,"estimate":0,"speed":0,"eta":0,"fragment":0,"fragments":0}
+[ExtractAudio] Destination: Me at the zoo.mp3
+Deleting original file Me at the zoo.webm (pass -k to keep)
