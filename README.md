@@ -10,9 +10,9 @@ templates — it just stays behind an advanced drawer until you want it.
 Lasso bundles its own yt-dlp, ffmpeg, ffprobe and deno. It does not use, or
 need, anything installed on your system.
 
-> **Status:** in development. The app builds and runs — `make dev` and
-> `make build` both work — but the interface is still a bare smoke-test screen.
-> The designed UI arrives in the next phase.
+> **Status:** working, unsigned. Everything in the feature list below is built
+> and runs. The app is not code-signed or notarised yet, so macOS needs one
+> extra click the first time — see [Installing](#installing).
 
 ## Requirements
 
@@ -25,7 +25,25 @@ need, anything installed on your system.
 Make sure `$(go env GOPATH)/bin` is on your `PATH` so the `wails` command is
 found.
 
-## Quick start
+## Installing
+
+Lasso is not code-signed or notarised, so macOS will not open it on the first
+try. This is expected for an unsigned app and takes one extra click.
+
+1. Open `Lasso.dmg` and drag **Lasso** into **Applications**.
+2. Open Lasso from Applications. macOS will refuse, saying it cannot verify the
+   developer.
+3. Open **System Settings → Privacy & Security**, scroll to the Security
+   section, and click **Open Anyway** next to the message about Lasso.
+4. Open Lasso again and confirm.
+
+macOS remembers the decision, so this is only needed once.
+
+The first launch copies the bundled copies of yt-dlp, ffmpeg, ffprobe and deno
+into `~/Library/Application Support/Lasso/bin` and lets macOS scan them, which
+takes a few seconds. Lasso shows a setup screen while that happens.
+
+## Building from source
 
 ```bash
 git clone https://github.com/swayyaam/lasso.git
@@ -35,7 +53,8 @@ make dev
 ```
 
 `make setup` verifies your toolchain (including `wails doctor`), installs JS
-dependencies, and downloads the sidecar binaries.
+dependencies, and downloads the sidecar binaries. `make build` produces
+`apps/desktop/build/bin/Lasso.app`, and `make dmg` packages it.
 
 ## Sidecar binaries
 
@@ -83,11 +102,28 @@ docs/design.md       the visual design system
 
 ```bash
 make help             list every target
+make build            build Lasso.app
+make dmg              build Lasso.app and package it as a DMG
 make test             Go tests across all modules + JS tests
-make lint             go vet + gofmt + JS lint
+make lint             go vet + gofmt + JS lint + the design-token check
 make fetch-binaries   re-download and verify sidecars
 make clean            remove build output and fetched binaries
 ```
+
+### App icon
+
+`apps/desktop/build/appicon.png` is the only icon input; `make build`
+regenerates the `.icns` from it. It must be square, and macOS expects the
+artwork to sit inside about 824px of a 1024x1024 canvas rather than filling it.
+To prepare artwork that is the wrong shape or size:
+
+```bash
+cd scripts/icon && go run . -in artwork.png -out ../../apps/desktop/build/appicon.png
+```
+
+That fits the image without stretching it and centres it on a transparent
+canvas. A detailed icon turns to mush at 16 and 32px; drop a simplified mark at
+`apps/desktop/build/appicon-small.png` and those two sizes will use it instead.
 
 ## Licensing note
 

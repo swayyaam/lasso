@@ -51,6 +51,10 @@ type Item struct {
 	Detail string `json:"detail"`
 	// ErrorKind lets the UI distinguish failures that are worth retrying.
 	ErrorKind ErrorKind `json:"errorKind"`
+
+	// Notice is a caveat about a download that otherwise succeeded — currently
+	// only that subtitles had to be skipped. Detail carries the reason.
+	Notice string `json:"notice"`
 }
 
 // QueueConfig configures a Queue.
@@ -64,7 +68,17 @@ type QueueConfig struct {
 	OnState func(Item)
 	// OnProgress is called with throttled progress updates. It must not block.
 	OnProgress func(id string, p Progress)
+	// SubtitleRetryDelay is how long to wait before retrying a download whose
+	// subtitles failed. Zero uses DefaultSubtitleRetryDelay.
+	SubtitleRetryDelay time.Duration
 }
+
+// DefaultSubtitleRetryDelay is the pause before a second attempt at subtitles.
+//
+// The common cause is the site rate-limiting its subtitle endpoint, which a
+// short wait often clears. Long enough to matter, short enough that a user
+// watching the queue does not think it has stalled.
+const DefaultSubtitleRetryDelay = 3 * time.Second
 
 // Queue runs downloads with a bounded number in flight.
 //
@@ -76,6 +90,9 @@ type Queue struct {
 	emitter *ProgressEmitter
 	onState func(Item)
 	nextID  int
+	// subsRetryIn is how long to wait before retrying a download whose
+	// subtitles failed.
+	subsRetryIn time.Duration
 
 	mu      sync.Mutex
 	cond    *sync.Cond
@@ -107,12 +124,18 @@ func NewQueue(cfg QueueConfig) (*Queue, error) {
 		interval = DefaultProgressInterval
 	}
 
+	retryIn := cfg.SubtitleRetryDelay
+	if retryIn == 0 {
+		retryIn = DefaultSubtitleRetryDelay
+	}
+
 	q := &Queue{
-		runner:  cfg.Runner,
-		onState: cfg.OnState,
-		limit:   concurrency,
-		items:   map[string]*Item{},
-		cancels: map[string]context.CancelFunc{},
+		runner:      cfg.Runner,
+		onState:     cfg.OnState,
+		limit:       concurrency,
+		subsRetryIn: retryIn,
+		items:       map[string]*Item{},
+		cancels:     map[string]context.CancelFunc{},
 	}
 	q.cond = sync.NewCond(&q.mu)
 	q.emitter = NewProgressEmitter(interval, func(id string, p Progress) {
@@ -271,6 +294,7 @@ func (q *Queue) Retry(id string) error {
 	item.Message = ""
 	item.Detail = ""
 	item.ErrorKind = ""
+	item.Notice = ""
 	snapshot := *item
 	q.cond.Broadcast()
 	q.mu.Unlock()
@@ -374,10 +398,41 @@ func (q *Queue) run(ctx context.Context, id string) {
 		}
 	}
 
+	err, output := q.attempt(ctx, id, item.Options)
+
+	// A subtitle fetch that fails takes the whole download with it: yt-dlp
+	// treats it as fatal and has no flag to ignore only that. Losing an
+	// otherwise-finished video because a caption file 429'd is the wrong
+	// trade, so it gets one retry and then continues without them.
+	if err != nil && ctx.Err() == nil && item.Options.WantsSubtitles() && IsSubtitleFailure(output) {
+		if q.sleep(ctx, q.subsRetryIn) {
+			err, output = q.attempt(ctx, id, item.Options)
+		}
+
+		if err != nil && ctx.Err() == nil && IsSubtitleFailure(output) {
+			reason := output
+			err, output = q.attempt(ctx, id, item.Options.WithoutSubtitles())
+			if err == nil {
+				q.finishWithNotice(id, "Downloaded without subtitles", reason)
+				return
+			}
+		}
+	}
+
+	if err != nil {
+		q.fail(id, output, err, ctx)
+		return
+	}
+	q.finish(id)
+}
+
+// attempt runs one download and returns the failure, if any, along with
+// whatever yt-dlp wrote to stderr.
+func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, string) {
 	parser := NewProgressParser()
 	var errLines []string
 
-	err := q.runner.Run(ctx, ExecArgs(item.Options),
+	err := q.runner.Run(ctx, ExecArgs(o),
 		func(line string) {
 			if progress, ok := parser.Line(line); ok {
 				q.emitter.Update(id, progress)
@@ -395,12 +450,21 @@ func (q *Queue) run(ctx context.Context, id string) {
 	// Whatever happened, the last progress value must reach the UI rather than
 	// stay trapped inside a throttle window.
 	q.emitter.Flush(id)
+	return err, joinLines(errLines)
+}
 
-	if err != nil {
-		q.fail(id, joinLines(errLines), err, ctx)
-		return
+// sleep waits unless the download is cancelled first, reporting whether the
+// wait completed.
+func (q *Queue) sleep(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
 	}
-	q.finish(id)
 }
 
 func (q *Queue) fail(id, output string, err error, ctx context.Context) {
@@ -418,6 +482,18 @@ func (q *Queue) fail(id, output string, err error, ctx context.Context) {
 	q.transition(id, state, downloadErr)
 }
 
+// finishWithNotice completes an item that succeeded with a caveat.
+func (q *Queue) finishWithNotice(id, notice, detail string) {
+	q.mu.Lock()
+	if item, ok := q.items[id]; ok {
+		item.Notice = notice
+		item.Detail = detail
+	}
+	q.mu.Unlock()
+
+	q.finish(id)
+}
+
 func (q *Queue) finish(id string) {
 	q.mu.Lock()
 	item, ok := q.items[id]
@@ -429,6 +505,7 @@ func (q *Queue) finish(id string) {
 	item.Progress.Stage = StagePostProcessing
 	item.Progress.Percent = 100
 	item.Message = ""
+	item.ErrorKind = ""
 	snapshot := *item
 	q.mu.Unlock()
 

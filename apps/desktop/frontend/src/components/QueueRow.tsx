@@ -109,6 +109,19 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
           )}
         </div>
       )}
+
+      {state === "done" && item.notice && (
+        // The download succeeded with a caveat. It is not a failure, so it is
+        // not shown in the error colour, but the reason stays reachable.
+        <div className="flex flex-col gap-xs pt-xxs">
+          <p className="text-caption text-ink-subtle">{item.notice}</p>
+          {item.detail && (
+            <Details summary="Why">
+              <MonoBlock text={item.detail} maxHeight="10rem" copyable />
+            </Details>
+          )}
+        </div>
+      )}
     </div>
   );
 }

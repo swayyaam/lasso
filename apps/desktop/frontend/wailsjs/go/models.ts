@@ -349,6 +349,7 @@ export namespace core {
 	    message: string;
 	    detail: string;
 	    errorKind: string;
+	    notice: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Item(source);
@@ -365,6 +366,7 @@ export namespace core {
 	        this.message = source["message"];
 	        this.detail = source["detail"];
 	        this.errorKind = source["errorKind"];
+	        this.notice = source["notice"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

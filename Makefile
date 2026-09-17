@@ -57,6 +57,7 @@ build: ## Build Lasso.app into apps/desktop/build/bin
 		echo "  go install github.com/wailsapp/wails/v2/cmd/wails@latest"; \
 		exit 1; }
 	cd apps/desktop && "$(WAILS)" build -platform darwin/arm64
+	./scripts/make-icon.sh
 	./scripts/bundle-binaries.sh
 
 dmg: build ## Build Lasso.app and package it into an unsigned DMG

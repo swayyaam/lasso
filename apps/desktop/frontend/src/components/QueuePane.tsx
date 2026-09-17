@@ -16,7 +16,12 @@ export function QueuePane({ items }: { items: core.Item[] }) {
   const { failed, rest } = useMemo(() => {
     const failed: core.Item[] = [];
     const rest: core.Item[] = [];
-    for (const item of items) (item.state === "failed" ? failed : rest).push(item);
+    // An item carrying a notice needs the same extra height a failure does,
+    // so it is pinned rather than squeezed into a uniform virtualised row.
+    for (const item of items) {
+      const needsRoom = item.state === "failed" || (item.state === "done" && Boolean(item.notice));
+      (needsRoom ? failed : rest).push(item);
+    }
     return { failed, rest };
   }, [items]);
 

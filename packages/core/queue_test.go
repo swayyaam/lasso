@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -487,4 +488,287 @@ func TestQueueWithRealProcessCancellation(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 	h.waitFor(t, item.ID, StateCancelled)
+}
+
+// subtitleOptions is a request that asks for subtitles.
+func subtitleOptions() Options {
+	o := baseOptions()
+	o.Subtitles = Subtitles{Download: true, Embed: true, Languages: []string{"en"}}
+	return o
+}
+
+// wantsSubs reports whether a yt-dlp invocation asked for subtitles.
+func wantsSubs(args []string) bool {
+	return slices.Contains(args, "--write-subs") || slices.Contains(args, "--embed-subs")
+}
+
+// subtitleFailingRunner fails any attempt that asks for subtitles, the way a
+// rate-limited subtitle endpoint does, and succeeds otherwise.
+func subtitleFailingRunner(attempts *atomic.Int32, withSubs *atomic.Int32) *funcRunner {
+	return &funcRunner{run: func(_ context.Context, args []string, stdout, stderr func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		attempts.Add(1)
+		if wantsSubs(args) {
+			withSubs.Add(1)
+			stderr("ERROR: Unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests")
+			return errors.New("exit status 1")
+		}
+		stdout(`{"stage":"downloading","downloaded":100,"total":100,"estimate":0,"speed":1,"eta":0,"fragment":0,"fragments":0}`)
+		return nil
+	}}
+}
+
+// newSubtitleHarness wires a queue with a negligible retry delay.
+func newSubtitleHarness(t *testing.T, runner Runner) *queueHarness {
+	t.Helper()
+	h := &queueHarness{states: map[string][]State{}}
+	h.cond = sync.NewCond(&h.mu)
+
+	q, err := NewQueue(QueueConfig{
+		Runner:             runner,
+		Concurrency:        1,
+		ProgressInterval:   time.Nanosecond,
+		SubtitleRetryDelay: time.Millisecond,
+		OnState: func(item Item) {
+			h.mu.Lock()
+			h.states[item.ID] = append(h.states[item.ID], item.State)
+			h.cond.Broadcast()
+			h.mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewQueue: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	q.Start(ctx)
+	h.q, h.cancel = q, cancel
+	t.Cleanup(func() { cancel(); q.Close() })
+	return h
+}
+
+// TestSubtitleFailureDoesNotFailTheDownload is the point of the whole
+// mechanism: yt-dlp treats a failed subtitle fetch as fatal, and losing a
+// finished video because a caption file was rate-limited is the wrong trade.
+func TestSubtitleFailureDoesNotFailTheDownload(t *testing.T) {
+	var attempts, withSubs atomic.Int32
+	h := newSubtitleHarness(t, subtitleFailingRunner(&attempts, &withSubs))
+
+	item, err := h.q.Add(subtitleOptions(), "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor(t, item.ID, StateDone)
+
+	final, _ := h.q.Get(item.ID)
+	if final.State != StateDone {
+		t.Fatalf("State = %q, want done", final.State)
+	}
+	if final.Notice == "" {
+		t.Error("no notice explaining that subtitles were skipped")
+	}
+	if !strings.Contains(final.Notice, "subtitle") {
+		t.Errorf("Notice = %q, want it to mention subtitles", final.Notice)
+	}
+	if !strings.Contains(final.Detail, "Unable to download video subtitles") {
+		t.Errorf("Detail = %q, want the reason kept", final.Detail)
+	}
+	if final.Message != "" {
+		t.Errorf("Message = %q, want no failure message on a successful item", final.Message)
+	}
+}
+
+// TestSubtitlesAreRetriedOnceBeforeBeingDropped covers the backoff: a
+// rate-limited endpoint often clears within seconds, so subtitles are worth
+// one more try before giving up on them.
+func TestSubtitlesAreRetriedOnceBeforeBeingDropped(t *testing.T) {
+	var attempts, withSubs atomic.Int32
+	h := newSubtitleHarness(t, subtitleFailingRunner(&attempts, &withSubs))
+
+	item, _ := h.q.Add(subtitleOptions(), "t")
+	h.waitFor(t, item.ID, StateDone)
+
+	if got := withSubs.Load(); got != 2 {
+		t.Errorf("tried subtitles %d times, want 2 (the first attempt and one retry)", got)
+	}
+	if got := attempts.Load(); got != 3 {
+		t.Errorf("ran %d downloads, want 3 (two with subtitles, one without)", got)
+	}
+}
+
+// TestSubtitleRetrySucceedsOnSecondAttempt covers the case the retry exists
+// for: the endpoint recovers and the subtitles are kept.
+func TestSubtitleRetrySucceedsOnSecondAttempt(t *testing.T) {
+	var withSubs atomic.Int32
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, stderr func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		if wantsSubs(args) && withSubs.Add(1) == 1 {
+			stderr("ERROR: Unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests")
+			return errors.New("exit status 1")
+		}
+		stdout(`{"stage":"downloading","downloaded":100,"total":100,"estimate":0,"speed":1,"eta":0,"fragment":0,"fragments":0}`)
+		return nil
+	}}
+
+	h := newSubtitleHarness(t, runner)
+	item, _ := h.q.Add(subtitleOptions(), "t")
+	h.waitFor(t, item.ID, StateDone)
+
+	final, _ := h.q.Get(item.ID)
+	if final.Notice != "" {
+		t.Errorf("Notice = %q, want none when the retry kept the subtitles", final.Notice)
+	}
+	if got := withSubs.Load(); got != 2 {
+		t.Errorf("subtitle attempts = %d, want 2", got)
+	}
+}
+
+// TestNonSubtitleFailureStillFails guards the blast radius: only subtitle
+// failures are salvaged, never a broken video.
+func TestNonSubtitleFailureStillFails(t *testing.T) {
+	var attempts atomic.Int32
+	runner := &funcRunner{run: func(_ context.Context, args []string, _, stderr func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		attempts.Add(1)
+		stderr("ERROR: [youtube] abc: Video unavailable")
+		return errors.New("exit status 1")
+	}}
+
+	h := newSubtitleHarness(t, runner)
+	item, _ := h.q.Add(subtitleOptions(), "t")
+	h.waitFor(t, item.ID, StateFailed)
+
+	final, _ := h.q.Get(item.ID)
+	if final.ErrorKind != ErrUnavailable {
+		t.Errorf("ErrorKind = %q, want unavailable", final.ErrorKind)
+	}
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("ran %d downloads, want 1: a broken video must not be retried as a subtitle problem", got)
+	}
+}
+
+// TestSubtitleSalvageStillFailsWhenTheVideoIsBroken covers a download that
+// fails for a second reason once subtitles are dropped.
+func TestSubtitleSalvageStillFailsWhenTheVideoIsBroken(t *testing.T) {
+	runner := &funcRunner{run: func(_ context.Context, args []string, _, stderr func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		if wantsSubs(args) {
+			stderr("ERROR: Unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests")
+		} else {
+			stderr("ERROR: unable to download webpage: connection refused")
+		}
+		return errors.New("exit status 1")
+	}}
+
+	h := newSubtitleHarness(t, runner)
+	item, _ := h.q.Add(subtitleOptions(), "t")
+	h.waitFor(t, item.ID, StateFailed)
+
+	final, _ := h.q.Get(item.ID)
+	if final.ErrorKind != ErrNetwork {
+		t.Errorf("ErrorKind = %q, want the real failure after subtitles were dropped", final.ErrorKind)
+	}
+}
+
+// TestRequestsWithoutSubtitlesAreNotRetried keeps the mechanism from firing on
+// downloads that never asked for subtitles.
+func TestRequestsWithoutSubtitlesAreNotRetried(t *testing.T) {
+	var attempts atomic.Int32
+	runner := &funcRunner{run: func(_ context.Context, args []string, _, stderr func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		attempts.Add(1)
+		stderr("ERROR: Unable to download video subtitles for 'en': HTTP Error 429")
+		return errors.New("exit status 1")
+	}}
+
+	h := newSubtitleHarness(t, runner)
+	item, _ := h.q.Add(baseOptions(), "t") // no subtitles requested
+	h.waitFor(t, item.ID, StateFailed)
+
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("ran %d downloads, want 1", got)
+	}
+}
+
+func TestRetryClearsTheSubtitleNotice(t *testing.T) {
+	var attempts, withSubs atomic.Int32
+	h := newSubtitleHarness(t, subtitleFailingRunner(&attempts, &withSubs))
+
+	item, _ := h.q.Add(subtitleOptions(), "t")
+	h.waitFor(t, item.ID, StateDone)
+
+	if final, _ := h.q.Get(item.ID); final.Notice == "" {
+		t.Fatal("expected a notice to clear")
+	}
+	// A finished item cannot be retried, so check the field is reset on the
+	// path that can: a failed one.
+	h.q.mu.Lock()
+	h.q.items[item.ID].State = StateFailed
+	h.q.mu.Unlock()
+
+	if err := h.q.Retry(item.ID); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	if final, _ := h.q.Get(item.ID); final.Notice != "" {
+		t.Errorf("Notice = %q, want it cleared on retry", final.Notice)
+	}
+}
+
+func TestIsSubtitleFailure(t *testing.T) {
+	yes := []string{
+		"ERROR: Unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests",
+		"ERROR: unable to download subtitles",
+		"Error downloading subtitles: something",
+		"ERROR: Unable to extract subtitles",
+	}
+	no := []string{
+		"ERROR: [youtube] abc: Video unavailable",
+		"ERROR: unable to download webpage",
+		"",
+		"HTTP Error 429: Too Many Requests",
+	}
+
+	for _, s := range yes {
+		if !IsSubtitleFailure(s) {
+			t.Errorf("IsSubtitleFailure(%q) = false, want true", s)
+		}
+	}
+	for _, s := range no {
+		if IsSubtitleFailure(s) {
+			t.Errorf("IsSubtitleFailure(%q) = true, want false", s)
+		}
+	}
+}
+
+func TestWithoutSubtitles(t *testing.T) {
+	o := subtitleOptions()
+	if !o.WantsSubtitles() {
+		t.Fatal("WantsSubtitles = false for a request that asks for them")
+	}
+
+	stripped := o.WithoutSubtitles()
+	if stripped.WantsSubtitles() {
+		t.Error("WithoutSubtitles left subtitle options behind")
+	}
+	if hasFlag(BuildArgs(stripped), "--write-subs") || hasFlag(BuildArgs(stripped), "--embed-subs") {
+		t.Error("stripped options still produce subtitle flags")
+	}
+	// The original must be untouched.
+	if !o.WantsSubtitles() {
+		t.Error("WithoutSubtitles mutated its receiver")
+	}
+	// Everything else survives.
+	if stripped.Pick != o.Pick || stripped.URL != o.URL {
+		t.Error("WithoutSubtitles changed more than the subtitles")
+	}
 }

@@ -174,3 +174,30 @@ func UserMessage(err error) string {
 	}
 	return err.Error()
 }
+
+// subtitleFailurePatterns are yt-dlp's wordings for "the video is fine, the
+// subtitles are not".
+var subtitleFailurePatterns = []string{
+	"unable to download video subtitles",
+	"unable to download subtitles",
+	"error downloading subtitles",
+	"unable to extract subtitles",
+}
+
+// IsSubtitleFailure reports whether output describes a subtitle download that
+// failed, as opposed to a failure of the video itself.
+//
+// This is deliberately separate from ErrorKind. The classifier answers "what
+// should the user be told", and for a 429 on the subtitle endpoint that is
+// still the rate-limit message. This answers a different question — "can the
+// download be salvaged by dropping subtitles" — and the two want different
+// precedence, so they stay apart.
+func IsSubtitleFailure(output string) bool {
+	haystack := strings.ToLower(output)
+	for _, pattern := range subtitleFailurePatterns {
+		if strings.Contains(haystack, pattern) {
+			return true
+		}
+	}
+	return false
+}
