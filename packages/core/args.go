@@ -31,6 +31,13 @@ func BuildArgs(o Options) []string {
 	if o.FFmpegLocation != "" {
 		args = append(args, "--ffmpeg-location", o.FFmpegLocation)
 	}
+	// Named explicitly rather than left to PATH. Lasso's own subprocess has the
+	// bundled deno on PATH, but the point of the shown command is that it can
+	// be pasted into a terminal — and there, without this, yt-dlp reports "no
+	// supported JavaScript runtime" and quietly returns fewer formats.
+	if o.DenoPath != "" {
+		args = append(args, "--js-runtimes", "deno:"+o.DenoPath)
+	}
 
 	return append(args, "--", strings.TrimSpace(o.URL))
 }

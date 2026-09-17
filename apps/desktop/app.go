@@ -185,6 +185,7 @@ func (a *App) FetchMetadata(url string) (*core.Metadata, error) {
 	}
 
 	o := settings.ApplyTo(core.Options{URL: url, Pick: core.PickBest})
+	o.DenoPath = a.denoPath()
 	return core.FetchMetadata(a.ctx, runner, o)
 }
 
@@ -226,6 +227,7 @@ func (a *App) ShowCommand(o core.Options) (string, error) {
 
 	o = settings.Get().ApplyTo(o)
 	o.FFmpegLocation = manager.FFmpegLocation()
+	o.DenoPath = manager.Path(binaries.Deno)
 	if err := o.Validate(); err != nil {
 		return "", err
 	}
@@ -244,6 +246,7 @@ func (a *App) Enqueue(o core.Options, title string) (core.Item, error) {
 
 	o = settings.Get().ApplyTo(o)
 	o.FFmpegLocation = manager.FFmpegLocation()
+	o.DenoPath = manager.Path(binaries.Deno)
 	o.ArcProfileDir = arcProfileDir()
 
 	return queue.Add(o, title)
@@ -467,6 +470,16 @@ func (a *App) runnerAndSettings() (core.Runner, Settings, error) {
 		Env:  manager.Environ(),
 	}
 	return runner, store.Get(), nil
+}
+
+// denoPath is the bundled JavaScript runtime yt-dlp needs for YouTube.
+func (a *App) denoPath() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.manager == nil {
+		return ""
+	}
+	return a.manager.Path(binaries.Deno)
 }
 
 // arcProfileDir is where Arc keeps its Chromium profile. yt-dlp has no "arc"

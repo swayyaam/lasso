@@ -59,6 +59,9 @@ build: ## Build Lasso.app into apps/desktop/build/bin
 	cd apps/desktop && "$(WAILS)" build -platform darwin/arm64
 	./scripts/bundle-binaries.sh
 
+dmg: build ## Build Lasso.app and package it into an unsigned DMG
+	./scripts/make-dmg.sh
+
 test: test-go test-js ## Run all tests
 
 test-go: ## Run Go tests across every workspace module

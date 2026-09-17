@@ -586,3 +586,31 @@ func TestEveryCappedPickPinsItsResolution(t *testing.T) {
 		}
 	}
 }
+
+// TestDenoIsNamedExplicitly covers the difference between what Lasso runs and
+// what it shows. Lasso's subprocess has the bundled deno on PATH; a terminal
+// does not, and without this flag yt-dlp there reports "no supported
+// JavaScript runtime" and returns fewer formats — so a pasted command would
+// not reproduce the same download.
+func TestDenoIsNamedExplicitly(t *testing.T) {
+	o := baseOptions()
+	o.DenoPath = "/Users/x/Library/Application Support/Lasso/bin/deno"
+
+	got, ok := argValue(BuildArgs(o), "--js-runtimes")
+	if !ok {
+		t.Fatal("missing --js-runtimes")
+	}
+	if want := "deno:" + o.DenoPath; got != want {
+		t.Errorf("--js-runtimes = %q, want %q", got, want)
+	}
+
+	// Resolving a link needs it too.
+	if got, ok := argValue(MetadataArgs(o), "--js-runtimes"); !ok || got != "deno:"+o.DenoPath {
+		t.Errorf("metadata args --js-runtimes = %q (present=%v)", got, ok)
+	}
+
+	// And it must be absent rather than malformed when unset.
+	if _, ok := argValue(BuildArgs(baseOptions()), "--js-runtimes"); ok {
+		t.Error("--js-runtimes emitted with no deno path")
+	}
+}

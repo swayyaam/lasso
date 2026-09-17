@@ -195,9 +195,9 @@ export function SettingsSheet({
               </Banner>
             ))}
 
-            {updateResult?.Output && (
+            {updateResult?.output && (
               <Details summary="Update log">
-                <MonoBlock text={updateResult.Output} maxHeight="10rem" />
+                <MonoBlock text={updateResult.output} maxHeight="10rem" />
               </Details>
             )}
           </div>
@@ -281,8 +281,8 @@ function MiddleTruncate({ text, keepEnd = 18 }: { text: string; keepEnd?: number
 
 function updateMessage(result: binaries.UpdateResult | null): string {
   if (!result) return "";
-  if (result.Updated) return `Updated to ${result.VersionAfter}.`;
-  return `Already up to date${result.VersionAfter ? ` (${result.VersionAfter})` : ""}.`;
+  if (result.updated) return `Updated to ${result.versionAfter}.`;
+  return `Already up to date${result.versionAfter ? ` (${result.versionAfter})` : ""}.`;
 }
 
 /**

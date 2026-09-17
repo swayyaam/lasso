@@ -179,6 +179,12 @@ type Options struct {
 	// ArcProfileDir is where Arc keeps its Chromium profile. yt-dlp has no
 	// "arc" browser, so Arc is requested as Chromium with an explicit profile.
 	ArcProfileDir string `json:"arcProfileDir"`
+
+	// DenoPath is the bundled deno, which yt-dlp needs as a JavaScript runtime
+	// for YouTube's challenges. Lasso puts it on the subprocess PATH, but the
+	// command shown to the user has to say where it is explicitly or a paste
+	// into a terminal silently loses formats.
+	DenoPath string `json:"denoPath"`
 }
 
 var rateLimitPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?[KMG]?$`)

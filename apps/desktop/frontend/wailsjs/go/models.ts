@@ -55,11 +55,11 @@ export namespace binaries {
 		}
 	}
 	export class UpdateResult {
-	    VersionBefore: string;
-	    VersionAfter: string;
-	    Updated: boolean;
-	    Output: string;
-	    Fixups: string[];
+	    versionBefore: string;
+	    versionAfter: string;
+	    updated: boolean;
+	    output: string;
+	    fixups: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateResult(source);
@@ -67,11 +67,11 @@ export namespace binaries {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.VersionBefore = source["VersionBefore"];
-	        this.VersionAfter = source["VersionAfter"];
-	        this.Updated = source["Updated"];
-	        this.Output = source["Output"];
-	        this.Fixups = source["Fixups"];
+	        this.versionBefore = source["versionBefore"];
+	        this.versionAfter = source["versionAfter"];
+	        this.updated = source["updated"];
+	        this.output = source["output"];
+	        this.fixups = source["fixups"];
 	    }
 	}
 
@@ -298,6 +298,7 @@ export namespace core {
 	    output: Output;
 	    ffmpegLocation: string;
 	    arcProfileDir: string;
+	    denoPath: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Options(source);
@@ -317,6 +318,7 @@ export namespace core {
 	        this.output = this.convertValues(source["output"], Output);
 	        this.ffmpegLocation = source["ffmpegLocation"];
 	        this.arcProfileDir = source["arcProfileDir"];
+	        this.denoPath = source["denoPath"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

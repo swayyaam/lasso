@@ -46,8 +46,7 @@ func (m *Manager) Install(ctx context.Context) (InstallReport, error) {
 		spec := m.manifest.Binaries[name]
 		target := filepath.Join(m.paths.Bin, spec.relPath(name))
 
-		upToDate := installed.Binaries[name] == spec.Version
-		if upToDate {
+		if !needsInstall(name, installed.Binaries[name], spec.Version) {
 			if _, err := os.Stat(target); err == nil {
 				report.Skipped = append(report.Skipped, name)
 				continue
@@ -247,4 +246,114 @@ func copyFile(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	return out.Close()
+}
+
+// fixupTree makes every file in a freshly unpacked directory runnable.
+//
+// An update replaces the whole folder, not just the launcher, so the repairs
+// have to cover all of it: the executable bit on anything that is a Mach-O
+// image, the quarantine flag on the entire tree, and a signature macOS will
+// accept on every signed component.
+//
+// Signatures are verified first and only repaired where verification fails.
+// Re-signing all 100-odd images unconditionally would be slow and would
+// replace yt-dlp's own valid signatures with weaker ad-hoc ones for no gain.
+// Nested images are signed before the entrypoint, because signing a component
+// invalidates any signature that covers it.
+func (m *Manager) fixupTree(ctx context.Context, dir, entrypoint string) ([]string, error) {
+	var fixes []string
+
+	// Directories must be traversable and the payload readable once bundled.
+	if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return os.Chmod(path, 0o755)
+		}
+		return nil
+	}); err != nil {
+		return fixes, fmt.Errorf("setting directory permissions: %w", err)
+	}
+
+	if out, err := m.run(ctx, 60*time.Second, "xattr", "-r", "-d", "com.apple.quarantine", dir); err == nil {
+		fixes = append(fixes, "cleared quarantine flag on the whole folder")
+	} else if !isNoSuchXattr(out) {
+		fixes = append(fixes, "could not clear quarantine flag")
+	}
+
+	var images []string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		macho, err := isMachO(path)
+		if err != nil || !macho {
+			return nil //nolint:nilerr // an unreadable file is not a signing problem
+		}
+		images = append(images, path)
+		return nil
+	})
+	if err != nil {
+		return fixes, fmt.Errorf("scanning the update: %w", err)
+	}
+
+	target := filepath.Join(dir, entrypoint)
+	if err := os.Chmod(target, 0o755); err != nil {
+		return fixes, fmt.Errorf("chmod: %w", err)
+	}
+
+	repaired := 0
+	for _, image := range images {
+		if image == target {
+			continue // signed last, below
+		}
+		if m.repairSignature(ctx, image) {
+			repaired++
+		}
+	}
+	if repaired > 0 {
+		fixes = append(fixes, fmt.Sprintf("re-signed %d of %d bundled components", repaired, len(images)))
+	}
+	if m.repairSignature(ctx, target) {
+		fixes = append(fixes, "repaired the launcher's code signature")
+	}
+
+	return fixes, nil
+}
+
+// repairSignature ad-hoc signs an image whose signature macOS would reject,
+// and reports whether it had to. Apple Silicon refuses to exec an image with a
+// broken or absent signature, so this is what stands between a replaced file
+// and a download that dies on launch.
+func (m *Manager) repairSignature(ctx context.Context, path string) bool {
+	if _, err := m.run(ctx, 30*time.Second, "codesign", "--verify", "--no-strict", path); err == nil {
+		return false
+	}
+	if _, err := m.run(ctx, 60*time.Second, "codesign", "--force", "--sign", "-", path); err != nil {
+		return false
+	}
+	return true
+}
+
+// needsInstall decides whether the bundled copy should replace what is on disk.
+//
+// yt-dlp updates itself in place between app releases, so a newer installed
+// version is the expected state and must not be overwritten by the older copy
+// inside the bundle. Its versions are dates (2026.08.19), which order
+// correctly as strings.
+//
+// The other binaries are only ever changed by shipping a new app, so any
+// difference there means the bundle is authoritative.
+func needsInstall(name Name, installed, bundled string) bool {
+	if installed == "" {
+		return true
+	}
+	if name == YtDlp {
+		return bundled > installed
+	}
+	return installed != bundled
 }

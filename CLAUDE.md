@@ -130,6 +130,57 @@ directly. Thumbnail URLs come from yt-dlp metadata, which the site being
 downloaded from ultimately controls, so the cache requires https and refuses to
 connect to loopback or private addresses. Do not relax either check.
 
+## Updating yt-dlp
+
+Lasso updates yt-dlp itself; it does not shell out to `yt-dlp -U`.
+
+The bundled build is the PyInstaller **onedir** release, and yt-dlp's own
+updater refuses it outright:
+
+    ERROR: Auto-update is not supported for unpackaged executables
+
+The onefile build does support `-U`, but costs ~5.8s of bootstrap on every
+invocation against 0.16s warm, which is why Lasso ships onedir. So
+`Manager.UpdateYtDlp` fetches the same asset the lock file pins, verifies it
+against the release's published SHA2-256SUMS, stages it, proves it runs, and
+only then swaps the folder. A failed or interrupted update leaves the working
+copy in place.
+
+After unpacking, `fixupTree` re-applies every fixup across the whole folder:
+directory permissions, the executable bit, quarantine removal, and a signature
+check on all ~107 Mach-O images. Signatures are verified and only repaired
+where verification fails — re-signing valid images would replace yt-dlp's own
+signatures with weaker ad-hoc ones for nothing. Nested images are signed before
+the launcher, because signing a component invalidates a signature covering it.
+
+`needsInstall` is what stops the bundled copy rolling back a self-update: for
+yt-dlp, the bundle only wins when it is newer, which its date-based versions
+make a string comparison.
+
+## App icon
+
+`apps/desktop/build/appicon.png` is the only icon input. `make build` hands it
+to Wails, which regenerates `Contents/Resources/iconfile.icns` on every build,
+so swapping the icon means replacing that one PNG and rebuilding — nothing else
+to touch.
+
+Apple's template wants roughly 824px of artwork centred in a 1024x1024 canvas.
+Artwork that fills the canvas edge to edge renders slightly larger than its
+neighbours in the Dock and does not share the system corner radius.
+
+## Deferred: distribution
+
+- **Thin the universal slices.** yt-dlp ships universal2: 107 of its files
+  carry both arches, which is 55 MB of x86_64 that an arm64 build never runs.
+  `lipo -thin arm64` across them takes yt-dlp from 124 MB to 67 MB and the
+  bundle from 328 MB to 271 MB. Two catches: `lipo` strips code signatures, so
+  every thinned image needs ad-hoc re-signing afterwards, and an update
+  re-installs the universal build, so the saving applies to the shipped bundle
+  rather than the installed copy. ffmpeg, ffprobe and deno are already
+  arm64-only.
+- Code signing and notarisation are not set up. The build is ad-hoc signed
+  only, so a downloaded copy is quarantined.
+
 ## Design
 
 `docs/design.md` is the visual language and is **read-only**. It documents

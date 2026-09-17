@@ -2,6 +2,7 @@ package binaries
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,12 @@ import (
 type Manager struct {
 	paths    Paths
 	manifest *Manifest
+
+	// updateAPI and http are fields rather than constants so the updater can
+	// be exercised end to end against a local server, without reaching the
+	// network or waiting on a real release.
+	updateAPI string
+	http      *http.Client
 }
 
 // New builds a Manager from the given paths.
@@ -24,7 +31,12 @@ func New(paths Paths) (*Manager, error) {
 	if paths.Bin == "" {
 		return nil, fmt.Errorf("no bin directory configured")
 	}
-	return &Manager{paths: paths, manifest: manifest}, nil
+	return &Manager{
+		paths:     paths,
+		manifest:  manifest,
+		updateAPI: releaseAPI,
+		http:      &http.Client{Timeout: updateTimeout},
+	}, nil
 }
 
 // Discover builds a Manager by resolving the standard locations: the bundled

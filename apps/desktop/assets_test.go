@@ -136,3 +136,25 @@ func TestThumbnailMiddlewareServesFromCache(t *testing.T) {
 		t.Error("no bytes served")
 	}
 }
+
+// TestMissingThumbnailIsNotCached is a regression test.
+//
+// The long-lived cache header was being set before ServeFile, so a 404 carried
+// "immutable, max-age=1 year" too. A webview that asked for a preview a moment
+// before it finished downloading then remembered the failure permanently, and
+// the thumbnail stayed blank for the life of the cache.
+func TestMissingThumbnailIsNotCached(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, thumbURLPrefix+validThumbName, nil)
+	thumbnailHandler{dir: t.TempDir()}.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Errorf("Cache-Control = %q, want no-store so the miss is not remembered", got)
+	}
+	if strings.Contains(rec.Header().Get("Cache-Control"), "immutable") {
+		t.Error("a 404 was marked immutable")
+	}
+}

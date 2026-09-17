@@ -213,3 +213,67 @@ func TestIsMachO(t *testing.T) {
 		t.Errorf("isMachO(1 byte) = %v, %v; want false, nil", got, err)
 	}
 }
+
+// TestNeedsInstall covers the interaction between the bundled copy and a
+// yt-dlp that has updated itself since the app shipped.
+func TestNeedsInstall(t *testing.T) {
+	cases := []struct {
+		name      string
+		binary    Name
+		installed string
+		bundled   string
+		want      bool
+		why       string
+	}{
+		{"nothing installed", YtDlp, "", "2026.08.19", true, "a fresh install must copy"},
+		{"same version", YtDlp, "2026.08.19", "2026.08.19", false, "nothing to do"},
+		{"bundle is newer", YtDlp, "2026.07.04", "2026.08.19", true, "a new app release should upgrade an old copy"},
+		{"installed is newer", YtDlp, "2026.09.01", "2026.08.19", false, "a self-update must not be rolled back by the bundle"},
+		{"ffmpeg differs", FFmpeg, "9.0.0", "9.0.1", true, "ffmpeg only changes when the app ships"},
+		{"ffmpeg same", FFmpeg, "9.0.1", "9.0.1", false, "nothing to do"},
+		{"ffmpeg downgrade by bundle", FFmpeg, "10.0.0", "9.0.1", true, "the bundle is authoritative for non-updating binaries"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := needsInstall(tc.binary, tc.installed, tc.bundled); got != tc.want {
+				t.Errorf("needsInstall(%s, %q, %q) = %v, want %v — %s",
+					tc.binary, tc.installed, tc.bundled, got, tc.want, tc.why)
+			}
+		})
+	}
+}
+
+// TestSelfUpdatedYtDlpSurvivesRelaunch is the end-to-end version of the same
+// concern: a copy that updated itself must still be there next launch.
+func TestSelfUpdatedYtDlpSurvivesRelaunch(t *testing.T) {
+	m, paths := newFakeManager(t)
+	ctx := context.Background()
+	if _, err := m.Install(ctx); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	// Stand in for a self-update: newer on disk than the bundle knows about.
+	writeScript(t, m.Path(YtDlp), "2026.12.31")
+	stamp := readStamp(paths.Bin)
+	stamp.Binaries[YtDlp] = "2026.12.31"
+	if err := writeStamp(paths.Bin, stamp); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := m.Install(ctx)
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if slices.Contains(report.Installed, YtDlp) {
+		t.Error("the bundled copy overwrote a newer self-updated yt-dlp")
+	}
+
+	out, err := os.ReadFile(m.Path(YtDlp))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "2026.12.31") {
+		t.Error("the updated version was rolled back")
+	}
+}

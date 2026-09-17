@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -28,7 +29,17 @@ type thumbnailHandler struct {
 func (h thumbnailHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, thumbURLPrefix)
 	if h.dir == "" || !thumbNamePattern.MatchString(name) {
-		http.NotFound(w, r)
+		notFound(w, r)
+		return
+	}
+
+	// The long-lived cache header must only go on a response that actually
+	// carries an image. Setting it before ServeFile put it on 404s too, and a
+	// webview then cached "this thumbnail does not exist" for a year — so a
+	// preview requested a moment too early stayed blank for good.
+	path := filepath.Join(h.dir, name)
+	if info, err := os.Stat(path); err != nil || info.IsDir() {
+		notFound(w, r)
 		return
 	}
 
@@ -36,7 +47,13 @@ func (h thumbnailHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// change under a given name.
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Header().Set("Content-Type", "image/jpeg")
-	http.ServeFile(w, r, filepath.Join(h.dir, name))
+	http.ServeFile(w, r, path)
+}
+
+// notFound answers a missing thumbnail without letting the client remember it.
+func notFound(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	http.NotFound(w, r)
 }
 
 // thumbnailURL turns a cached file path into the path the frontend requests.

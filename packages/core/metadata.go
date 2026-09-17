@@ -260,6 +260,12 @@ func BestThumbnail(thumbnails []Thumbnail, width int) (Thumbnail, bool) {
 func MetadataArgs(o Options) []string {
 	args := []string{"--ignore-config", "-J", "--flat-playlist", "--no-warnings"}
 
+	// Resolving a YouTube link needs the JavaScript runtime just as
+	// downloading does; without it yt-dlp returns a reduced format list.
+	if o.DenoPath != "" {
+		args = append(args, "--js-runtimes", "deno:"+o.DenoPath)
+	}
+
 	// Cookies matter here too: age-restricted videos will not resolve without
 	// them. Rate limits and output options have no bearing on metadata.
 	if spec := cookieSpec(o); spec != "" {
