@@ -4,5 +4,6 @@ use (
 	./apps/desktop
 	./packages/binaries
 	./packages/core
+	./packages/history
 	./packages/presets
 )

@@ -3,6 +3,7 @@
 import {binaries} from '../models';
 import {core} from '../models';
 import {main} from '../models';
+import {history} from '../models';
 import {presets} from '../models';
 
 export function BinaryStatus():Promise<binaries.Status>;
@@ -11,7 +12,13 @@ export function Cancel(arg1:string):Promise<void>;
 
 export function ChooseFolder():Promise<string>;
 
+export function ClearFinished():Promise<number>;
+
+export function ClearHistory():Promise<void>;
+
 export function DeletePreset(arg1:string):Promise<void>;
+
+export function DownloadAgain(arg1:string):Promise<core.Item>;
 
 export function Enqueue(arg1:core.Options,arg2:string):Promise<core.Item>;
 
@@ -19,11 +26,17 @@ export function Events():Promise<main.EventNames>;
 
 export function FetchMetadata(arg1:string):Promise<core.Metadata>;
 
+export function ForgetHistoryEntry(arg1:string):Promise<void>;
+
+export function History():Promise<Array<history.Entry>>;
+
 export function OpenFullDiskAccessSettings():Promise<void>;
 
 export function Presets():Promise<Array<presets.Preset>>;
 
 export function QueueItems():Promise<Array<core.Item>>;
+
+export function RemoveFromQueue(arg1:string):Promise<void>;
 
 export function RenamePreset(arg1:string,arg2:string):Promise<void>;
 

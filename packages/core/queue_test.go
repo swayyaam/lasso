@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -834,5 +835,148 @@ func TestRetryClearsTheFinishedFile(t *testing.T) {
 	failed, _ := h.q.Get(item.ID)
 	if failed.FilePath != "" {
 		t.Errorf("FilePath = %q, want a failed retry not to keep pointing at the old file", failed.FilePath)
+	}
+}
+
+func TestRemoveOnlyTakesFinishedItems(t *testing.T) {
+	// A running item has a download reporting into it; removing it would leave
+	// that report with nowhere to go.
+	block := make(chan struct{})
+	runner := &funcRunner{run: func(ctx context.Context, args []string, stdout, _ func(string)) error {
+		if isMetadataCall(args) {
+			stdout(`{"id":"x","title":"Clip"}`)
+			return nil
+		}
+		select {
+		case <-block:
+		case <-ctx.Done():
+		}
+		return nil
+	}}
+
+	h := newQueueHarness(t, runner, 1)
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	h.waitFor(t, item.ID, StateDownloading)
+
+	if err := h.q.Remove(item.ID); err == nil {
+		t.Error("Remove accepted an item that was still running")
+	}
+	if _, ok := h.q.Get(item.ID); !ok {
+		t.Error("the item was removed anyway")
+	}
+
+	close(block)
+	h.waitFor(t, item.ID, StateDone)
+
+	if err := h.q.Remove(item.ID); err != nil {
+		t.Fatalf("Remove of a finished item: %v", err)
+	}
+	if _, ok := h.q.Get(item.ID); ok {
+		t.Error("Remove left the item in the queue")
+	}
+}
+
+func TestClearFinishedLeavesWorkAlone(t *testing.T) {
+	block := make(chan struct{})
+	runner := &funcRunner{run: func(ctx context.Context, args []string, stdout, stderr func(string)) error {
+		if isMetadataCall(args) {
+			stdout(`{"id":"x","title":"Clip"}`)
+			return nil
+		}
+		// Only the first item is held open; the concurrency limit keeps the
+		// rest queued behind it.
+		select {
+		case <-block:
+		case <-ctx.Done():
+		}
+		return nil
+	}}
+
+	h := newQueueHarness(t, runner, 1)
+	running, _ := h.q.Add(Options{URL: "https://example.com/1", Pick: PickBest}, "Running")
+	h.waitFor(t, running.ID, StateDownloading)
+
+	queued, _ := h.q.Add(Options{URL: "https://example.com/2", Pick: PickBest}, "Queued")
+	cancelled, _ := h.q.Add(Options{URL: "https://example.com/3", Pick: PickBest}, "Cancelled")
+	if err := h.q.Cancel(cancelled.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	h.waitFor(t, cancelled.ID, StateCancelled)
+
+	if got := h.q.ClearFinished(); got != 1 {
+		t.Errorf("ClearFinished removed %d, want only the cancelled one", got)
+	}
+	if _, ok := h.q.Get(cancelled.ID); ok {
+		t.Error("the cancelled item survived")
+	}
+	if _, ok := h.q.Get(running.ID); !ok {
+		t.Error("ClearFinished removed a running item")
+	}
+	if _, ok := h.q.Get(queued.ID); !ok {
+		t.Error("ClearFinished removed a queued item")
+	}
+
+	close(block)
+}
+
+func TestRemovalIsAnnounced(t *testing.T) {
+	// A removal is the one change the state callback cannot describe: there is
+	// no item left to send.
+	var removed []string
+	var mu sync.Mutex
+
+	q, err := NewQueue(QueueConfig{
+		Runner:   &funcRunner{run: func(context.Context, []string, func(string), func(string)) error { return nil }},
+		OnRemove: func(ids []string) { mu.Lock(); removed = append(removed, ids...); mu.Unlock() },
+	})
+	if err != nil {
+		t.Fatalf("NewQueue: %v", err)
+	}
+	defer q.Close()
+
+	item, _ := q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	q.mu.Lock()
+	q.items[item.ID].State = StateDone
+	q.mu.Unlock()
+
+	if err := q.Remove(item.ID); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Contains(removed, item.ID) {
+		t.Errorf("removed = %v, want it to name the item", removed)
+	}
+}
+
+func TestRemovingKeepsTheRestInOrder(t *testing.T) {
+	q, err := NewQueue(QueueConfig{
+		Runner: &funcRunner{run: func(context.Context, []string, func(string), func(string)) error { return nil }},
+	})
+	if err != nil {
+		t.Fatalf("NewQueue: %v", err)
+	}
+	defer q.Close()
+
+	var ids []string
+	for i := range 3 {
+		item, _ := q.Add(Options{URL: "https://example.com/" + strconv.Itoa(i), Pick: PickBest}, "Clip")
+		ids = append(ids, item.ID)
+	}
+
+	q.mu.Lock()
+	q.items[ids[1]].State = StateDone
+	q.mu.Unlock()
+	if err := q.Remove(ids[1]); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	var got []string
+	for _, item := range q.Items() {
+		got = append(got, item.ID)
+	}
+	if !slices.Equal(got, []string{ids[0], ids[2]}) {
+		t.Errorf("order = %v, want the middle item gone and the rest in place", got)
 	}
 }

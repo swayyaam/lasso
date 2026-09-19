@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -74,6 +75,9 @@ type QueueConfig struct {
 	OnState func(Item)
 	// OnProgress is called with throttled progress updates. It must not block.
 	OnProgress func(id string, p Progress)
+	// OnRemove is called with the ids that have left the queue. A removal is
+	// the one change OnState cannot describe: there is no item left to send.
+	OnRemove func(ids []string)
 	// SubtitleRetryDelay is how long to wait before retrying a download whose
 	// subtitles failed. Zero uses DefaultSubtitleRetryDelay.
 	SubtitleRetryDelay time.Duration
@@ -92,10 +96,11 @@ const DefaultSubtitleRetryDelay = 3 * time.Second
 // process group so no ffmpeg is left behind, and the queue is deliberately
 // in-memory: quitting Lasso discards it.
 type Queue struct {
-	runner  Runner
-	emitter *ProgressEmitter
-	onState func(Item)
-	nextID  int
+	runner   Runner
+	emitter  *ProgressEmitter
+	onState  func(Item)
+	onRemove func(ids []string)
+	nextID   int
 	// subsRetryIn is how long to wait before retrying a download whose
 	// subtitles failed.
 	subsRetryIn time.Duration
@@ -138,6 +143,7 @@ func NewQueue(cfg QueueConfig) (*Queue, error) {
 	q := &Queue{
 		runner:      cfg.Runner,
 		onState:     cfg.OnState,
+		onRemove:    cfg.OnRemove,
 		limit:       concurrency,
 		subsRetryIn: retryIn,
 		items:       map[string]*Item{},
@@ -309,6 +315,62 @@ func (q *Queue) Retry(id string) error {
 	q.emitter.Forget(id)
 	q.notify(snapshot)
 	return nil
+}
+
+// Remove drops a finished item from the queue.
+//
+// Only a terminal item can go: removing a running one would leave its download
+// with nowhere to report, so the caller cancels first and removes after.
+func (q *Queue) Remove(id string) error {
+	q.mu.Lock()
+	item, ok := q.items[id]
+	if !ok {
+		q.mu.Unlock()
+		return fmt.Errorf("no such download")
+	}
+	if !item.State.IsTerminal() {
+		q.mu.Unlock()
+		return fmt.Errorf("that download is still running")
+	}
+	q.deleteLocked(id)
+	q.mu.Unlock()
+
+	q.emitter.Forget(id)
+	q.notifyRemoved([]string{id})
+	return nil
+}
+
+// ClearFinished drops every item that has finished, failed or been cancelled,
+// and reports how many went. Running and queued items are left alone.
+func (q *Queue) ClearFinished() int {
+	q.mu.Lock()
+	var removed []string
+	for _, id := range slices.Clone(q.order) {
+		if item, ok := q.items[id]; ok && item.State.IsTerminal() {
+			q.deleteLocked(id)
+			removed = append(removed, id)
+		}
+	}
+	q.mu.Unlock()
+
+	for _, id := range removed {
+		q.emitter.Forget(id)
+	}
+	q.notifyRemoved(removed)
+	return len(removed)
+}
+
+// deleteLocked drops an item and its place in the order. The caller must hold
+// the lock.
+func (q *Queue) deleteLocked(id string) {
+	delete(q.items, id)
+	q.order = slices.DeleteFunc(q.order, func(other string) bool { return other == id })
+}
+
+func (q *Queue) notifyRemoved(ids []string) {
+	if len(ids) > 0 && q.onRemove != nil {
+		q.onRemove(ids)
+	}
 }
 
 // Close stops dispatching and cancels everything in flight.

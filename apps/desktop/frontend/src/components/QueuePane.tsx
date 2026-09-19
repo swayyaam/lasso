@@ -4,7 +4,10 @@ import { core } from "../bindings";
 import { QUEUE_ROW_HEIGHT, QueueRow } from "./QueueRow";
 
 /**
- * QueuePane is the right-hand column: everything queued, running and finished.
+ * QueuePane lists everything queued, running and finished this session.
+ *
+ * ActivityPane owns the header and the tab it sits behind; this renders only
+ * the list, so the two tabs cannot drift apart on spacing.
  *
  * The list is virtualised because a playlist can add hundreds of items at once
  * and each one is emitting progress. Failed rows are rendered outside the
@@ -25,22 +28,8 @@ export function QueuePane({ items }: { items: core.Item[] }) {
     return { failed, rest };
   }, [items]);
 
-  const active = useMemo(
-    () => items.filter((i) => i.state === "downloading" || i.state === "post-processing" || i.state === "queued" || i.state === "fetching").length,
-    [items],
-  );
-
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-10 shrink-0 items-center justify-between gap-sm border-b border-hairline px-md">
-        <h2 className="text-eyebrow font-medium tracking-wide text-ink-subtle uppercase">Queue</h2>
-        {items.length > 0 && (
-          <span className="text-caption text-ink-tertiary tabular-nums">
-            {active > 0 ? `${active} active · ${items.length} total` : `${items.length} total`}
-          </span>
-        )}
-      </header>
-
+    <>
       {items.length === 0 ? (
         <EmptyState
           title="Nothing downloading"
@@ -69,7 +58,7 @@ export function QueuePane({ items }: { items: core.Item[] }) {
           />
         </div>
       )}
-    </section>
+    </>
   );
 }
 

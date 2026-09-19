@@ -14,8 +14,20 @@ export function ChooseFolder() {
   return window['go']['main']['App']['ChooseFolder']();
 }
 
+export function ClearFinished() {
+  return window['go']['main']['App']['ClearFinished']();
+}
+
+export function ClearHistory() {
+  return window['go']['main']['App']['ClearHistory']();
+}
+
 export function DeletePreset(arg1) {
   return window['go']['main']['App']['DeletePreset'](arg1);
+}
+
+export function DownloadAgain(arg1) {
+  return window['go']['main']['App']['DownloadAgain'](arg1);
 }
 
 export function Enqueue(arg1, arg2) {
@@ -30,6 +42,14 @@ export function FetchMetadata(arg1) {
   return window['go']['main']['App']['FetchMetadata'](arg1);
 }
 
+export function ForgetHistoryEntry(arg1) {
+  return window['go']['main']['App']['ForgetHistoryEntry'](arg1);
+}
+
+export function History() {
+  return window['go']['main']['App']['History']();
+}
+
 export function OpenFullDiskAccessSettings() {
   return window['go']['main']['App']['OpenFullDiskAccessSettings']();
 }
@@ -40,6 +60,10 @@ export function Presets() {
 
 export function QueueItems() {
   return window['go']['main']['App']['QueueItems']();
+}
+
+export function RemoveFromQueue(arg1) {
+  return window['go']['main']['App']['RemoveFromQueue'](arg1);
 }
 
 export function RenamePreset(arg1, arg2) {

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useBinaryStatus, usePresets, useQueue, useSettings } from "./hooks/useBackend";
+import { useBinaryStatus, useHistory, usePresets, useQueue, useSettings } from "./hooks/useBackend";
 import { Composer } from "./components/Composer";
 import { FirstRun, InstallingOverlay } from "./components/FirstRun";
-import { QueuePane } from "./components/QueuePane";
+import { ActivityPane } from "./components/ActivityPane";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { TitleBar } from "./components/TitleBar";
 
@@ -16,6 +16,7 @@ import { TitleBar } from "./components/TitleBar";
 export function App() {
   const status = useBinaryStatus();
   const items = useQueue();
+  const { entries } = useHistory();
   const { presets, refresh } = usePresets();
   const { settings, save, error: saveError } = useSettings();
 
@@ -45,7 +46,7 @@ export function App() {
             <Composer presets={presets} onPresetsChanged={refresh} disabled={!ready} />
           </div>
           <div className="flex min-h-0 min-w-0 basis-2/5 flex-col border-t border-hairline lg:border-t-0">
-            <QueuePane items={items} />
+            <ActivityPane items={items} entries={entries} />
           </div>
         </main>
       )}

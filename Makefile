@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-GO_MODULES := packages/core packages/binaries packages/presets apps/desktop
+GO_MODULES := packages/core packages/binaries packages/presets packages/history apps/desktop
 
 # `go install` puts wails in GOPATH/bin (or GOBIN), which is frequently not on
 # PATH. Resolve it explicitly so the build does not depend on shell setup.

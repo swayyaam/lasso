@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, binaries, core, EventsOff, EventsOn, main, presets } from "../bindings";
+import { api, binaries, core, EventsOff, EventsOn, history, main, presets } from "../bindings";
 
 /**
  * useEventNames fetches the backend's event names once.
@@ -63,10 +63,18 @@ export function useQueue() {
       });
     });
 
+    // Removal is the one change that cannot arrive as an item: there is no
+    // item left to send, only the ids that went.
+    EventsOn(names.queueRemoved, (ids: string[]) => {
+      const gone = new Set(ids);
+      setItems((current) => current.filter((i) => !gone.has(i.id)));
+    });
+
     return () => {
       cancelled = true;
       EventsOff(names.queueItem);
       EventsOff(names.queueProgress);
+      EventsOff(names.queueRemoved);
     };
   }, [names]);
 
@@ -140,6 +148,40 @@ export function usePresets() {
   }, [refresh]);
 
   return { presets: items, refresh };
+}
+
+/**
+ * useHistory keeps the record of finished downloads in step with the backend.
+ *
+ * The change event carries nothing and the list is fetched in response, so
+ * there is one definition of what history is rather than a copy maintained by
+ * replaying events into local state.
+ */
+export function useHistory() {
+  const [entries, setEntries] = useState<history.Entry[] | null>(null);
+  const names = useEventNames();
+
+  const refresh = useCallback(async () => {
+    try {
+      // Null means "not loaded yet" and renders nothing, so a failure must not
+      // leave it there: an empty list at least explains itself.
+      setEntries((await api.History()) ?? []);
+    } catch {
+      setEntries([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!names) return;
+    EventsOn(names.historyChanged, () => void refresh());
+    return () => EventsOff(names.historyChanged);
+  }, [names, refresh]);
+
+  return { entries, refresh };
 }
 
 /**

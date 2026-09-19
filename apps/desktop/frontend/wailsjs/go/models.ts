@@ -512,6 +512,61 @@ export namespace core {
 
 }
 
+export namespace history {
+	
+	export class Entry {
+	    id: string;
+	    url: string;
+	    title: string;
+	    options: core.Options;
+	    filePath: string;
+	    state: string;
+	    message: string;
+	    errorKind: string;
+	    notice: string;
+	    bytes: number;
+	    finishedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Entry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.url = source["url"];
+	        this.title = source["title"];
+	        this.options = this.convertValues(source["options"], core.Options);
+	        this.filePath = source["filePath"];
+	        this.state = source["state"];
+	        this.message = source["message"];
+	        this.errorKind = source["errorKind"];
+	        this.notice = source["notice"];
+	        this.bytes = source["bytes"];
+	        this.finishedAt = source["finishedAt"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace main {
 	
 	export class EventNames {
@@ -519,6 +574,8 @@ export namespace main {
 	    queueProgress: string;
 	    binaryStatus: string;
 	    settingsChanged: string;
+	    queueRemoved: string;
+	    historyChanged: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new EventNames(source);
@@ -530,6 +587,8 @@ export namespace main {
 	        this.queueProgress = source["queueProgress"];
 	        this.binaryStatus = source["binaryStatus"];
 	        this.settingsChanged = source["settingsChanged"];
+	        this.queueRemoved = source["queueRemoved"];
+	        this.historyChanged = source["historyChanged"];
 	    }
 	}
 	export class Settings {

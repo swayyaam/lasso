@@ -15,6 +15,13 @@ const (
 	EventBinaryStatus = "binaries:status"
 	// EventSettingsChanged carries the Settings after they are saved.
 	EventSettingsChanged = "settings:changed"
+	// EventQueueRemoved carries the ids that have left the queue. It is the one
+	// change EventQueueItem cannot describe: there is no item left to send.
+	EventQueueRemoved = "queue:removed"
+	// EventHistoryChanged says the record of finished downloads has moved on.
+	// It carries nothing: the frontend asks for the list, which keeps one
+	// definition of what history is rather than two.
+	EventHistoryChanged = "history:changed"
 )
 
 // EventNames is the set of event names, exposed so TypeScript can subscribe
@@ -24,6 +31,8 @@ type EventNames struct {
 	QueueProgress   string `json:"queueProgress"`
 	BinaryStatus    string `json:"binaryStatus"`
 	SettingsChanged string `json:"settingsChanged"`
+	QueueRemoved    string `json:"queueRemoved"`
+	HistoryChanged  string `json:"historyChanged"`
 }
 
 // ProgressEvent is one throttled progress update for a queue item.

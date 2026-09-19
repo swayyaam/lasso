@@ -11,6 +11,7 @@ import (
 
 	"github.com/swayyaam/lasso/packages/binaries"
 	"github.com/swayyaam/lasso/packages/core"
+	"github.com/swayyaam/lasso/packages/history"
 	"github.com/swayyaam/lasso/packages/presets"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -30,6 +31,7 @@ type App struct {
 	queue    *core.Queue
 	presets  *presets.Store
 	settings *SettingsStore
+	history  *history.Store
 	thumbs   *core.ThumbnailCache
 	status   binaries.Status
 
@@ -65,10 +67,16 @@ func (a *App) startup(ctx context.Context) {
 		a.fail(err)
 		return
 	}
+	historyStore, err := history.NewStore(support)
+	if err != nil {
+		a.fail(err)
+		return
+	}
 
 	a.mu.Lock()
 	a.settings = settingsStore
 	a.presets = presetStore
+	a.history = historyStore
 	a.thumbs = core.NewThumbnailCache(filepath.Join(support, "thumbnails"), core.DefaultThumbnailCacheBytes)
 	a.mu.Unlock()
 
@@ -102,9 +110,13 @@ func (a *App) startQueue(ctx context.Context, manager *binaries.Manager, concurr
 		Concurrency: concurrency,
 		OnState: func(item core.Item) {
 			runtime.EventsEmit(ctx, EventQueueItem, item)
+			a.record(ctx, item)
 		},
 		OnProgress: func(id string, p core.Progress) {
 			runtime.EventsEmit(ctx, EventQueueProgress, ProgressEvent{ID: id, Progress: p})
+		},
+		OnRemove: func(ids []string) {
+			runtime.EventsEmit(ctx, EventQueueRemoved, ids)
 		},
 	})
 	if err != nil {
@@ -145,6 +157,8 @@ func (a *App) Events() EventNames {
 		QueueProgress:   EventQueueProgress,
 		BinaryStatus:    EventBinaryStatus,
 		SettingsChanged: EventSettingsChanged,
+		QueueRemoved:    EventQueueRemoved,
+		HistoryChanged:  EventHistoryChanged,
 	}
 }
 
@@ -288,6 +302,88 @@ func (a *App) Retry(id string) error {
 		return fmt.Errorf("nothing to retry")
 	}
 	return queue.Retry(id)
+}
+
+// RemoveFromQueue drops a finished download from the queue. Its history entry
+// is left alone: clearing the queue is tidying, not forgetting.
+func (a *App) RemoveFromQueue(id string) error {
+	a.mu.RLock()
+	queue := a.queue
+	a.mu.RUnlock()
+
+	if queue == nil {
+		return fmt.Errorf("there is nothing to remove")
+	}
+	return queue.Remove(id)
+}
+
+// ClearFinished drops every finished, failed and cancelled download from the
+// queue, and reports how many went.
+func (a *App) ClearFinished() int {
+	a.mu.RLock()
+	queue := a.queue
+	a.mu.RUnlock()
+
+	if queue == nil {
+		return 0
+	}
+	return queue.ClearFinished()
+}
+
+// ---- History ----
+
+// History returns finished downloads, newest first.
+func (a *App) History() []history.Entry {
+	a.mu.RLock()
+	store := a.history
+	a.mu.RUnlock()
+
+	if store == nil {
+		return []history.Entry{}
+	}
+	return store.All()
+}
+
+// ForgetHistoryEntry removes one entry from the record.
+func (a *App) ForgetHistoryEntry(id string) error {
+	store, err := a.historyStore()
+	if err != nil {
+		return err
+	}
+	if err := store.Remove(id); err != nil {
+		return err
+	}
+	a.emit(EventHistoryChanged)
+	return nil
+}
+
+// ClearHistory empties the record.
+func (a *App) ClearHistory() error {
+	store, err := a.historyStore()
+	if err != nil {
+		return err
+	}
+	if err := store.Clear(); err != nil {
+		return err
+	}
+	a.emit(EventHistoryChanged)
+	return nil
+}
+
+// DownloadAgain puts a past download back on the queue with the options it
+// originally ran with.
+func (a *App) DownloadAgain(id string) (core.Item, error) {
+	store, err := a.historyStore()
+	if err != nil {
+		return core.Item{}, err
+	}
+
+	for _, entry := range store.All() {
+		if entry.ID == id {
+			return a.Enqueue(entry.Options, entry.Title)
+		}
+	}
+	return core.Item{}, fmt.Errorf("that download is no longer in your history")
 }
 
 // ---- Presets ----
@@ -453,6 +549,49 @@ func (a *App) UpdateYtDlp() (binaries.UpdateResult, error) {
 }
 
 // ---- helpers ----
+
+// record writes a finished download into the history.
+//
+// It is driven off the queue's state callback rather than called at each
+// finishing site, so there is one place that decides what counts as finished —
+// and history.FromItem, not this, is what enforces it.
+func (a *App) record(ctx context.Context, item core.Item) {
+	entry, ok := history.FromItem(item)
+	if !ok {
+		return
+	}
+
+	a.mu.RLock()
+	store := a.history
+	a.mu.RUnlock()
+	if store == nil {
+		return
+	}
+
+	// A history write that fails must not take the download with it: the file
+	// is on disk either way, and the user has already been told it finished.
+	if _, err := store.Add(entry); err != nil {
+		return
+	}
+	runtime.EventsEmit(ctx, EventHistoryChanged)
+}
+
+func (a *App) historyStore() (*history.Store, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.history == nil {
+		return nil, fmt.Errorf("Lasso is still starting up")
+	}
+	return a.history, nil
+}
+
+// emit sends an event when the app has a context to send it on.
+func (a *App) emit(name string, data ...any) {
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, name, data...)
+	}
+}
 
 func (a *App) presetStore() (*presets.Store, error) {
 	a.mu.RLock()

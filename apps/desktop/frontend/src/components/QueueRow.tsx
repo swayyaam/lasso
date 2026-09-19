@@ -116,6 +116,19 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
             Show in Finder
           </Button>
         )}
+        {terminal && (
+          // Clearing the row is tidying the queue, not forgetting the download:
+          // its history entry stays.
+          <Button
+            size="sm"
+            variant="tertiary"
+            aria-label="Remove from queue"
+            title="Remove from queue"
+            onClick={() => void api.RemoveFromQueue(item.id)}
+          >
+            &times;
+          </Button>
+        )}
       </div>
 
       {failed && item.message && (
