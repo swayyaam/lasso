@@ -6,12 +6,20 @@
 @source "../src";
 
 @layer base {
-  /* The canvas is the anchor surface. design.md is explicit that the faint
-     blue tint of #010102 is intentional and that true black is wrong. */
+  /* The canvas is the anchor surface: a generous white, with near-black ink
+     over it. Hierarchy comes from the hairline border and the layered
+     elevation recipes, not from tinted backgrounds. */
   html,
   body,
   #root {
     height: 100%;
+  }
+
+  /* Tells the engine to render native controls — a <select>'s popup, the
+     caret, form widgets — in their light variants. Without it the webview
+     inherits the system appearance and drops dark menus onto a white app. */
+  html {
+    color-scheme: light;
   }
 
   body {
@@ -20,8 +28,12 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: var(--text-body-sm);
-    line-height: 1.5;
+    line-height: 1.6;
+    letter-spacing: -0.16px;
     -webkit-font-smoothing: antialiased;
+    /* Inter's alternate glyph set, which is what makes it read closest to the
+       proprietary family the system is drawn from. */
+    font-feature-settings: "ss01";
   }
 
   /* A desktop app is not a document: text selection should follow intent
@@ -37,20 +49,25 @@
     user-select: text;
   }
 
-  /* Elevation level 4 from design.md, applied uniformly rather than
-     per-component so nothing can ship without a visible focus state. */
+  /* Applied uniformly rather than per-component, so nothing can ship without
+     a visible focus state.
+     
+     The ring is the info accent rather than the near-black primary: on a
+     white canvas a near-black outline is legible, but around a near-black
+     button it disappears into the button. A focus ring is not a background,
+     so this does not breach the rule that the accents are surface fills. */
   :focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--color-primary-focus) 50%, transparent);
+    outline: 2px solid var(--color-info);
     outline-offset: 2px;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-sm);
   }
 
   ::selection {
-    background-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+    background-color: color-mix(in srgb, var(--color-info) 22%, transparent);
   }
 
-  /* The scrollbar is chrome too, and the default light one is jarring on the
-     canvas. */
+  /* The scrollbar is chrome too. Pill is permitted here — it is a track, not
+     a call to action. */
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -59,7 +76,7 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background-color: var(--color-hairline-strong);
+    background-color: var(--color-hairline);
     border-radius: var(--radius-pill);
     border: 2px solid var(--color-canvas);
   }

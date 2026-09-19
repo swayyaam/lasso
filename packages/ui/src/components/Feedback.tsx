@@ -63,11 +63,11 @@ export function Banner({
     <div
       className={cx(
         "flex items-start gap-sm rounded-lg border p-sm",
-        tone === "danger" ? "border-danger/40 bg-danger-surface" : "border-hairline bg-surface-1",
+        tone === "danger" ? "border-danger/30 bg-danger-surface" : "border-hairline bg-surface-1",
       )}
     >
       <div className="min-w-0 flex-1">
-        <p className={cx("text-body-sm font-medium", tone === "danger" ? "text-danger" : "text-ink")}>{title}</p>
+        <p className={cx("text-body-sm font-medium", tone === "danger" ? "text-danger-strong" : "text-ink")}>{title}</p>
         {children && <div className="mt-xxs text-caption text-ink-muted">{children}</div>}
       </div>
       {action && <div className="shrink-0">{action}</div>}

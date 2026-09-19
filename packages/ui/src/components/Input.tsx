@@ -2,9 +2,13 @@ import type { InputHTMLAttributes, ReactNode, Ref } from "react";
 import { cx } from "../cx";
 
 /**
- * Input is the `text-input` component from design.md: a surface-1 field with
- * an 8px radius. The focus ring comes from the global :focus-visible rule
- * rather than being restated here.
+ * Input is the `text-input` component: canvas fill, hairline border, 4px
+ * corners.
+ *
+ * The focus ring comes from the global :focus-visible rule, but a text field
+ * is focused by clicking into it rather than by tabbing, so it also darkens
+ * its own border on focus-within — otherwise the one control you are actually
+ * typing into is the one with no state.
  */
 export function Input({
   className,
@@ -23,9 +27,11 @@ export function Input({
   return (
     <div
       className={cx(
-        "no-drag flex items-center gap-xs rounded-md border bg-surface-1 px-sm",
-        "transition-colors duration-150",
-        invalid ? "border-danger" : "border-hairline focus-within:border-hairline-strong",
+        "no-drag flex items-center gap-xs rounded-sm border bg-canvas px-sm",
+        "transition-colors duration-150 ease-standard",
+        invalid
+          ? "border-danger"
+          : "border-hairline hover:border-hairline-strong focus-within:border-primary",
         className,
       )}
     >

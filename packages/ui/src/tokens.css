@@ -1,119 +1,162 @@
 /*
  * Lasso design tokens.
  *
- * Every value here comes from docs/design.md, which documents Linear's
- * marketing site. This is the single source of colour, type, spacing and
- * radius in the app: no component may hardcode a hex value, and
- * scripts/check-tokens.mjs enforces that.
+ * Every value here comes from DESIGN-webflow.md in the repo root. This is the
+ * single source of colour, type, spacing and radius in the app: no component
+ * may hardcode a hex value, and scripts/check-tokens.mjs enforces that.
  *
  * Tailwind's @theme turns each entry into both a utility class and a CSS
  * custom property, so `bg-surface-1` and `var(--color-surface-1)` stay in
  * lockstep by construction.
  *
- * Two deliberate departures from the source document, agreed up front:
+ * The token *names* are Lasso's and predate this document — they are semantic
+ * (canvas, ink, hairline, primary) rather than literal, which is what let the
+ * app change polarity by rewriting this file rather than every component.
  *
- *  1. An app-only error red. design.md permits one semantic colour and forbids
- *     a second chromatic accent, but a failed download has to be findable in a
- *     list at a glance. Its own Known Gaps section notes that error styling is
- *     undocumented and that the in-product palette is richer than marketing's,
- *     so this extends the system rather than contradicting it. It is used for
- *     failures only — never decoratively.
+ * Four deliberate derivations, all documented at their definition below:
  *
- *  2. Compressed density. Every value is from the document; the app simply
- *     picks the smaller rungs, because a desktop tool is read at arm's length
- *     rather than scrolled past.
+ *  1. A near-white surface ladder. The source has no grey steps — a card is
+ *     canvas plus a hairline border. An app needs fills for hover, selection
+ *     and inset panels, so surface-1..4 step from canvas toward hairline.
+ *
+ *  2. Readable shades of the semantic accents. #00d722 green and #ee1d36 red
+ *     are surface-fill colours; as small text on white they fail contrast.
+ *     Each gets a -strong variant for text and a tinted surface. These are
+ *     shades of the documented stops, not a sixth accent.
+ *
+ *  3. Compressed sizes. The source is a marketing site: 80px heroes, 16px
+ *     buttons, 44px touch targets. A desktop tool is read at arm's length and
+ *     holds a queue in a window. Weights, tracking and the shape system are
+ *     followed exactly; the sizes take the small end of the ladder.
+ *
+ *  4. Inter rather than WF Visual Sans, which is proprietary. The source names
+ *     Inter as the closest substitute. It is listed first and falls back to
+ *     the system stack — the app never fetches a font over the network.
  */
 
 @theme {
-  /* ---- Colour: brand accent ------------------------------------------ */
-  /* Lavender is scarce by design: brand mark, primary CTA, focus ring and
-     link emphasis. Never a section background or a card fill. */
-  --color-primary: #5e6ad2;
-  --color-primary-hover: #828fff;
-  --color-primary-focus: #5e69d1;
+  /* ---- Colour: brand -------------------------------------------------- */
+  /* Near-black is the conversion colour: every primary CTA, every heading,
+     the wordmark. Deeper than pure black so it reads as branded. The five
+     chromatic accents below are never button backgrounds. */
+  --color-primary: #080808;
+  --color-primary-hover: #222222;
+  --color-primary-focus: #363636;
   --color-on-primary: #ffffff;
-  --color-brand-secure: #7a7fad;
 
   /* ---- Colour: surface ladder ----------------------------------------- */
-  /* Hierarchy is carried by lifting through these four steps plus a hairline
-     border. design.md resists drop shadows on dark almost entirely. */
-  --color-canvas: #010102;
-  --color-surface-1: #0f1011;
-  --color-surface-2: #141516;
-  --color-surface-3: #18191a;
-  --color-surface-4: #191a1b;
+  /* Derivation 1. Canvas is the anchor; each step moves toward hairline.
+     Hierarchy is carried by the hairline border and the elevation recipes
+     below, with these fills for hover, selection and inset panels. */
+  --color-canvas: #ffffff;
+  --color-surface-1: #fbfbfb;
+  --color-surface-2: #f5f5f5;
+  --color-surface-3: #efefef;
+  --color-surface-4: #e8e8e8;
 
-  --color-hairline: #23252a;
-  --color-hairline-strong: #34343a;
-  --color-hairline-tertiary: #3e3e44;
+  --color-hairline: #d8d8d8;
+  --color-hairline-strong: #c4c4c4;
+  --color-hairline-tertiary: #ababab;
 
-  --color-inverse-canvas: #ffffff;
-  --color-inverse-surface-1: #f5f6f6;
-  --color-inverse-surface-2: #f6f7f7;
-  --color-inverse-ink: #000000;
+  /* Polarity-flipped surfaces, for the one-off dark panel the source calls
+     card-feature-dark. */
+  --color-inverse-canvas: #080808;
+  --color-inverse-surface-1: #222222;
+  --color-inverse-surface-2: #363636;
+  --color-inverse-ink: #ffffff;
 
   /* ---- Colour: text ---------------------------------------------------- */
-  --color-ink: #f7f8f8;
-  --color-ink-muted: #d0d6e0;
-  --color-ink-subtle: #8a8f98;
-  --color-ink-tertiary: #62666d;
+  --color-ink: #080808;
+  --color-ink-strong: #222222;
+  --color-ink-muted: #363636;
+  --color-ink-subtle: #5a5a5a;
+  --color-ink-tertiary: #898989;
+  --color-ink-faint: #ababab;
+
+  /* ---- Colour: chromatic accents --------------------------------------- */
+  /* The five-stop category palette. Full-saturation surface fills only —
+     never a button background, and never extended to a sixth hue. */
+  --color-accent-purple: #7a3dff;
+  --color-accent-pink: #ed52cb;
+  --color-accent-blue: #3b89ff;
+  --color-accent-orange: #ff6b00;
+  --color-accent-green: #00d722;
 
   /* ---- Colour: semantic ------------------------------------------------ */
-  --color-success: #27a644;
-  --color-overlay: #000000;
-  /* App-only. See note 1 above. */
-  --color-danger: #e5484d;
-  --color-danger-surface: #1f1315;
+  /* Derivation 2. The -strong variants exist because the accent itself is a
+     fill colour: #00d722 as 12px text on white is around 1.7:1. */
+  --color-danger: #ee1d36;
+  --color-danger-strong: #c2152a;
+  --color-danger-surface: #fdeaec;
+
+  --color-success: #00d722;
+  --color-success-strong: #0a8f22;
+  --color-success-surface: #e6fbea;
+
+  --color-warning: #ffae13;
+  --color-warning-strong: #8a5a00;
+  --color-warning-surface: #fff5e0;
+
+  --color-info: #146ef5;
+  --color-info-strong: #006acc;
+  --color-info-surface: #e8f1fe;
+
+  --color-overlay: #080808;
 
   /* ---- Type ------------------------------------------------------------ */
-  /* Linear Display, Text and Mono are proprietary; design.md names these
-     fallbacks and recommends them on macOS. No webfonts: the app must not
-     make a network request to render its own chrome. */
-  --font-display: -apple-system, "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
-  --font-sans: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  /* Derivation 4. One family across every role, as the source specifies —
+     there is no separate display face. */
+  --font-display: Inter, -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-sans: Inter, -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: Inconsolata, ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* The display sizes are marketing-scale and unused here. The app ladder
-     tops out at card-title and leans on body-sm. */
-  --text-card-title: 22px;
-  --text-card-title--line-height: 1.25;
-  --text-card-title--letter-spacing: -0.4px;
+  /* Derivation 3. Weights and tracking are the source's exactly; the sizes
+     take the small end. The weight ceiling is 600 and is never exceeded. */
+  --text-card-title: 20px;
+  --text-card-title--line-height: 1.4;
+  --text-card-title--letter-spacing: -0.2px;
   --text-card-title--font-weight: 500;
 
-  --text-subhead: 20px;
-  --text-subhead--line-height: 1.4;
-  --text-subhead--letter-spacing: -0.2px;
+  --text-subhead: 16px;
+  --text-subhead--line-height: 1.6;
+  --text-subhead--letter-spacing: -0.16px;
+  --text-subhead--font-weight: 500;
 
   --text-body: 16px;
-  --text-body--line-height: 1.5;
-  --text-body--letter-spacing: -0.05px;
+  --text-body--line-height: 1.6;
+  --text-body--letter-spacing: -0.16px;
 
   --text-body-sm: 14px;
-  --text-body-sm--line-height: 1.5;
+  --text-body-sm--line-height: 1.6;
   --text-body-sm--letter-spacing: 0px;
 
-  --text-caption: 12px;
-  --text-caption--line-height: 1.4;
+  /* The signature 550 weight, which is what makes a badge label read as a
+     label rather than as small body text. */
+  --text-caption: 12.8px;
+  --text-caption--line-height: 1.2;
   --text-caption--letter-spacing: 0px;
+  --text-caption--font-weight: 550;
 
   --text-button: 14px;
   --text-button--line-height: 1.2;
-  --text-button--letter-spacing: 0px;
+  --text-button--letter-spacing: -0.16px;
   --text-button--font-weight: 500;
 
-  /* Eyebrow takes positive tracking, which is what marks it as taxonomy
-     against the negative-tracked display sizes. */
-  --text-eyebrow: 13px;
-  --text-eyebrow--line-height: 1.3;
-  --text-eyebrow--letter-spacing: 0.4px;
+  /* Positive tracking is what marks an eyebrow as taxonomy against the
+     negative-tracked body sizes. */
+  --text-eyebrow: 12px;
+  --text-eyebrow--line-height: 1.2;
+  --text-eyebrow--letter-spacing: 0.6px;
   --text-eyebrow--font-weight: 500;
 
-  --text-mono: 13px;
+  --text-mono: 12px;
   --text-mono--line-height: 1.5;
   --text-mono--letter-spacing: 0px;
 
   /* ---- Spacing --------------------------------------------------------- */
-  /* 4px base. The marketing `section` step of 96px has no place in a window. */
+  /* 4px base. Every value is a rung of the source's scale; the names are
+     Lasso's and the marketing 3xl section gutter has no place in a window. */
+  --spacing-hair: 2px;
   --spacing-xxs: 4px;
   --spacing-xs: 8px;
   --spacing-sm: 12px;
@@ -130,17 +173,33 @@
    * collapsed the settings sheet to a 32px column. Named panel widths avoid
    * the collision entirely — use max-w-sheet, never max-w-xl.
    */
-  --container-sheet: 520px;
+  --container-sheet: 560px;
   --container-dialog: 440px;
   --container-note: 280px;
 
   /* ---- Radius ---------------------------------------------------------- */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
+  /* The source's scale exactly, and it is deliberately short: 4px for every
+     button, badge and small element, 8px for card chrome, full for circular
+     icon containers only. The brand never renders a CTA as a pill, so lg and
+     xl resolve to card radius rather than inviting anything rounder. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
   --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
   --radius-pill: 9999px;
+
+  /* ---- Elevation ------------------------------------------------------- */
+  /* The layered multi-stop drop shadow is the source's only atmospheric
+     effect and its distinctive one: five stops at very low individual
+     opacities rather than one soft blur. */
+  --shadow-layered: 0 84px 24px rgb(0 0 0 / 0), 0 54px 22px rgb(0 0 0 / 0.01),
+    0 30px 18px rgb(0 0 0 / 0.04), 0 13px 13px rgb(0 0 0 / 0.08),
+    0 3px 7px rgb(0 0 0 / 0.09);
+  --shadow-layered-strong: 0 84px 24px rgb(0 0 0 / 0), 0 54px 22px rgb(0 0 0 / 0.02),
+    0 30px 18px rgb(0 0 0 / 0.05), 0 13px 13px rgb(0 0 0 / 0.1),
+    0 3px 7px rgb(0 0 0 / 0.12);
+  --shadow-modal: 0 24px 24px rgb(0 0 0 / 0.26), 0 6px 13px rgb(0 0 0 / 0.29);
 
   /* ---- Motion ---------------------------------------------------------- */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);

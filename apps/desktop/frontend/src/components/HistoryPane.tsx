@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, EmptyState, StatusBadge, VirtualList, cx } from "@lasso/ui";
+import { Button, EmptyState, Icon, StatusBadge, Tooltip, VirtualList, cx } from "@lasso/ui";
 import type { Tone } from "@lasso/ui";
 import { api, history } from "../bindings";
 import { basename, formatBytes } from "../format";
@@ -86,7 +86,7 @@ function HistoryRow({ entry }: { entry: history.Entry }) {
         <span
           className={cx(
             "min-w-0 flex-1 truncate text-caption tabular-nums",
-            error ? "text-danger" : "text-ink-tertiary",
+            error ? "text-danger-strong" : "text-ink-tertiary",
           )}
           title={error || entry.filePath || entry.url}
         >
@@ -94,16 +94,35 @@ function HistoryRow({ entry }: { entry: history.Entry }) {
         </span>
 
         {entry.state === "done" && entry.filePath && (
-          <Button size="sm" variant="tertiary" onClick={() => void run(() => api.RevealInFinder(entry.filePath))}>
-            Show
-          </Button>
+          <Tooltip label="Show in Finder">
+            <Button
+              size="icon"
+              variant="tertiary"
+              aria-label="Show in Finder"
+              onClick={() => void run(() => api.RevealInFinder(entry.filePath))}
+            >
+              <Icon.RevealInFinder className="size-3.5" strokeWidth={1.75} aria-hidden />
+            </Button>
+          </Tooltip>
         )}
-        <Button size="sm" variant="tertiary" onClick={() => void run(() => api.DownloadAgain(entry.id))}>
+        <Button
+          size="sm"
+          variant="tertiary"
+          onClick={() => void run(() => api.DownloadAgain(entry.id))}
+          icon={<Icon.Retry className="size-3.5" strokeWidth={1.75} aria-hidden />}
+        >
           Again
         </Button>
-        <Button size="sm" variant="tertiary" onClick={() => void run(() => api.ForgetHistoryEntry(entry.id))}>
-          Forget
-        </Button>
+        <Tooltip label="Forget this download">
+          <Button
+            size="icon"
+            variant="tertiary"
+            aria-label="Forget this download"
+            onClick={() => void run(() => api.ForgetHistoryEntry(entry.id))}
+          >
+            <Icon.Clear className="size-3.5" strokeWidth={1.75} aria-hidden />
+          </Button>
+        </Tooltip>
       </div>
     </div>
   );

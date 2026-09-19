@@ -101,7 +101,7 @@ export function PresetBar({
                     }}
                     className={cx(
                       "no-drag absolute right-1.5 text-caption text-ink-tertiary",
-                      "opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger",
+                      "opacity-0 transition-opacity group-hover:opacity-100 hover:text-danger-strong",
                     )}
                   >
                     ×
@@ -138,7 +138,7 @@ export function PresetBar({
         </div>
       )}
 
-      {error && <p className="text-caption text-danger">{error}</p>}
+      {error && <p className="text-caption text-danger-strong">{error}</p>}
     </div>
   );
 }

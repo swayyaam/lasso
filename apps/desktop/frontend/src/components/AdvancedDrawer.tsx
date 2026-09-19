@@ -1,6 +1,52 @@
 import { useState } from "react";
-import { Card, Checkbox, Disclosure, Field, Input, Select } from "@lasso/ui";
+import { Card, Checkbox, Disclosure, Dropdown, Field, Input } from "@lasso/ui";
+import type { DropdownOption } from "@lasso/ui";
 import { core } from "../bindings";
+
+/**
+ * The option tables live here rather than inline so the drawer reads as the
+ * shape of the form instead of a wall of <option> tags.
+ *
+ * Browsers carry a hint because the choice has a consequence the label cannot
+ * show: macOS keeps Safari's cookies inside a protected container, so Lasso
+ * cannot read them without Full Disk Access. Chrome and Firefox need nothing.
+ */
+const CONTAINERS: DropdownOption[] = [
+  { value: "", label: "Automatic" },
+  { value: "mp4", label: "MP4" },
+  { value: "mkv", label: "MKV" },
+  { value: "webm", label: "WebM" },
+];
+
+const VIDEO_CODECS: DropdownOption[] = [
+  { value: "", label: "Any" },
+  { value: "h264", label: "H.264" },
+  { value: "h265", label: "H.265" },
+  { value: "vp9", label: "VP9" },
+  { value: "av01", label: "AV1" },
+];
+
+const AUDIO_CODECS: DropdownOption[] = [
+  { value: "", label: "Any" },
+  { value: "aac", label: "AAC" },
+  { value: "opus", label: "Opus" },
+  { value: "mp3", label: "MP3" },
+];
+
+const SPONSORBLOCK: DropdownOption[] = [
+  { value: "", label: "Off" },
+  { value: "remove", label: "Remove segments" },
+  { value: "mark", label: "Mark as chapters" },
+];
+
+export const BROWSERS: DropdownOption[] = [
+  { value: "", label: "None" },
+  { value: "chrome", label: "Chrome" },
+  { value: "firefox", label: "Firefox" },
+  { value: "brave", label: "Brave" },
+  { value: "arc", label: "Arc" },
+  { value: "safari", label: "Safari", hint: "Needs Full Disk Access" },
+];
 
 type Section = "format" | "subtitles" | "enhancements" | "playlist" | "network" | "output";
 
@@ -45,42 +91,32 @@ export function AdvancedDrawer({
         summary={summarise([options.container || "auto container", options.videoCodec, options.audioCodec])}
       >
         <Field label="Container" hint={audioOnly ? "Audio-only downloads use the audio format instead." : undefined}>
-          <Select
+          <Dropdown
+            ariaLabel="Container"
             value={options.container ?? ""}
             disabled={audioOnly}
-            onChange={(e) => patch({ container: e.target.value } as Partial<core.Options>)}
-          >
-            <option value="">Automatic</option>
-            <option value="mp4">MP4</option>
-            <option value="mkv">MKV</option>
-            <option value="webm">WebM</option>
-          </Select>
+            options={CONTAINERS}
+            onChange={(value) => patch({ container: value } as Partial<core.Options>)}
+          />
         </Field>
 
         <div className="grid grid-cols-2 gap-sm">
           <Field label="Video codec">
-            <Select
+            <Dropdown
+              ariaLabel="Video codec"
               value={options.videoCodec ?? ""}
               disabled={audioOnly}
-              onChange={(e) => patch({ videoCodec: e.target.value } as Partial<core.Options>)}
-            >
-              <option value="">Any</option>
-              <option value="h264">H.264</option>
-              <option value="h265">H.265</option>
-              <option value="vp9">VP9</option>
-              <option value="av01">AV1</option>
-            </Select>
+              options={VIDEO_CODECS}
+              onChange={(value) => patch({ videoCodec: value } as Partial<core.Options>)}
+            />
           </Field>
           <Field label="Audio codec">
-            <Select
+            <Dropdown
+              ariaLabel="Audio codec"
               value={options.audioCodec ?? ""}
-              onChange={(e) => patch({ audioCodec: e.target.value } as Partial<core.Options>)}
-            >
-              <option value="">Any</option>
-              <option value="aac">AAC</option>
-              <option value="opus">Opus</option>
-              <option value="mp3">MP3</option>
-            </Select>
+              options={AUDIO_CODECS}
+              onChange={(value) => patch({ audioCodec: value } as Partial<core.Options>)}
+            />
           </Field>
         </div>
       </Disclosure>
@@ -136,16 +172,14 @@ export function AdvancedDrawer({
         ])}
       >
         <Field label="SponsorBlock" hint="Uses the community database of sponsored segments.">
-          <Select
+          <Dropdown
+            ariaLabel="SponsorBlock"
             value={options.enhancements?.sponsorBlock ?? ""}
-            onChange={(e) =>
-              patch({ enhancements: { ...options.enhancements, sponsorBlock: e.target.value } } as Partial<core.Options>)
+            options={SPONSORBLOCK}
+            onChange={(value) =>
+              patch({ enhancements: { ...options.enhancements, sponsorBlock: value } } as Partial<core.Options>)
             }
-          >
-            <option value="">Off</option>
-            <option value="remove">Remove segments</option>
-            <option value="mark">Mark as chapters</option>
-          </Select>
+          />
         </Field>
         <Checkbox
           label="Embed chapters"
@@ -226,17 +260,12 @@ export function AdvancedDrawer({
           />
         </Field>
         <Field label="Cookies from browser" hint="Needed for private, members-only and age-restricted videos.">
-          <Select
+          <Dropdown
+            ariaLabel="Cookies from browser"
             value={options.network?.cookies ?? ""}
-            onChange={(e) => patch({ network: { ...options.network, cookies: e.target.value } } as Partial<core.Options>)}
-          >
-            <option value="">None</option>
-            <option value="safari">Safari</option>
-            <option value="chrome">Chrome</option>
-            <option value="firefox">Firefox</option>
-            <option value="brave">Brave</option>
-            <option value="arc">Arc</option>
-          </Select>
+            options={BROWSERS}
+            onChange={(value) => patch({ network: { ...options.network, cookies: value } } as Partial<core.Options>)}
+          />
         </Field>
       </Disclosure>
 

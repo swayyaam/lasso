@@ -36,9 +36,9 @@ func main() {
 			// the Vite dev server would otherwise answer every unknown path.
 			Middleware: app.assetMiddleware,
 		},
-		// The design system is a dark canvas; anything lighter shows as a
-		// flash while the window paints.
-		BackgroundColour: &options.RGBA{R: 1, G: 1, B: 2, A: 1},
+		// Matches --color-canvas. Anything else shows as a flash while the
+		// window paints.
+		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		Bind: []any{
@@ -46,9 +46,11 @@ func main() {
 		},
 		Mac: &mac.Options{
 			// Traffic lights sit inside the app's own header bar: a stock
-			// title bar would show as a grey strip against the dark canvas.
-			TitleBar:             mac.TitleBarHiddenInset(),
-			Appearance:           mac.NSAppearanceNameDarkAqua,
+			// title bar would show as a grey strip against the canvas.
+			TitleBar: mac.TitleBarHiddenInset(),
+			// Aqua, so the traffic lights and any native menu or dialog match
+			// the white canvas rather than sitting dark on it.
+			Appearance:           mac.NSAppearanceNameAqua,
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			About: &mac.AboutInfo{

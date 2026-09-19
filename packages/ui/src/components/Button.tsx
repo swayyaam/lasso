@@ -2,20 +2,29 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { cx } from "../cx";
 
 type Variant = "primary" | "secondary" | "tertiary" | "danger";
-type Size = "sm" | "md";
+type Size = "sm" | "md" | "icon";
 
 /**
- * Button implements the four button styles in design.md.
+ * Button implements the button styles in DESIGN-webflow.md.
  *
- * Corners are always `md` (8px): the document is explicit that CTAs are never
- * pill-rounded. Lavender appears on `primary` only — it is the app's single
- * chromatic accent and stays scarce.
+ * The system's conversion hierarchy is deliberately two-colour: near-black
+ * fill for the one action that matters on a surface, white-on-hairline for
+ * everything else. The five chromatic accents are surface fills and never
+ * appear here — "Don't use chromatic accents as button backgrounds."
+ *
+ * Corners are `sm` (4px) throughout. The document is explicit that the brand
+ * never renders a CTA as a pill and that 4px is the canonical button radius.
+ *
+ * Every variant defines hover *and* active. A button that only changes on
+ * hover feels unresponsive at the moment of clicking, which is the moment the
+ * feedback is actually wanted.
  */
 export function Button({
   variant = "secondary",
   size = "md",
   busy = false,
   icon,
+  trailingIcon,
   className,
   children,
   disabled,
@@ -25,13 +34,33 @@ export function Button({
   size?: Size;
   /** Shows a spinner and blocks input while an action is in flight. */
   busy?: boolean;
+  /** Leading icon. Keep it to a 14px lucide glyph so the label stays the subject. */
   icon?: ReactNode;
+  /** Trailing icon, for actions that lead somewhere — the document's text-arrow button. */
+  trailingIcon?: ReactNode;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   const variants: Record<Variant, string> = {
-    primary: "bg-primary text-on-primary hover:bg-primary-hover active:bg-primary-focus",
-    secondary: "bg-surface-1 text-ink border border-hairline hover:bg-surface-2 hover:border-hairline-strong",
-    tertiary: "bg-transparent text-ink-subtle hover:text-ink hover:bg-surface-1",
-    danger: "bg-transparent text-danger border border-danger/40 hover:bg-danger/10",
+    // The canonical near-black CTA. Hover and press walk up the ink ramp
+    // rather than fading, so the control never looks disabled mid-press.
+    primary: "bg-primary text-on-primary hover:bg-primary-hover active:bg-primary-focus shadow-sm",
+    // The white outline CTA: canvas fill, hairline border. Both the fill and
+    // the border move, which is what makes it read as raised rather than as
+    // text that happens to be boxed.
+    secondary:
+      "bg-canvas text-ink border border-hairline hover:bg-surface-2 hover:border-hairline-strong active:bg-surface-3",
+    // Ghost. Nothing until pointed at, then a fill — the quiet actions in a
+    // row of controls, where a border on each would fence the row into stripes.
+    tertiary: "bg-transparent text-ink-subtle hover:bg-surface-2 hover:text-ink active:bg-surface-3",
+    danger:
+      "bg-transparent text-danger-strong border border-danger/30 hover:bg-danger-surface hover:border-danger/60 active:bg-danger-surface",
+  };
+
+  const sizes: Record<Size, string> = {
+    sm: "h-7 px-sm gap-xxs",
+    md: "h-9 px-md gap-xs",
+    // Square, for a glyph with no label. The accessible name has to come from
+    // aria-label or a tooltip.
+    icon: "size-7 gap-0",
   };
 
   return (
@@ -39,13 +68,13 @@ export function Button({
       type="button"
       disabled={disabled || busy}
       className={cx(
-        "no-drag inline-flex items-center justify-center gap-xs rounded-md",
-        "text-button font-medium whitespace-nowrap",
-        "transition-colors duration-150",
-        // Disabled reads as ink-tertiary rather than a faded copy of the
-        // variant, so every state resolves to a documented colour.
-        "disabled:pointer-events-none disabled:bg-surface-1 disabled:text-ink-tertiary disabled:border-hairline",
-        size === "sm" ? "h-7 px-sm" : "h-8 px-sm",
+        "no-drag inline-flex shrink-0 items-center justify-center rounded-sm",
+        "text-button whitespace-nowrap",
+        "transition-[background-color,border-color,color,box-shadow] duration-150 ease-standard",
+        // Disabled resolves to documented colours rather than an opacity fade,
+        // so a disabled primary does not read as a dimmer primary.
+        "disabled:pointer-events-none disabled:border-transparent disabled:bg-surface-2 disabled:text-ink-faint disabled:shadow-none",
+        sizes[size],
         variants[variant],
         className,
       )}
@@ -53,6 +82,7 @@ export function Button({
     >
       {busy ? <Spinner /> : icon}
       {children}
+      {trailingIcon}
     </button>
   );
 }

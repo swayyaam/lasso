@@ -33,7 +33,7 @@ export function MonoBlock({
   }
 
   return (
-    <div className={cx("relative rounded-xl border border-hairline bg-surface-1", className)}>
+    <div className={cx("relative rounded-md border border-hairline bg-surface-1", className)}>
       <pre
         data-selectable
         className="overflow-auto p-sm pr-16 font-mono text-mono whitespace-pre-wrap break-all text-ink-muted"

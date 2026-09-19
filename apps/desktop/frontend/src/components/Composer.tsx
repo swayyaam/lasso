@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Banner, Button, Details, Input, MonoBlock } from "@lasso/ui";
+import { Banner, Button, Details, Icon, Input, MonoBlock } from "@lasso/ui";
 import { api, core, presets as presetModels } from "../bindings";
 import { looksLikeURL } from "../format";
 import { AdvancedDrawer } from "./AdvancedDrawer";
@@ -154,6 +154,7 @@ export function Composer({
             size="sm"
             busy={resolving}
             disabled={!url.trim() || disabled}
+            icon={<Icon.Resolve className="size-3.5" strokeWidth={1.75} aria-hidden />}
             onClick={() => void resolve()}
           >
             {resolving ? "Resolving" : "Fetch"}
@@ -167,7 +168,12 @@ export function Composer({
           tone="danger"
           action={
             needsFullDiskAccess(error) ? (
-              <Button size="sm" variant="secondary" onClick={() => void api.OpenFullDiskAccessSettings()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<Icon.Settings className="size-3.5" strokeWidth={1.75} aria-hidden />}
+                onClick={() => void api.OpenFullDiskAccessSettings()}
+              >
                 Open System Settings
               </Button>
             ) : undefined
@@ -209,14 +215,36 @@ export function Composer({
       />
 
       <div className="flex items-center gap-xs">
-        <Button variant="tertiary" size="sm" onClick={() => setDrawerOpen((v) => !v)} aria-expanded={drawerOpen}>
+        <Button
+          variant="tertiary"
+          size="sm"
+          onClick={() => setDrawerOpen((v) => !v)}
+          aria-expanded={drawerOpen}
+          icon={<Icon.Advanced className="size-3.5" strokeWidth={1.75} aria-hidden />}
+        >
           {drawerOpen ? "Hide advanced" : "Advanced"}
         </Button>
-        <Button variant="tertiary" size="sm" onClick={showCommand}>
+        <Button
+          variant="tertiary"
+          size="sm"
+          onClick={showCommand}
+          icon={<Icon.Command className="size-3.5" strokeWidth={1.75} aria-hidden />}
+        >
           Show command
         </Button>
         <div className="flex-1" />
-        <Button variant="primary" onClick={download} disabled={!canDownload}>
+        <Button
+          variant="primary"
+          onClick={download}
+          disabled={!canDownload}
+          icon={
+            queued ? (
+              <Icon.Ok className="size-4" strokeWidth={1.75} aria-hidden />
+            ) : (
+              <Icon.Download className="size-4" strokeWidth={1.75} aria-hidden />
+            )
+          }
+        >
           {queued ? "Added" : "Download"}
         </Button>
       </div>

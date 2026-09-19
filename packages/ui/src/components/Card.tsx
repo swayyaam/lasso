@@ -2,10 +2,14 @@ import type { HTMLAttributes, ReactNode } from "react";
 import { cx } from "../cx";
 
 /**
- * Card is the `feature-card` pattern: a surface-1 panel with a 12px radius and
- * a hairline border. Depth comes from the surface ladder, never a shadow.
+ * Card is the `card-feature` pattern: canvas, a hairline border and 8px
+ * corners — the document's Level 1 elevation.
  *
- * Padding is `md` rather than the document's `lg`, which is the agreed
+ * A lifted card takes the layered multi-stop drop shadow, which is the
+ * system's only atmospheric effect and its signature one: five stops at very
+ * low individual opacities rather than a single soft blur.
+ *
+ * Padding is `md` rather than the document's 32px, which is the agreed
  * compression for app density.
  */
 export function Card({
@@ -15,7 +19,7 @@ export function Card({
   children,
   ...rest
 }: {
-  /** Lifts to surface-2, the document's treatment for a featured card. */
+  /** Applies the layered drop shadow, the treatment for a featured card. */
   lifted?: boolean;
   padded?: boolean;
   children: ReactNode;
@@ -23,8 +27,8 @@ export function Card({
   return (
     <div
       className={cx(
-        "rounded-lg border",
-        lifted ? "border-hairline-strong bg-surface-2" : "border-hairline bg-surface-1",
+        "rounded-md border bg-canvas",
+        lifted ? "border-hairline shadow-layered" : "border-hairline",
         padded && "p-md",
         className,
       )}

@@ -1,4 +1,4 @@
-import { Button } from "@lasso/ui";
+import { Button, Icon } from "@lasso/ui";
 
 /**
  * TitleBar is the app's own header, standing in for the system title bar.
@@ -23,7 +23,12 @@ export function TitleBar({
       {ytDlpVersion && (
         <span className="text-caption text-ink-tertiary tabular-nums">yt-dlp {ytDlpVersion}</span>
       )}
-      <Button variant="tertiary" size="sm" onClick={onOpenSettings}>
+      <Button
+        variant="tertiary"
+        size="sm"
+        onClick={onOpenSettings}
+        icon={<Icon.Settings className="size-3.5" strokeWidth={1.75} aria-hidden />}
+      >
         Settings
       </Button>
     </header>

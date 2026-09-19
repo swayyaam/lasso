@@ -2,12 +2,16 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { cx } from "../cx";
 
 /**
- * Chip is the `pricing-tab` toggle from design.md, used here for the quick
- * quality picks.
+ * Chip is the quality / preset toggle.
  *
- * Selection is shown by lifting to surface-2, not by filling with lavender:
- * the document reserves the accent for the brand mark, the primary CTA, focus
- * and link emphasis.
+ * Selection is carried by the brand primary, which is what DESIGN-webflow.md
+ * specifies for an active state: "Active state uses brand primary as the
+ * indicator". A near-black fill against white is unmistakable across a row of
+ * eight rungs, where the previous treatment — a slightly lifted surface —
+ * left the current choice needing to be hunted for.
+ *
+ * 4px corners, not pill: the document reserves full-round for circular icon
+ * containers.
  */
 export function Chip({
   selected = false,
@@ -23,11 +27,12 @@ export function Chip({
       type="button"
       aria-pressed={selected}
       className={cx(
-        "no-drag h-7 rounded-pill px-sm text-button font-medium transition-colors duration-150",
-        "disabled:pointer-events-none disabled:text-ink-tertiary",
+        "no-drag inline-flex h-7 items-center gap-xxs rounded-sm px-sm text-button",
+        "border transition-[background-color,border-color,color] duration-150 ease-standard",
+        "disabled:pointer-events-none disabled:border-transparent disabled:bg-surface-2 disabled:text-ink-faint",
         selected
-          ? "bg-surface-2 text-ink ring-1 ring-hairline-strong"
-          : "bg-transparent text-ink-subtle hover:bg-surface-1 hover:text-ink-muted",
+          ? "border-primary bg-primary text-on-primary hover:bg-primary-hover"
+          : "border-hairline bg-canvas text-ink-subtle hover:border-hairline-strong hover:bg-surface-2 hover:text-ink",
         className,
       )}
       {...rest}

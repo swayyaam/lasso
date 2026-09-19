@@ -35,10 +35,10 @@ export function Select({
   return (
     <select
       className={cx(
-        "no-drag h-8 w-full rounded-md border border-hairline bg-surface-1 px-xs",
-        "text-body-sm text-ink transition-colors duration-150",
-        "hover:border-hairline-strong focus:outline-none",
-        "disabled:text-ink-tertiary",
+        "no-drag h-9 w-full rounded-sm border border-hairline bg-canvas px-xs",
+        "text-body-sm text-ink transition-colors duration-150 ease-standard",
+        "hover:border-hairline-strong focus:border-primary focus:outline-none",
+        "disabled:bg-surface-2 disabled:text-ink-faint",
         className,
       )}
       {...rest}
@@ -61,7 +61,8 @@ export function Checkbox({
         type="checkbox"
         className={cx(
           "mt-0.5 size-4 shrink-0 cursor-pointer appearance-none rounded-xs",
-          "border border-hairline-strong bg-surface-1 transition-colors duration-150",
+          "border border-hairline-strong bg-canvas transition-colors duration-150",
+          "hover:border-primary",
           "checked:border-primary checked:bg-primary",
           // The tick is drawn with a border rather than an SVG so it inherits
           // the token colours and needs no asset.
