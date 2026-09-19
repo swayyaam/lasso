@@ -334,3 +334,84 @@ func TestSourcesBelowTheLadderAreStillNamed(t *testing.T) {
 		t.Errorf("BestLabel = %q, want the real resolution", got.BestLabel)
 	}
 }
+
+// muxedFormat carries video and audio in one stream, the way YouTube's
+// fallback (itag 18) does.
+func muxedFormat(id string, w, h int) Format {
+	return Format{ID: id, Ext: "mp4", Width: w, Height: h, FPS: 30, VCodec: "avc1", ACodec: "mp4a"}
+}
+
+func TestDetectsAWithheldFormatList(t *testing.T) {
+	cases := []struct {
+		name    string
+		formats []Format
+		want    bool
+	}{
+		{
+			// The signature: YouTube serving a request it would not authenticate
+			// is left offering itag 18 and nothing else. This is what makes a 4K
+			// video look like a 360p one.
+			name:    "only the muxed fallback stream",
+			formats: []Format{muxedFormat("18", 640, 360)},
+			want:    true,
+		},
+		{
+			name: "a 4K video served properly",
+			formats: []Format{
+				videoFormat("401", 3840, 2160, 30, ""),
+				videoFormat("137", 1920, 1080, 30, ""),
+				audioFormat("140"),
+				muxedFormat("18", 640, 360),
+			},
+			want: false,
+		},
+		{
+			// A genuinely small upload still lists separate tracks, so it is not
+			// being withheld — it simply has nothing better.
+			name: "a low-resolution upload with adaptive streams",
+			formats: []Format{
+				videoFormat("160", 426, 240, 30, ""),
+				audioFormat("140"),
+			},
+			want: false,
+		},
+		{
+			// A direct file is one muxed stream by nature. Above the fallback
+			// ceiling there is no reason to suspect anything was held back.
+			name:    "a single muxed stream above the ceiling",
+			formats: []Format{muxedFormat("0", 1920, 1080)},
+			want:    false,
+		},
+		{
+			name:    "an audio-only source",
+			formats: []Format{audioFormat("140")},
+			want:    false,
+		},
+		{
+			name:    "nothing at all",
+			formats: nil,
+			want:    false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := AnalyseFormats(c.formats).Limited; got != c.want {
+				t.Errorf("Limited = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestWithheldListStillOffersWhatItHas(t *testing.T) {
+	// Flagging the list must not empty it: 360p is still downloadable, and a
+	// user who wants it anyway should not be blocked.
+	got := AnalyseFormats([]Format{muxedFormat("18", 640, 360)})
+
+	if !got.Limited {
+		t.Fatal("expected the list to be flagged")
+	}
+	if !slices.Contains(tierHeights(got), 360) {
+		t.Errorf("tiers = %v, want 360p to remain offerable", tierHeights(got))
+	}
+}

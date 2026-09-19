@@ -38,7 +38,17 @@ type QualityOptions struct {
 	// CountedFormats is the number of real downloadable formats, excluding
 	// storyboards.
 	CountedFormats int `json:"countedFormats"`
+	// Limited is true when the format list has the shape a site returns to a
+	// client it will not serve properly: one low muxed stream and no separate
+	// video track at all. See looksLimited.
+	Limited bool `json:"limited"`
 }
+
+// limitedCeiling is the tallest a format list can be and still look withheld.
+//
+// It is YouTube's fallback stream (itag 18, 360p muxed), which is what a
+// request without working authentication is left with.
+const limitedCeiling = 360
 
 // tierLadder is the set of rungs Lasso offers, largest first.
 var tierLadder = []struct {
@@ -102,6 +112,10 @@ func AnalyseFormats(formats []Format) QualityOptions {
 	}
 	seen := map[int]*tierState{}
 
+	// A site serving a link properly offers separate video and audio streams to
+	// combine. Their total absence is the signal that something was withheld.
+	adaptive := false
+
 	for _, f := range formats {
 		if f.IsStoryboard() {
 			continue
@@ -122,6 +136,9 @@ func AnalyseFormats(formats []Format) QualityOptions {
 			continue
 		}
 		options.HasVideo = true
+		if !f.HasAudio() {
+			adaptive = true
+		}
 		if short > options.BestHeight {
 			options.BestHeight = short
 		}
@@ -162,7 +179,21 @@ func AnalyseFormats(formats []Format) QualityOptions {
 	})
 
 	options.BestLabel = labelFor(options.BestHeight)
+	options.Limited = looksLimited(options.HasVideo, options.BestHeight, adaptive)
 	return options
+}
+
+// looksLimited reports whether a format list looks withheld rather than simply
+// small.
+//
+// The signature is a video whose best is no better than the fallback stream,
+// offered only as a single muxed file. A site that genuinely has nothing better
+// still lists its low resolutions as separate video and audio tracks, so the
+// absence of those is what separates "this is all there is" from "this is all
+// you are being given". The usual cause is a request the site would not
+// authenticate.
+func looksLimited(hasVideo bool, bestHeight int, adaptive bool) bool {
+	return hasVideo && !adaptive && bestHeight > 0 && bestHeight <= limitedCeiling
 }
 
 // GenericQualityOptions is the ladder offered when the real formats are not

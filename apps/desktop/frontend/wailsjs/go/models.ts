@@ -417,6 +417,7 @@ export namespace core {
 	    bestLabel: string;
 	    approximate: boolean;
 	    countedFormats: number;
+	    limited: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new QualityOptions(source);
@@ -431,6 +432,7 @@ export namespace core {
 	        this.bestLabel = source["bestLabel"];
 	        this.approximate = source["approximate"];
 	        this.countedFormats = source["countedFormats"];
+	        this.limited = source["limited"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

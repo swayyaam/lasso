@@ -21,6 +21,10 @@ function pickFor(height: number): string {
  * promise something the download would silently fail to deliver. A flat
  * playlist has no per-item formats, so it gets the standard ladder and says
  * "up to" instead.
+ *
+ * The same honesty cuts the other way: when the site has withheld everything
+ * above its fallback stream, showing a lone 360p chip with no explanation reads
+ * as "this video is only 360p". The note says otherwise.
  */
 export function QualityPicks({
   quality,
@@ -50,6 +54,14 @@ export function QualityPicks({
             <Eyebrow>Quality</Eyebrow>
             {approximate && <span className="text-caption text-ink-tertiary">up to, per item</span>}
           </div>
+
+          {quality?.limited && (
+            <p className="max-w-note text-caption text-ink-tertiary">
+              Only the site&rsquo;s fallback stream was offered. Higher qualities are
+              probably being withheld rather than missing — sites hold them back until
+              you are signed in. Turn on cookies from your browser in Settings.
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-xxs">
             <Chip selected={value === "best"} disabled={disabled} onClick={() => onChange("best")}>
