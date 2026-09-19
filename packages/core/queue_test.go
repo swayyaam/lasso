@@ -772,3 +772,67 @@ func TestWithoutSubtitles(t *testing.T) {
 		t.Error("WithoutSubtitles changed more than the subtitles")
 	}
 }
+
+func TestFinishedItemCarriesThePostProcessedFile(t *testing.T) {
+	// yt-dlp writes one file, a post-processor replaces it with another, and
+	// deletes the first. The item must end up naming the survivor.
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, _ func(string)) error {
+		if isMetadataCall(args) {
+			stdout(`{"id":"x","title":"Song"}`)
+			return nil
+		}
+		stdout(`[download] Destination: /tmp/Song.webm`)
+		stdout(`{"stage":"downloading","downloaded":10,"total":10}`)
+		stdout(`[ExtractAudio] Destination: /tmp/Song.mp3`)
+		stdout(`{"stage":"complete","path":"/tmp/Song.mp3"}`)
+		return nil
+	}}
+
+	h := newQueueHarness(t, runner, 1)
+	item, err := h.q.Add(Options{URL: "https://example.com/v", Pick: PickAudioMP3}, "Song")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	h.waitFor(t, item.ID, StateDone)
+
+	done, _ := h.q.Get(item.ID)
+	if done.FilePath != "/tmp/Song.mp3" {
+		t.Errorf("FilePath = %q, want the file that still exists", done.FilePath)
+	}
+}
+
+func TestRetryClearsTheFinishedFile(t *testing.T) {
+	var attempt atomic.Int32
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, stderr func(string)) error {
+		if isMetadataCall(args) {
+			stdout(`{"id":"x","title":"Clip"}`)
+			return nil
+		}
+		if attempt.Add(1) == 1 {
+			stdout(`{"stage":"complete","path":"/tmp/Clip.mp4"}`)
+			return nil
+		}
+		stderr("ERROR: Video unavailable")
+		return errors.New("exit status 1")
+	}}
+
+	h := newQueueHarness(t, runner, 1)
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	h.waitFor(t, item.ID, StateDone)
+
+	// A finished item cannot be retried, so cancel-then-retry is not available
+	// either; force the item back through a failure to prove the field resets.
+	h.q.mu.Lock()
+	h.q.items[item.ID].State = StateFailed
+	h.q.mu.Unlock()
+
+	if err := h.q.Retry(item.ID); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	h.waitFor(t, item.ID, StateFailed)
+
+	failed, _ := h.q.Get(item.ID)
+	if failed.FilePath != "" {
+		t.Errorf("FilePath = %q, want a failed retry not to keep pointing at the old file", failed.FilePath)
+	}
+}

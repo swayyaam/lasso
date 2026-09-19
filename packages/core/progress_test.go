@@ -248,3 +248,58 @@ func FuzzProgressParser(f *testing.F) {
 		}
 	})
 }
+
+func TestRecordsCompletedFilePath(t *testing.T) {
+	p := NewProgressParser()
+
+	if p.OutputPath() != "" {
+		t.Error("a fresh parser should know of no output file")
+	}
+
+	// The file being written, which a post-processor will replace.
+	p.Line(`[download] Destination: /tmp/Song.webm`)
+	// yt-dlp's own report of what it finished with.
+	if _, ok := p.Line(`{"stage":"complete","path":"/tmp/Song.mp3"}`); ok {
+		t.Error("a completed-file line is not progress and must not be reported as an update")
+	}
+
+	if got := p.OutputPath(); got != "/tmp/Song.mp3" {
+		t.Errorf("OutputPath = %q, want the post-processed file", got)
+	}
+}
+
+func TestCompletedPathWinsOverDestination(t *testing.T) {
+	// This is the whole point of asking yt-dlp: "Destination" names a file
+	// that extracting audio deletes.
+	p := NewProgressParser()
+	p.Line(`[download] Destination: /tmp/Clip.mp4`)
+	p.Line(`{"stage":"complete","path":"/tmp/Clip.mkv"}`)
+
+	progress, ok := p.Line(`[download] Downloading item 2 of 3`)
+	if !ok {
+		t.Fatal("expected a playlist position update")
+	}
+	if progress.Filename != "/tmp/Clip.mkv" {
+		t.Errorf("Filename = %q, want the finished file rather than the deleted one", progress.Filename)
+	}
+}
+
+func TestLastCompletedFileWinsForPlaylists(t *testing.T) {
+	p := NewProgressParser()
+	p.Line(`{"stage":"complete","path":"/tmp/One.mp4"}`)
+	p.Line(`{"stage":"complete","path":"/tmp/Two.mp4"}`)
+
+	if got := p.OutputPath(); got != "/tmp/Two.mp4" {
+		t.Errorf("OutputPath = %q, want the most recently finished file", got)
+	}
+}
+
+func TestCompletedLineWithoutPathIsIgnored(t *testing.T) {
+	p := NewProgressParser()
+	p.Line(`{"stage":"complete","path":"/tmp/Real.mp4"}`)
+	p.Line(`{"stage":"complete","path":""}`)
+
+	if got := p.OutputPath(); got != "/tmp/Real.mp4" {
+		t.Errorf("OutputPath = %q, want an empty report not to erase a known file", got)
+	}
+}

@@ -56,3 +56,15 @@ export function looksLikeURL(text: string): boolean {
   if (!trimmed || /\s/.test(trimmed)) return false;
   return /^https?:\/\/\S+\.\S+/i.test(trimmed);
 }
+
+/**
+ * basename is the last path segment — the filename a person recognises.
+ *
+ * Download paths are absolute and long enough to truncate away to nothing in a
+ * queue row, so the row shows this and keeps the full path in the tooltip.
+ */
+export function basename(path: string): string {
+  if (!path) return "";
+  const parts = path.split("/");
+  return parts[parts.length - 1] || path;
+}

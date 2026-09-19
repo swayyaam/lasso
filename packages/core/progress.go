@@ -38,8 +38,10 @@ type Progress struct {
 	Filename string `json:"filename"`
 }
 
-// progressLine mirrors the JSON emitted by progressTemplate. Fields default to
-// zero rather than null, so zero means "not known".
+// progressLine mirrors the JSON yt-dlp is asked to emit. Two templates produce
+// it: progressTemplate during the transfer, and completedTemplate once per
+// finished file. Stage says which. Fields default to zero rather than null, so
+// zero means "not known".
 type progressLine struct {
 	Stage      string  `json:"stage"`
 	Downloaded int64   `json:"downloaded"`
@@ -49,7 +51,13 @@ type progressLine struct {
 	ETA        int     `json:"eta"`
 	Fragment   int     `json:"fragment"`
 	Fragments  int     `json:"fragments"`
+	// Path is the finished file, on a completedTemplate line only.
+	Path string `json:"path"`
 }
+
+// stageComplete is the stage completedTemplate reports. It is not a Stage: a
+// finished file is a result, not a point in the transfer.
+const stageComplete = "complete"
 
 // postProcessorLabels maps yt-dlp's bracketed post-processor tags to something
 // worth showing. Matching on the tag rather than the full sentence keeps this
@@ -84,12 +92,20 @@ type ProgressParser struct {
 	items    int
 	filename string
 	stage    Stage
+	// output is the last file yt-dlp reported as finished. Unlike filename it
+	// survives post-processing, because yt-dlp reports it after the fact.
+	output string
 }
 
 // NewProgressParser returns a parser positioned at the fetching stage.
 func NewProgressParser() *ProgressParser {
 	return &ProgressParser{stage: StageFetching}
 }
+
+// OutputPath is the last file yt-dlp reported finishing, or "" if it reported
+// none. For a playlist that is the last item downloaded, which is the one a
+// user asking to see the result most likely means.
+func (p *ProgressParser) OutputPath() string { return p.output }
 
 // Line consumes one line of yt-dlp output. It reports false for lines that say
 // nothing about progress, which is most of them.
@@ -112,6 +128,18 @@ func (p *ProgressParser) parseJSON(line string) (Progress, bool) {
 		return Progress{}, false
 	}
 	if raw.Stage == "" {
+		return Progress{}, false
+	}
+
+	// A finished file says nothing about progress, so it produces no update.
+	// It is recorded and read back with OutputPath once the run is over.
+	if raw.Stage == stageComplete {
+		if raw.Path != "" {
+			p.output = raw.Path
+			// The in-flight display should stop naming a file that has just
+			// been replaced by this one.
+			p.filename = raw.Path
+		}
 		return Progress{}, false
 	}
 

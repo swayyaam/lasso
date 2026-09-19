@@ -614,3 +614,47 @@ func TestDenoIsNamedExplicitly(t *testing.T) {
 		t.Error("--js-runtimes emitted with no deno path")
 	}
 }
+
+func TestExecArgsAsksForTheFinishedFilePath(t *testing.T) {
+	o := baseOptions()
+	shown := BuildArgs(o)
+	executed := ExecArgs(o)
+
+	template, ok := argValue(executed, "--print")
+	if !ok {
+		t.Fatal("ExecArgs does not ask yt-dlp which file it produced")
+	}
+	if !strings.HasPrefix(template, "after_move:") {
+		// Any earlier stage names a file a post-processor may still replace.
+		t.Errorf("--print template %q does not run after the file is in place", template)
+	}
+	if !strings.Contains(template, "%(filepath)j") {
+		t.Errorf("--print template %q does not emit the path as JSON", template)
+	}
+
+	// --print implies --quiet, which would silence the progress template.
+	if !hasFlag(executed, "--no-quiet") {
+		t.Error("--print without --no-quiet silences progress reporting")
+	}
+	quiet, noQuiet := indexOf(executed, "--print"), indexOf(executed, "--no-quiet")
+	if noQuiet < quiet {
+		t.Error("--no-quiet must come after --print to undo the implied --quiet")
+	}
+
+	// It reports on the download; it does not change the resulting file, so it
+	// has no business in the command shown to the user.
+	for _, flag := range []string{"--print", "--no-quiet"} {
+		if hasFlag(shown, flag) {
+			t.Errorf("%s leaked into the shown command", flag)
+		}
+	}
+}
+
+func indexOf(args []string, flag string) int {
+	for i, a := range args {
+		if a == flag {
+			return i
+		}
+	}
+	return -1
+}

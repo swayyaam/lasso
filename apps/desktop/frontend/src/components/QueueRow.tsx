@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { Button, Details, MonoBlock, ProgressBar, StatusBadge, cx } from "@lasso/ui";
 import type { Tone } from "@lasso/ui";
 import { api, core } from "../bindings";
-import { formatEta, formatSpeed } from "../format";
+import { basename, formatEta, formatSpeed } from "../format";
 
 /**
  * QUEUE_ROW_HEIGHT must be at least the row's natural height.
@@ -40,6 +41,20 @@ const STATE_TONES: Record<string, Tone> = {
  * log, and the list gives it the extra height it needs.
  */
 export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolean }) {
+  // Revealing can fail — the file may have been moved or deleted since it
+  // finished. Reporting that in the status line keeps the row's fixed height,
+  // which the virtualised list depends on.
+  const [revealError, setRevealError] = useState("");
+
+  async function reveal() {
+    setRevealError("");
+    try {
+      await api.RevealInFinder(item.filePath);
+    } catch (e) {
+      setRevealError(String(e).replace(/^Error:\s*/, "").trim() || "Could not show that file.");
+    }
+  }
+
   const state = item.state;
   const progress = item.progress;
   const terminal = state === "done" || state === "failed" || state === "cancelled";
@@ -76,8 +91,14 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
       )}
 
       <div className="flex min-w-0 items-center gap-xs">
-        <span className="min-w-0 flex-1 truncate text-caption text-ink-subtle tabular-nums">
-          {statusLine(item)}
+        <span
+          className={cx(
+            "min-w-0 flex-1 truncate text-caption tabular-nums",
+            revealError ? "text-danger" : "text-ink-subtle",
+          )}
+          title={revealError || statusLine(item)}
+        >
+          {revealError || statusLine(item)}
         </span>
 
         {!terminal && (
@@ -90,8 +111,8 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
             Retry
           </Button>
         )}
-        {state === "done" && progress?.filename && (
-          <Button size="sm" variant="tertiary" onClick={() => void api.RevealInFinder(progress.filename)}>
+        {state === "done" && item.filePath && (
+          <Button size="sm" variant="tertiary" onClick={() => void reveal()}>
             Show in Finder
           </Button>
         )}
@@ -154,7 +175,9 @@ function statusLine(item: core.Item): string {
     case "post-processing":
       return p?.detail || "Finishing up…";
     case "done":
-      return p?.filename || "Finished";
+      // item.filePath, not progress.filename: the latter names the file being
+      // written, which a post-processor deletes on its way to the real one.
+      return basename(item.filePath) || "Finished";
     case "cancelled":
       return "Cancelled";
     default:

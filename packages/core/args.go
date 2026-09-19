@@ -59,6 +59,19 @@ const progressTemplate = `download:{"stage":"downloading",` +
 	`"fragment":%(progress.fragment_index|0)j,` +
 	`"fragments":%(progress.fragment_count|0)j}`
 
+// completedTemplate asks yt-dlp to name the file it actually produced.
+//
+// "[download] Destination:" cannot answer this. It names the file being
+// written, which any post-processor then replaces and deletes: extracting
+// audio leaves a .mp3 where the .webm was, merging separate video and audio
+// streams writes a third file and removes both, and a remux changes the
+// extension. Reporting that path back means "Show in Finder" points at a file
+// that no longer exists.
+//
+// after_move runs once per finished file, after every post-processor and after
+// the final move into place, so %(filepath)s is the file on disk.
+const completedTemplate = `after_move:{"stage":"complete","path":%(filepath)j}`
+
 // ExecArgs is BuildArgs plus the flags that make progress machine-readable.
 //
 // These are deliberately excluded from the shown command: they change nothing
@@ -71,12 +84,18 @@ func ExecArgs(o Options) []string {
 	// its backing array with the tail, so appending would overwrite it.
 	split := len(args) - 2
 
-	out := make([]string, 0, len(args)+4)
+	out := make([]string, 0, len(args)+6)
 	out = append(out, args[:split]...)
 	out = append(out,
 		"--newline",
 		"--no-colors",
 		"--progress-template", progressTemplate,
+		"--print", completedTemplate,
+		// --print implies --quiet, which silences the progress template along
+		// with everything else. --no-quiet undoes that; it must come after.
+		// after_move is a late stage, so --print does not also imply
+		// --simulate here and the download still happens.
+		"--no-quiet",
 	)
 	return append(out, args[split:]...)
 }

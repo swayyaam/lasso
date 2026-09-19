@@ -350,6 +350,7 @@ export namespace core {
 	    detail: string;
 	    errorKind: string;
 	    notice: string;
+	    filePath: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Item(source);
@@ -367,6 +368,7 @@ export namespace core {
 	        this.detail = source["detail"];
 	        this.errorKind = source["errorKind"];
 	        this.notice = source["notice"];
+	        this.filePath = source["filePath"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

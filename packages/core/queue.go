@@ -55,6 +55,12 @@ type Item struct {
 	// Notice is a caveat about a download that otherwise succeeded — currently
 	// only that subtitles had to be skipped. Detail carries the reason.
 	Notice string `json:"notice"`
+
+	// FilePath is the file yt-dlp actually produced, known only once the
+	// download is done. It is what "Show in Finder" reveals, and it is not
+	// Progress.Filename: that names the file being written, which any
+	// post-processor replaces and deletes.
+	FilePath string `json:"filePath"`
 }
 
 // QueueConfig configures a Queue.
@@ -295,6 +301,7 @@ func (q *Queue) Retry(id string) error {
 	item.Detail = ""
 	item.ErrorKind = ""
 	item.Notice = ""
+	item.FilePath = ""
 	snapshot := *item
 	q.cond.Broadcast()
 	q.mu.Unlock()
@@ -398,7 +405,7 @@ func (q *Queue) run(ctx context.Context, id string) {
 		}
 	}
 
-	err, output := q.attempt(ctx, id, item.Options)
+	err, output, filePath := q.attempt(ctx, id, item.Options)
 
 	// A subtitle fetch that fails takes the whole download with it: yt-dlp
 	// treats it as fatal and has no flag to ignore only that. Losing an
@@ -406,14 +413,14 @@ func (q *Queue) run(ctx context.Context, id string) {
 	// trade, so it gets one retry and then continues without them.
 	if err != nil && ctx.Err() == nil && item.Options.WantsSubtitles() && IsSubtitleFailure(output) {
 		if q.sleep(ctx, q.subsRetryIn) {
-			err, output = q.attempt(ctx, id, item.Options)
+			err, output, filePath = q.attempt(ctx, id, item.Options)
 		}
 
 		if err != nil && ctx.Err() == nil && IsSubtitleFailure(output) {
 			reason := output
-			err, output = q.attempt(ctx, id, item.Options.WithoutSubtitles())
+			err, output, filePath = q.attempt(ctx, id, item.Options.WithoutSubtitles())
 			if err == nil {
-				q.finishWithNotice(id, "Downloaded without subtitles", reason)
+				q.finishWithNotice(id, filePath, "Downloaded without subtitles", reason)
 				return
 			}
 		}
@@ -423,12 +430,12 @@ func (q *Queue) run(ctx context.Context, id string) {
 		q.fail(id, output, err, ctx)
 		return
 	}
-	q.finish(id)
+	q.finish(id, filePath)
 }
 
 // attempt runs one download and returns the failure, if any, along with
-// whatever yt-dlp wrote to stderr.
-func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, string) {
+// whatever yt-dlp wrote to stderr and the file it produced.
+func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, string, string) {
 	parser := NewProgressParser()
 	var errLines []string
 
@@ -450,7 +457,7 @@ func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, strin
 	// Whatever happened, the last progress value must reach the UI rather than
 	// stay trapped inside a throttle window.
 	q.emitter.Flush(id)
-	return err, joinLines(errLines)
+	return err, joinLines(errLines), parser.OutputPath()
 }
 
 // sleep waits unless the download is cancelled first, reporting whether the
@@ -483,7 +490,7 @@ func (q *Queue) fail(id, output string, err error, ctx context.Context) {
 }
 
 // finishWithNotice completes an item that succeeded with a caveat.
-func (q *Queue) finishWithNotice(id, notice, detail string) {
+func (q *Queue) finishWithNotice(id, filePath, notice, detail string) {
 	q.mu.Lock()
 	if item, ok := q.items[id]; ok {
 		item.Notice = notice
@@ -491,16 +498,17 @@ func (q *Queue) finishWithNotice(id, notice, detail string) {
 	}
 	q.mu.Unlock()
 
-	q.finish(id)
+	q.finish(id, filePath)
 }
 
-func (q *Queue) finish(id string) {
+func (q *Queue) finish(id, filePath string) {
 	q.mu.Lock()
 	item, ok := q.items[id]
 	if !ok {
 		q.mu.Unlock()
 		return
 	}
+	item.FilePath = filePath
 	item.State = StateDone
 	item.Progress.Stage = StagePostProcessing
 	item.Progress.Percent = 100
