@@ -73,7 +73,7 @@ var postProcessorLabels = map[string]string{
 	"ThumbnailsConvertor": "Converting thumbnail",
 	"VideoConvertor":      "Converting video",
 	"VideoRemuxer":        "Repackaging",
-	"SplitChapters":       "Splitting chapters",
+	"SplitChapters":       "Splitting into tracks",
 	"FixupM3u8":           "Finishing up",
 	"FixupM4a":            "Finishing up",
 	"FixupMp4":            "Finishing up",
@@ -95,6 +95,9 @@ type ProgressParser struct {
 	// output is the last file yt-dlp reported as finished. Unlike filename it
 	// survives post-processing, because yt-dlp reports it after the fact.
 	output string
+	// chapters are the per-track files --split-chapters wrote. They need
+	// retagging afterwards, and this is the only place they are named.
+	chapters []ChapterFile
 }
 
 // NewProgressParser returns a parser positioned at the fetching stage.
@@ -106,6 +109,10 @@ func NewProgressParser() *ProgressParser {
 // none. For a playlist that is the last item downloaded, which is the one a
 // user asking to see the result most likely means.
 func (p *ProgressParser) OutputPath() string { return p.output }
+
+// ChapterFiles are the per-track files --split-chapters wrote, in the order
+// yt-dlp wrote them.
+func (p *ProgressParser) ChapterFiles() []ChapterFile { return p.chapters }
 
 // Line consumes one line of yt-dlp output. It reports false for lines that say
 // nothing about progress, which is most of them.
@@ -181,6 +188,13 @@ func (p *ProgressParser) parseLogLine(line string) (Progress, bool) {
 		return Progress{}, false
 	}
 
+	if tag == "SplitChapters" {
+		if chapter, ok := parseChapterFile(rest); ok {
+			p.chapters = append(p.chapters, chapter)
+		}
+		// Fall through: it is also a post-processing step worth showing.
+	}
+
 	if label, ok := postProcessorLabels[tag]; ok {
 		p.stage = StagePostProcessing
 		return p.decorate(Progress{
@@ -220,6 +234,35 @@ func bracketTag(line string) (tag, rest string, ok bool) {
 		return "", "", false
 	}
 	return tag, rest, true
+}
+
+// parseChapterFile reads "Chapter 001; Destination: /path/01 - Name.m4a".
+//
+// The number matters as much as the path: it is the track number, and it is
+// what ChapterFile.Title uses to strip the prefix back off the filename.
+func parseChapterFile(rest string) (ChapterFile, bool) {
+	number, after, found := strings.Cut(rest, ";")
+	if !found {
+		return ChapterFile{}, false
+	}
+	digits, ok := strings.CutPrefix(strings.TrimSpace(number), "Chapter ")
+	if !ok {
+		return ChapterFile{}, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(digits))
+	if err != nil || n <= 0 {
+		return ChapterFile{}, false
+	}
+
+	path, ok := strings.CutPrefix(strings.TrimSpace(after), "Destination: ")
+	if !ok {
+		return ChapterFile{}, false
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ChapterFile{}, false
+	}
+	return ChapterFile{Number: n, Path: path}, true
 }
 
 // parseItemPosition reads "Downloading item 3 of 12".

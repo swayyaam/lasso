@@ -29,6 +29,7 @@ func BuildArgs(o Options) []string {
 	args = append(args, containerArgs(o)...)
 	args = append(args, subtitleArgs(o)...)
 	args = append(args, enhancementArgs(o)...)
+	args = append(args, musicArgs(o)...)
 	args = append(args, playlistArgs(o)...)
 	args = append(args, networkArgs(o)...)
 	args = append(args, outputArgs(o)...)
@@ -255,6 +256,49 @@ func enhancementArgs(o Options) []string {
 	}
 	if e.EmbedMetadata {
 		args = append(args, "--embed-metadata")
+	}
+	return args
+}
+
+// ChapterTemplate names the files --split-chapters writes.
+//
+// The number comes first so the tracks sort into playing order in any file
+// browser, and it is zero-padded so ten does not sort before two. The format is
+// also a contract: ChapterFile.Title parses the chapter name back out of it,
+// because yt-dlp reports the path and the number but never the name alone.
+const ChapterTemplate = "chapter:%(section_number)02d - %(section_title)s.%(ext)s"
+
+// titleSplitPattern pulls an artist and a title out of "Artist - Title".
+//
+// It reads %(artist,title)s — the artist when the site gave one, the video
+// title when it did not. That is what makes it safe to apply always: a site
+// that supplies a real artist yields a string with no " - " in it, the pattern
+// does not match, nothing is overwritten, and --embed-metadata goes on using
+// the site's own fields. Only a bare video title gets split.
+const titleSplitPattern = `%(artist,title)s:(?P<meta_artist>.+?) - (?P<meta_title>.+)`
+
+// yearPattern reduces a full upload date to a year.
+//
+// Music wants a release year; "20260919" in a date tag is a timestamp nobody
+// asked for. release_year is preferred where the site states it.
+const yearPattern = `%(release_year,upload_date>%Y)s:%(meta_date)s`
+
+// musicArgs adds what a music download needs beyond a video one.
+func musicArgs(o Options) []string {
+	var args []string
+
+	if o.Music.Tags {
+		args = append(args, "--parse-metadata", titleSplitPattern)
+		args = append(args, "--parse-metadata", yearPattern)
+		// The tags are written by the metadata post-processor, so asking for
+		// them without it would parse fields nothing ever records.
+		if !o.Enhancements.EmbedMetadata {
+			args = append(args, "--embed-metadata")
+		}
+	}
+
+	if o.Music.SplitChapters {
+		args = append(args, "--split-chapters", "-o", ChapterTemplate)
 	}
 	return args
 }

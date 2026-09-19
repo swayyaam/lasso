@@ -246,6 +246,64 @@ action picking a different glyph in two places. Names describe the action
 `strokeWidth={1.75}`: lucide's default 2 px stroke reads heavier than the
 system's 400/500 type weights beside it.
 
+## Music
+
+Two options turn a video download into a music one, and both are off by
+default.
+
+**Tagging** adds `--parse-metadata "%(artist,title)s:(?P<meta_artist>.+?) - (?P<meta_title>.+)"`.
+Reading *artist-then-title* is what makes it safe to apply unconditionally: a
+site that states a real artist yields a string with no `" - "` in it, the
+pattern does not match, nothing is overwritten, and `--embed-metadata` goes on
+using the site's own fields. Only a bare video title gets split.
+
+Do not replace this with a template like `%(artist)s:%(meta_artist)s`. A
+template whose field is missing renders as the literal string `NA`, and that is
+what lands in the file — tags reading `artist=NA` rather than no artist at all.
+
+**Splitting** adds `--split-chapters` and the chapter output template. yt-dlp
+cuts the tracks with the audio copied, which carries every tag across
+unchanged, so all of an album's tracks arrive titled after the album.
+`--postprocessor-args` cannot fix it either: it takes a fixed string and writes
+it literally, so `%(section_title)s` ends up in the file as those characters.
+
+So `core.Tagger` rewrites each track afterwards with the bundled ffmpeg —
+`-map 0:a -map "0:v?" -c copy`, which keeps the cover art where there is one and
+works where there is not. `ChapterTemplate` and `ChapterFile.Title` are a
+contract: the template writes `NN - Title`, and Title parses it back by
+rebuilding the prefix from the number yt-dlp reported, so a chapter genuinely
+called "01 - Intro" survives. Change one and you change both.
+
+A tagging failure never fails the download. The tracks exist and play; losing
+them over a metadata rewrite would be a bad trade, so it lands as a notice.
+
+**Audio quality.** `PickAudioOriginal` extracts the site's own stream and
+changes only its container. Every other audio pick re-encodes, and re-encoding
+a lossy stream loses a second time — asking for FLAC from a source that serves
+Opus produces a genuine FLAC file several times the size carrying exactly the
+same sound. `core.QualityOptions.LosslessAudio` is what lets the interface say
+so instead of letting the green dot imply otherwise.
+
+## Notifications
+
+Notifications go through `UNUserNotificationCenter` from inside the process, so
+they carry Lasso's bundle identifier and therefore Lasso's name and icon. The
+earlier implementation shelled out to `osascript`, and every notification
+arrived from **Script Editor** — that being the process AppleScript runs in.
+
+Two things keep that working:
+
+- The bundle check. `UNUserNotificationCenter` raises rather than returning an
+  error when there is no `CFBundleIdentifier`, and a raise from Objective-C
+  takes the process down. `go test` is exactly that case.
+- The AppleScript fallback, kept for when the framework refuses. A notification
+  under the wrong name beats none at all, and the doctor reports which one is
+  in use rather than leaving an inexplicable banner.
+
+`announce` posts from a goroutine: the queue's state callback must not block,
+and the first notification waits on a permission prompt, which waits on a
+person.
+
 ## Errors and the doctor
 
 `packages/core` classifies a yt-dlp failure into an `ErrorKind` and a

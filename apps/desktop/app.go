@@ -108,6 +108,10 @@ func (a *App) startQueue(ctx context.Context, manager *binaries.Manager, concurr
 			Path: manager.Path(binaries.YtDlp),
 			Env:  manager.Environ(),
 		},
+		// Tracks split out of a chaptered recording keep the recording's tags,
+		// because yt-dlp cuts them with the audio copied. This is what gives
+		// each one its own title afterwards.
+		Tagger:      &core.FFmpegTagger{Path: manager.Path(binaries.FFmpeg)},
 		Concurrency: concurrency,
 		OnState: func(item core.Item) {
 			runtime.EventsEmit(ctx, EventQueueItem, item)
@@ -607,6 +611,7 @@ func (a *App) doctor() (*doctor.Doctor, error) {
 		MinimumFreeBytes: minimumFreeBytes,
 		CookieProbe:      a.probeCookies,
 		BrowserInstalled: browserInstalled,
+		Notifications:    notificationState,
 	})
 }
 
@@ -726,13 +731,21 @@ func (a *App) record(ctx context.Context, item core.Item) {
 // Only for outcomes worth interrupting someone over. A cancellation was the
 // user's own doing a moment ago and needs no announcement, and a pause even
 // less.
+//
+// It posts from a goroutine because the queue's state callback must not block
+// and this one can: the very first notification waits on the macOS permission
+// prompt, which waits on a person. Every later one returns at once.
 func (a *App) announce(item core.Item) {
+	var title string
 	switch item.State {
 	case core.StateDone:
-		notify(item.Title, "Download finished")
+		title = "Download finished"
 	case core.StateFailed:
-		notify(item.Title, "Download failed")
+		title = "Download failed"
+	default:
+		return
 	}
+	go notify(item.Title, title)
 }
 
 func (a *App) historyStore() (*history.Store, error) {

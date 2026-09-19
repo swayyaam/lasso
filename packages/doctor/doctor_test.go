@@ -351,3 +351,57 @@ func TestNonCookieFailuresKeepTheClassifiersAdvice(t *testing.T) {
 		t.Errorf("Remedy = %q, want the classifier's own message", check.Remedy)
 	}
 }
+
+func TestNotificationStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		state NotificationState
+		want  Status
+		says  string
+	}{
+		{"allowed", NotificationsAllowed, StatusOK, "as Lasso"},
+		{"not yet asked", NotificationsNotAsked, StatusOK, "ask for permission"},
+		{"refused", NotificationsRefused, StatusWarn, "System Settings"},
+		// Not a failure: the notification still arrives, and downloading is
+		// unaffected. But a banner from Lasso that says Script Editor is
+		// otherwise inexplicable.
+		{"unavailable", NotificationsUnavailable, StatusWarn, "Script Editor"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := newDoctor(t, func(cfg *Config) {
+				cfg.Notifications = func() NotificationState { return c.state }
+			})
+			check := find(t, d.Run(context.Background()), CheckNotifications)
+
+			if check.Status != c.want {
+				t.Errorf("Status = %q, want %q", check.Status, c.want)
+			}
+			if !strings.Contains(check.Summary+check.Remedy, c.says) {
+				t.Errorf("check says %q / %q, want it to mention %q", check.Summary, check.Remedy, c.says)
+			}
+			if check.Fixable {
+				t.Error("offered to fix something only code signing or System Settings can")
+			}
+		})
+	}
+}
+
+func TestNotificationsNeverFailTheReport(t *testing.T) {
+	// Downloading works regardless, so nothing here may make the report
+	// unhealthy — that signal is reserved for what actually stops a download.
+	for _, state := range []NotificationState{
+		NotificationsUnavailable, NotificationsNotAsked,
+		NotificationsRefused, NotificationsAllowed,
+	} {
+		d := newDoctor(t, func(cfg *Config) {
+			cfg.Notifications = func() NotificationState { return state }
+			cfg.Cookies = core.BrowserChrome
+			cfg.CookieProbe = func(context.Context, core.Browser) error { return nil }
+		})
+		if check := find(t, d.Run(context.Background()), CheckNotifications); check.Status == StatusFail {
+			t.Errorf("state %v reported as a failure", state)
+		}
+	}
+}

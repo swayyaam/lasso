@@ -48,7 +48,7 @@ export const BROWSERS: DropdownOption[] = [
   { value: "safari", label: "Safari", hint: "Needs Full Disk Access" },
 ];
 
-type Section = "format" | "subtitles" | "enhancements" | "playlist" | "network" | "output";
+type Section = "format" | "subtitles" | "enhancements" | "music" | "playlist" | "network" | "output";
 
 /**
  * AdvancedDrawer is the progressive-disclosure half of the app: everything
@@ -214,6 +214,31 @@ export function AdvancedDrawer({
           checked={options.enhancements?.embedMetadata ?? false}
           onChange={(e) =>
             patch({ enhancements: { ...options.enhancements, embedMetadata: e.target.checked } } as Partial<core.Options>)
+          }
+        />
+      </Disclosure>
+
+      <Disclosure
+        title="Music"
+        open={open === "music"}
+        onToggle={() => toggle("music")}
+        summary={summarise([
+          options.music?.tags ? "tagging" : "",
+          options.music?.splitChapters ? "split into tracks" : "",
+        ])}
+      >
+        <Checkbox
+          label="Tag as music"
+          hint="Fills in artist, title and year. A video titled “Artist — Song” is split into the two fields; a site that states a real artist is left alone."
+          checked={options.music?.tags ?? false}
+          onChange={(e) => patch({ music: { ...options.music, tags: e.target.checked } } as Partial<core.Options>)}
+        />
+        <Checkbox
+          label="Split chapters into tracks"
+          hint="Turns one long “full album” upload into a file per chapter, each numbered and titled. The whole recording is kept alongside them."
+          checked={options.music?.splitChapters ?? false}
+          onChange={(e) =>
+            patch({ music: { ...options.music, splitChapters: e.target.checked } } as Partial<core.Options>)
           }
         />
       </Disclosure>

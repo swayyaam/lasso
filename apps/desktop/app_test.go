@@ -156,3 +156,12 @@ func TestBrowserInstalledRejectsWhatItDoesNotKnow(t *testing.T) {
 		t.Error("reported a browser it has no bundle name for")
 	}
 }
+
+func TestNotifyIsSafeOutsideAnAppBundle(t *testing.T) {
+	// UNUserNotificationCenter raises rather than returning an error when
+	// there is no bundle identifier, and a raise from Objective-C takes the
+	// process down. `go test` is exactly that case, so this asserts the guard
+	// holds — if it regresses, this test does not fail, it crashes the run.
+	notify("A download finished", "Lasso")
+	notify("", "")
+}

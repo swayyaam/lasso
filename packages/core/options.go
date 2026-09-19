@@ -142,6 +142,21 @@ type Enhancements struct {
 	EmbedMetadata          bool             `json:"embedMetadata"`
 }
 
+// Music groups the options that only make sense when the download is music.
+type Music struct {
+	// Tags fills in artist, title and year from the fields the site provides,
+	// falling back to splitting an "Artist - Title" video title.
+	Tags bool `json:"tags"`
+	// SplitChapters writes one file per chapter, which is how a single
+	// hour-long "full album" upload becomes an album. The whole recording is
+	// kept alongside the tracks: yt-dlp does not remove it, and deleting a
+	// file the user did not ask to lose is not Lasso's call.
+	SplitChapters bool `json:"splitChapters"`
+}
+
+// WantsMusic reports whether either music option is on.
+func (m Music) WantsMusic() bool { return m.Tags || m.SplitChapters }
+
 // Playlist narrows which items of a playlist are downloaded. Start and End are
 // 1-based and inclusive; zero means unbounded on that side.
 type Playlist struct {
@@ -181,6 +196,7 @@ type Options struct {
 	Subtitles    Subtitles    `json:"subtitles"`
 	Enhancements Enhancements `json:"enhancements"`
 	Playlist     Playlist     `json:"playlist"`
+	Music        Music        `json:"music"`
 	Network      Network      `json:"network"`
 	Output       Output       `json:"output"`
 

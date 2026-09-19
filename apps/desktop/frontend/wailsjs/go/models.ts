@@ -253,6 +253,20 @@ export namespace core {
 	        this.cookies = source["cookies"];
 	    }
 	}
+	export class Music {
+	    tags: boolean;
+	    splitChapters: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Music(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tags = source["tags"];
+	        this.splitChapters = source["splitChapters"];
+	    }
+	}
 	export class Playlist {
 	    start: number;
 	    end: number;
@@ -297,6 +311,7 @@ export namespace core {
 	    subtitles: Subtitles;
 	    enhancements: Enhancements;
 	    playlist: Playlist;
+	    music: Music;
 	    network: Network;
 	    output: Output;
 	    ffmpegLocation: string;
@@ -318,6 +333,7 @@ export namespace core {
 	        this.subtitles = this.convertValues(source["subtitles"], Subtitles);
 	        this.enhancements = this.convertValues(source["enhancements"], Enhancements);
 	        this.playlist = this.convertValues(source["playlist"], Playlist);
+	        this.music = this.convertValues(source["music"], Music);
 	        this.network = this.convertValues(source["network"], Network);
 	        this.output = this.convertValues(source["output"], Output);
 	        this.ffmpegLocation = source["ffmpegLocation"];
@@ -515,6 +531,7 @@ export namespace core {
 		    return a;
 		}
 	}
+	
 	
 	
 	

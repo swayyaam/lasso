@@ -11,7 +11,7 @@ import (
 )
 
 func TestBuiltinsAreComplete(t *testing.T) {
-	want := []string{"Best quality", "Archive (MKV)", "Podcast audio", "Music (FLAC)"}
+	want := []string{"Best quality", "Archive (MKV)", "Podcast audio", "Music", "Album"}
 
 	builtins := Builtins()
 	if len(builtins) != len(want) {
@@ -71,9 +71,26 @@ func TestBuiltinIntent(t *testing.T) {
 		t.Error("Podcast preset does not remove sponsor segments")
 	}
 
-	music := byID[IDMusicFLAC]
-	if music.Options.Pick != core.PickAudioFLAC {
-		t.Error("Music preset is not FLAC")
+	// The music preset takes the site's own stream rather than re-encoding it.
+	// Every site this is used with serves lossy audio, so FLAC here would be a
+	// larger file of exactly the same sound.
+	music := byID[IDMusic]
+	if music.Options.Pick != core.PickAudioOriginal {
+		t.Errorf("Music preset picks %q, want the un-re-encoded stream", music.Options.Pick)
+	}
+	if !music.Options.Music.Tags {
+		t.Error("Music preset does not tag")
+	}
+	if music.Options.Music.SplitChapters {
+		t.Error("Music preset splits chapters; most music links are one track")
+	}
+
+	album := byID[IDAlbum]
+	if !album.Options.Music.SplitChapters {
+		t.Error("Album preset does not split chapters, which is the whole difference")
+	}
+	if !album.Options.Music.Tags {
+		t.Error("Album preset does not tag")
 	}
 }
 
@@ -230,7 +247,7 @@ func TestBuiltinsCannotBeChanged(t *testing.T) {
 	}{
 		{"rename", s.Rename(IDBestQuality, "Something else")},
 		{"delete", s.Delete(IDArchiveMKV)},
-		{"update", s.Update(IDMusicFLAC, core.Options{})},
+		{"update", s.Update(IDMusic, core.Options{})},
 	} {
 		if !errors.Is(op.err, ErrReadOnly) {
 			t.Errorf("%s on a built-in returned %v, want ErrReadOnly", op.name, op.err)

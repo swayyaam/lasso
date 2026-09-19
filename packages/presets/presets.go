@@ -31,7 +31,8 @@ const (
 	IDBestQuality  = "builtin-best-quality"
 	IDArchiveMKV   = "builtin-archive-mkv"
 	IDPodcastAudio = "builtin-podcast-audio"
-	IDMusicFLAC    = "builtin-music-flac"
+	IDMusic        = "builtin-music"
+	IDAlbum        = "builtin-album"
 )
 
 // Builtins returns the presets that ship with Lasso, in display order.
@@ -92,11 +93,38 @@ func Builtins() []Preset {
 			},
 		},
 		{
-			ID:      IDMusicFLAC,
-			Name:    "Music (FLAC)",
+			ID:      IDMusic,
+			Name:    "Music",
 			BuiltIn: true,
 			Options: core.Options{
-				Pick: core.PickAudioFLAC,
+				// The site's own stream, not FLAC. Every site this is used
+				// with serves lossy audio, so encoding it to FLAC produces a
+				// larger file of exactly the same sound — the FLAC chip is
+				// still there for a source that genuinely has lossless audio.
+				Pick: core.PickAudioOriginal,
+				Music: core.Music{
+					Tags: true,
+					// Off by default: most music links are one track, and
+					// splitting a video whose chapters are verses rather than
+					// songs is worse than not splitting it.
+					SplitChapters: false,
+				},
+				Enhancements: core.Enhancements{
+					EmbedThumbnail: true,
+					EmbedMetadata:  true,
+				},
+			},
+		},
+		{
+			ID:      IDAlbum,
+			Name:    "Album",
+			BuiltIn: true,
+			Options: core.Options{
+				Pick: core.PickAudioOriginal,
+				Music: core.Music{
+					Tags:          true,
+					SplitChapters: true,
+				},
 				Enhancements: core.Enhancements{
 					EmbedThumbnail: true,
 					EmbedMetadata:  true,

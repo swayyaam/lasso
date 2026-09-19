@@ -84,6 +84,10 @@ type QueueConfig struct {
 	// SubtitleRetryDelay is how long to wait before retrying a download whose
 	// subtitles failed. Zero uses DefaultSubtitleRetryDelay.
 	SubtitleRetryDelay time.Duration
+	// Tagger rewrites the tags on tracks split out of a chaptered recording.
+	// Without one, splitting still works but every track keeps the whole
+	// recording's title, so the feature is off when this is nil.
+	Tagger Tagger
 }
 
 // DefaultSubtitleRetryDelay is the pause before a second attempt at subtitles.
@@ -100,6 +104,7 @@ const DefaultSubtitleRetryDelay = 3 * time.Second
 // in-memory: quitting Lasso discards it.
 type Queue struct {
 	runner   Runner
+	tagger   Tagger
 	emitter  *ProgressEmitter
 	onState  func(Item)
 	onRemove func(ids []string)
@@ -148,6 +153,7 @@ func NewQueue(cfg QueueConfig) (*Queue, error) {
 
 	q := &Queue{
 		runner:      cfg.Runner,
+		tagger:      cfg.Tagger,
 		onState:     cfg.OnState,
 		onRemove:    cfg.OnRemove,
 		limit:       concurrency,
@@ -553,37 +559,91 @@ func (q *Queue) run(ctx context.Context, id string) {
 		}
 	}
 
-	err, output, filePath := q.attempt(ctx, id, item.Options)
+	err, result := q.attempt(ctx, id, item.Options)
 
 	// A subtitle fetch that fails takes the whole download with it: yt-dlp
 	// treats it as fatal and has no flag to ignore only that. Losing an
 	// otherwise-finished video because a caption file 429'd is the wrong
 	// trade, so it gets one retry and then continues without them.
-	if err != nil && ctx.Err() == nil && item.Options.WantsSubtitles() && IsSubtitleFailure(output) {
+	if err != nil && ctx.Err() == nil && item.Options.WantsSubtitles() && IsSubtitleFailure(result.Output) {
 		if q.sleep(ctx, q.subsRetryIn) {
-			err, output, filePath = q.attempt(ctx, id, item.Options)
+			err, result = q.attempt(ctx, id, item.Options)
 		}
 
-		if err != nil && ctx.Err() == nil && IsSubtitleFailure(output) {
-			reason := output
-			err, output, filePath = q.attempt(ctx, id, item.Options.WithoutSubtitles())
+		if err != nil && ctx.Err() == nil && IsSubtitleFailure(result.Output) {
+			reason := result.Output
+			err, result = q.attempt(ctx, id, item.Options.WithoutSubtitles())
 			if err == nil {
-				q.finishWithNotice(id, filePath, "Downloaded without subtitles", reason)
+				q.retagChapters(ctx, id, item, result)
+				q.finishWithNotice(id, result.FilePath, "Downloaded without subtitles", reason)
 				return
 			}
 		}
 	}
 
 	if err != nil {
-		q.fail(id, output, err, ctx)
+		q.fail(id, result.Output, err, ctx)
 		return
 	}
-	q.finish(id, filePath)
+
+	q.retagChapters(ctx, id, item, result)
+	q.finish(id, result.FilePath)
 }
 
-// attempt runs one download and returns the failure, if any, along with
-// whatever yt-dlp wrote to stderr and the file it produced.
-func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, string, string) {
+// retagChapters gives each split-out track its own title, number and album.
+//
+// yt-dlp cuts the tracks with the audio copied, which carries every tag across
+// unchanged — so without this an album's twelve tracks are all titled after the
+// album, and a music library shows twelve copies of one name.
+//
+// A failure here is reported on the item but does not fail the download: the
+// tracks exist and play, and losing them over a metadata rewrite would be a bad
+// trade. The notice is how the user learns the tags need a look.
+func (q *Queue) retagChapters(ctx context.Context, id string, item Item, result attemptResult) {
+	if q.tagger == nil || len(result.Chapters) == 0 || ctx.Err() != nil {
+		return
+	}
+
+	album := item.Title
+	total := len(result.Chapters)
+
+	var failures []string
+	for _, chapter := range result.Chapters {
+		tags := TrackTags{
+			Title:  chapter.Title(),
+			Track:  chapter.Number,
+			Tracks: total,
+			Album:  album,
+		}
+		if err := q.tagger.Tag(ctx, chapter.Path, tags); err != nil {
+			failures = append(failures, err.Error())
+		}
+	}
+
+	if len(failures) == 0 {
+		return
+	}
+	q.mu.Lock()
+	if stored, ok := q.items[id]; ok {
+		stored.Notice = fmt.Sprintf("Split into %d tracks, but %d could not be tagged", total, len(failures))
+		stored.Detail = joinLines(failures)
+	}
+	q.mu.Unlock()
+}
+
+// attemptResult is what one run of yt-dlp produced.
+type attemptResult struct {
+	// Output is whatever yt-dlp wrote to stderr.
+	Output string
+	// FilePath is the file it finished with.
+	FilePath string
+	// Chapters are the per-track files --split-chapters wrote.
+	Chapters []ChapterFile
+}
+
+// attempt runs one download and returns the failure, if any, along with what
+// the run produced.
+func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, attemptResult) {
 	parser := NewProgressParser()
 	var errLines []string
 
@@ -605,7 +665,11 @@ func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, strin
 	// Whatever happened, the last progress value must reach the UI rather than
 	// stay trapped inside a throttle window.
 	q.emitter.Flush(id)
-	return err, joinLines(errLines), parser.OutputPath()
+	return err, attemptResult{
+		Output:   joinLines(errLines),
+		FilePath: parser.OutputPath(),
+		Chapters: parser.ChapterFiles(),
+	}
 }
 
 // sleep waits unless the download is cancelled first, reporting whether the

@@ -44,6 +44,7 @@ const (
 	CheckDownloadeFold = "download-folder"
 	CheckDiskSpace     = "disk-space"
 	CheckCookies       = "cookies"
+	CheckNotifications = "notifications"
 )
 
 // Check is one diagnosis.
@@ -95,6 +96,10 @@ type Config struct {
 	// actually be read. Injected because the only honest test is asking yt-dlp
 	// to try, which needs a subprocess.
 	CookieProbe func(ctx context.Context, browser core.Browser) error
+	// Notifications reports whether the app may post notifications under its
+	// own name. Injected because it is a framework call, and because a build
+	// that cannot is a fact about the build rather than about the machine.
+	Notifications func() NotificationState
 	// BrowserInstalled reports whether a browser is on this Mac at all.
 	//
 	// This is what separates the two causes of "could not find that browser's
@@ -105,6 +110,21 @@ type Config struct {
 	// not protected.
 	BrowserInstalled func(browser core.Browser) bool
 }
+
+// NotificationState is whether finished-download notifications arrive as Lasso.
+type NotificationState int
+
+const (
+	// NotificationsUnavailable means macOS refused this build. Notifications
+	// still appear, posted through AppleScript, but under Script Editor's name.
+	NotificationsUnavailable NotificationState = iota
+	// NotificationsNotAsked means the permission prompt has not been shown yet.
+	NotificationsNotAsked
+	// NotificationsRefused means the user declined.
+	NotificationsRefused
+	// NotificationsAllowed means they arrive as Lasso.
+	NotificationsAllowed
+)
 
 // Doctor runs checks and applies fixes.
 type Doctor struct {
@@ -130,6 +150,7 @@ func (d *Doctor) Run(ctx context.Context) Report {
 		d.checkDownloadFolder(),
 		d.checkDiskSpace(),
 		d.checkCookies(ctx),
+		d.checkNotifications(),
 	}
 
 	// Worst first: the thing stopping a download should not be below the thing
@@ -389,6 +410,40 @@ func (d *Doctor) checkCookies(ctx context.Context) Check {
 
 	check.Status = StatusOK
 	check.Summary = "Using cookies from " + string(d.cfg.Cookies) + "."
+	return check
+}
+
+func (d *Doctor) checkNotifications() Check {
+	check := Check{ID: CheckNotifications, Title: "Notifications"}
+
+	if d.cfg.Notifications == nil {
+		check.Status = StatusOK
+		check.Summary = "Not checked."
+		return check
+	}
+
+	switch d.cfg.Notifications() {
+	case NotificationsAllowed:
+		check.Status = StatusOK
+		check.Summary = "Finished downloads notify you, as Lasso."
+
+	case NotificationsNotAsked:
+		check.Status = StatusOK
+		check.Summary = "macOS will ask for permission the first time a download finishes."
+
+	case NotificationsRefused:
+		check.Status = StatusWarn
+		check.Summary = "Notifications are turned off for Lasso."
+		check.Remedy = "Turn them back on in System Settings › Notifications › Lasso. Downloads still work; you just will not be told when they finish."
+
+	default:
+		// Not a failure: the notification still arrives, and nothing about
+		// downloading is affected. But a user seeing Script Editor on a banner
+		// from Lasso has no way to work out why, so it is worth saying.
+		check.Status = StatusWarn
+		check.Summary = "Notifications arrive from “Script Editor”, not from Lasso."
+		check.Remedy = "macOS only lets a properly code-signed app post notifications under its own name, and this build is ad-hoc signed. Lasso falls back to AppleScript so you still get told when a download finishes. Signing and notarising the app fixes the name."
+	}
 	return check
 }
 

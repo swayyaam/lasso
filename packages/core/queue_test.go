@@ -38,11 +38,19 @@ type queueHarness struct {
 
 func newQueueHarness(t *testing.T, runner Runner, concurrency int) *queueHarness {
 	t.Helper()
+	return newQueueHarnessWith(t, runner, concurrency, nil)
+}
+
+// newQueueHarnessWith is newQueueHarness plus a tagger, for the tests that care
+// about what happens to split-out tracks.
+func newQueueHarnessWith(t *testing.T, runner Runner, concurrency int, tagger Tagger) *queueHarness {
+	t.Helper()
 	h := &queueHarness{states: map[string][]State{}}
 	h.cond = sync.NewCond(&h.mu)
 
 	q, err := NewQueue(QueueConfig{
 		Runner:      runner,
+		Tagger:      tagger,
 		Concurrency: concurrency,
 		// Emit every update so tests see exact values rather than racing a window.
 		ProgressInterval: time.Nanosecond,
