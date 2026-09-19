@@ -109,9 +109,10 @@ func ExecArgs(o Options) []string {
 func formatArgs(o Options) []string {
 	if format := o.Pick.audioFormat(); format != "" {
 		args := []string{"-f", audioSelector(format), "-x", "--audio-format", format}
-		// 0 is "best" for the lossy encoders; FLAC ignores it, so leave it off
-		// rather than imply a quality knob that does nothing.
-		if format != "flac" {
+		// 0 is "best" for the lossy encoders. FLAC ignores it, and "best"
+		// re-encodes nothing at all, so for both it would imply a quality knob
+		// that does nothing.
+		if format != "flac" && format != "best" {
 			args = append(args, "--audio-quality", "0")
 		}
 		return args

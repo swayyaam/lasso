@@ -12,15 +12,20 @@ import (
 type QuickPick string
 
 const (
-	PickBest      QuickPick = "best"
-	Pick2160p     QuickPick = "2160p"
-	Pick1440p     QuickPick = "1440p"
-	Pick1080p     QuickPick = "1080p"
-	Pick720p      QuickPick = "720p"
-	PickAudioMP3  QuickPick = "audio-mp3"
-	PickAudioM4A  QuickPick = "audio-m4a"
-	PickAudioFLAC QuickPick = "audio-flac"
-	PickAudioOpus QuickPick = "audio-opus"
+	PickBest  QuickPick = "best"
+	Pick2160p QuickPick = "2160p"
+	Pick1440p QuickPick = "1440p"
+	Pick1080p QuickPick = "1080p"
+	Pick720p  QuickPick = "720p"
+	// PickAudioOriginal keeps the site's own audio stream, changing only the
+	// container it sits in. It is the highest-quality audio any site can give
+	// you: every other audio pick re-encodes, and re-encoding a lossy stream
+	// loses a second time.
+	PickAudioOriginal QuickPick = "audio-original"
+	PickAudioMP3      QuickPick = "audio-mp3"
+	PickAudioM4A      QuickPick = "audio-m4a"
+	PickAudioFLAC     QuickPick = "audio-flac"
+	PickAudioOpus     QuickPick = "audio-opus"
 )
 
 // maxHeight is the vertical resolution cap a pick implies, or 0 for no cap.
@@ -40,8 +45,13 @@ func (p QuickPick) maxHeight() int {
 }
 
 // audioFormat is the target format for an audio-only pick, or "" for video.
+//
+// "best" is yt-dlp's word for "do not re-encode": it extracts the stream and
+// leaves the codec alone.
 func (p QuickPick) audioFormat() string {
 	switch p {
+	case PickAudioOriginal:
+		return "best"
 	case PickAudioMP3:
 		return "mp3"
 	case PickAudioM4A:

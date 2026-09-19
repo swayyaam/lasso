@@ -711,3 +711,29 @@ func indexIn(fields []string, want string) int {
 	}
 	return -1
 }
+
+func TestOriginalAudioNeverReEncodes(t *testing.T) {
+	// The whole point of the pick: take the site's own stream and change only
+	// the container. Re-encoding a lossy stream loses a second time, so any
+	// quality flag here would be actively harmful.
+	o := baseOptions()
+	o.Pick = PickAudioOriginal
+	args := BuildArgs(o)
+
+	format, ok := argValue(args, "--audio-format")
+	if !ok || format != "best" {
+		t.Errorf("--audio-format = %q, want yt-dlp's \"leave the codec alone\"", format)
+	}
+	if hasFlag(args, "--audio-quality") {
+		t.Error("--audio-quality on a pick that does not re-encode")
+	}
+	if !hasFlag(args, "-x") {
+		t.Error("the audio is not being extracted")
+	}
+}
+
+func TestOriginalAudioIsAudioOnly(t *testing.T) {
+	if !PickAudioOriginal.IsAudioOnly() {
+		t.Error("the original-audio pick is not treated as audio-only")
+	}
+}

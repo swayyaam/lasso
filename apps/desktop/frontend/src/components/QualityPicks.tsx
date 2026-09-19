@@ -12,6 +12,12 @@ import { formatBytes } from "../format";
  * rather than letting the colour imply a quality the file cannot have.
  */
 export const AUDIO_PICKS: { id: string; label: string; tone: TagTone; hint: string }[] = [
+  {
+    id: "audio-original",
+    label: "Original",
+    tone: "neutral",
+    hint: "The site's own audio stream, untouched. The best any site can give you — every other option re-encodes it.",
+  },
   { id: "audio-m4a", label: "M4A", tone: "blue", hint: "AAC in an MP4 container — plays everywhere" },
   { id: "audio-mp3", label: "MP3", tone: "orange", hint: "The most compatible, and the oldest" },
   { id: "audio-opus", label: "Opus", tone: "purple", hint: "Best sound per byte; what YouTube usually serves" },
@@ -134,8 +140,9 @@ export function QualityPicks({
           {losslessFromLossy && (
             <p className="max-w-note text-caption text-ink-tertiary">
               This source only serves compressed audio, so the FLAC file will be a
-              larger copy of the same sound rather than a better one. Opus keeps it
-              at the size the site actually sent.
+              larger copy of the same sound rather than a better one.{" "}
+              <strong className="font-medium text-ink-muted">Original</strong> keeps
+              exactly what the site sent, without re-encoding it.
             </p>
           )}
         </div>
