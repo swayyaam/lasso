@@ -23,6 +23,7 @@ const (
 	ErrDiskFull       ErrorKind = "disk-full"
 	ErrCancelled      ErrorKind = "cancelled"
 	ErrPostProcess    ErrorKind = "post-processing"
+	ErrCookieAccess   ErrorKind = "cookie-access"
 )
 
 // DownloadError is a yt-dlp failure translated into something a person can act
@@ -84,6 +85,10 @@ var classifiers = []struct {
 		patterns: []string{
 			"not available in your country", "geo restricted", "geo-restricted",
 			"blocked it in your country", "unavailable in your location",
+			// YouTube's own wording, which the phrase above does not cover:
+			// "has not made this video available in your country".
+			"made this video available in your country",
+			"not available from your location",
 		},
 	},
 	{
@@ -147,6 +152,16 @@ func ClassifyError(output string, err error) *DownloadError {
 	}
 
 	haystack := strings.ToLower(raw)
+
+	// Checked ahead of the table because it needs two signatures at once, and
+	// because either one alone belongs to a different rule: "operation not
+	// permitted" on its own is a protected download folder, and the mention of
+	// --cookies-from-browser would otherwise be read as "you need to sign in" —
+	// advice that goes nowhere when cookies were asked for and could not be read.
+	if isCookieAccessFailure(haystack) {
+		return &DownloadError{Kind: ErrCookieAccess, Message: cookieAccessMessage, Raw: raw, Err: err}
+	}
+
 	for _, c := range classifiers {
 		for _, pattern := range c.patterns {
 			if strings.Contains(haystack, pattern) {
@@ -161,6 +176,40 @@ func ClassifyError(output string, err error) *DownloadError {
 		Raw:     raw,
 		Err:     err,
 	}
+}
+
+// cookieAccessMessage is the remedy for a cookie jar Lasso is not allowed to
+// read. Safari's always needs Full Disk Access — macOS keeps it inside Safari's
+// container, which is protected whatever the file permissions say.
+const cookieAccessMessage = "macOS would not let Lasso read your browser's cookies. " +
+	"Give Lasso Full Disk Access in System Settings › Privacy & Security, then try again — " +
+	"or choose a different browser in Settings."
+
+// cookieRefusals are the ways the operating system, or yt-dlp, says a cookie
+// jar could not be opened or decrypted.
+var cookieRefusals = []string{
+	"operation not permitted", "permission denied", "could not copy",
+	"failed to decrypt", "unable to decrypt", "could not find cookie",
+	"unable to read", "no such file or directory",
+}
+
+// isCookieAccessFailure reports whether output describes a cookie jar that
+// could not be read, as opposed to any other permission problem.
+//
+// Both halves are required. A download folder Lasso cannot write to produces
+// the same "operation not permitted", and sending that user to Full Disk Access
+// for their cookies would be worse than saying nothing.
+func isCookieAccessFailure(haystack string) bool {
+	mentionsCookies := strings.Contains(haystack, "cookie")
+	if !mentionsCookies {
+		return false
+	}
+	for _, refusal := range cookieRefusals {
+		if strings.Contains(haystack, refusal) {
+			return true
+		}
+	}
+	return false
 }
 
 // UserMessage returns a plain-language message for any error.

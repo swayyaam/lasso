@@ -30,6 +30,10 @@ export function FetchMetadata(arg1) {
   return window['go']['main']['App']['FetchMetadata'](arg1);
 }
 
+export function OpenFullDiskAccessSettings() {
+  return window['go']['main']['App']['OpenFullDiskAccessSettings']();
+}
+
 export function Presets() {
   return window['go']['main']['App']['Presets']();
 }

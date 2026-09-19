@@ -161,7 +161,28 @@ export function Composer({
         }
       />
 
-      {error && <Banner title="That link did not work" tone="danger">{error}</Banner>}
+      {error && (
+        <Banner
+          title="That link did not work"
+          tone="danger"
+          action={
+            needsFullDiskAccess(error) ? (
+              <Button size="sm" variant="secondary" onClick={() => void api.OpenFullDiskAccessSettings()}>
+                Open System Settings
+              </Button>
+            ) : undefined
+          }
+        >
+          {explain(error).message}
+          {explain(error).detail && (
+            // yt-dlp's own words stay reachable but never lead: the sentence
+            // above is the one that tells the user what to do.
+            <Details summary="Details">
+              <MonoBlock text={explain(error).detail} maxHeight="10rem" copyable />
+            </Details>
+          )}
+        </Banner>
+      )}
 
       {resolving && <MetadataSkeleton />}
       {metadata && !resolving && <MetadataCard metadata={metadata} />}
@@ -227,4 +248,28 @@ export function Composer({
 function cleanError(e: unknown): string {
   const text = String(e).replace(/^Error:\s*/, "").trim();
   return text || "Something went wrong.";
+}
+
+/**
+ * explain splits a backend failure into the sentence to lead with and the raw
+ * output to keep behind a toggle.
+ *
+ * A classified failure arrives as "plain message: yt-dlp's own output", and
+ * everything yt-dlp writes to stderr starts with ERROR or WARNING. Anything
+ * that does not match is shown whole rather than guessed at.
+ */
+function explain(error: string): { message: string; detail: string } {
+  const at = error.search(/:\s(?=ERROR[:\s]|WARNING[:\s])/);
+  if (at === -1) return { message: error, detail: "" };
+  // slice(0, at) drops the joining colon: the message already ends in a stop.
+  return { message: error.slice(0, at).trim(), detail: error.slice(at + 2).trim() };
+}
+
+/**
+ * needsFullDiskAccess spots the one failure with a remedy Lasso can open
+ * directly. It keys on the phrase core/errors.go puts in that message, which a
+ * Go test pins.
+ */
+function needsFullDiskAccess(error: string): boolean {
+  return error.includes("Full Disk Access");
 }

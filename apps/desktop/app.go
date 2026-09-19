@@ -402,6 +402,13 @@ func (a *App) RevealInFinder(path string) error {
 	return openInFinder(path)
 }
 
+// OpenFullDiskAccessSettings opens the System Settings pane that lets Lasso
+// read a protected cookie jar. It is the remedy offered alongside a
+// cookie-access failure.
+func (a *App) OpenFullDiskAccessSettings() error {
+	return openFullDiskAccessSettings()
+}
+
 // ---- yt-dlp updates ----
 
 // UpdateYtDlp runs yt-dlp's self-update against the copy in Application

@@ -19,6 +19,8 @@ export function Events():Promise<main.EventNames>;
 
 export function FetchMetadata(arg1:string):Promise<core.Metadata>;
 
+export function OpenFullDiskAccessSettings():Promise<void>;
+
 export function Presets():Promise<Array<presets.Preset>>;
 
 export function QueueItems():Promise<Array<core.Item>>;
