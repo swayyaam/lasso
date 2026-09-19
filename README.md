@@ -22,6 +22,10 @@ to keep up to date, no terminal.
 macOS remembers, so that is a one-time thing. It is what happens to any app
 that has not been through Apple's paid signing process.
 
+If macOS instead says Lasso **"is damaged and can't be opened"**, you have a
+build from before v0.1.1, whose signature was broken by the build itself.
+Download again from the [latest release](https://github.com/swayyaam/lasso/releases/latest).
+
 The first launch takes a few seconds: Lasso copies its helper programs into
 `~/Library/Application Support/Lasso` and lets macOS scan them. You will see a
 setup screen while that happens.

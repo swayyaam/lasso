@@ -21,6 +21,7 @@ apps/desktop/frontend/dist/*
 # `go build ./...` drops a binary named after the directory.
 /apps/desktop/desktop
 /scripts/icon/icon
+/scripts/dmg-background/dmg-background
 
 # Wails bookkeeping
 apps/desktop/frontend/package.json.md5

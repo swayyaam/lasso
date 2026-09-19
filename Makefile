@@ -59,6 +59,10 @@ build: ## Build Lasso.app into apps/desktop/build/bin
 	cd apps/desktop && "$(WAILS)" build -platform darwin/arm64
 	./scripts/make-icon.sh
 	./scripts/bundle-binaries.sh
+	# Last, and it must stay last: the two steps above modify the bundle after
+	# Wails signed it, which leaves a broken seal and an app that downloads as
+	# "damaged". sign-app.sh reseals and verifies.
+	./scripts/sign-app.sh
 
 dmg: build ## Build Lasso.app and package it into an unsigned DMG
 	./scripts/make-dmg.sh
