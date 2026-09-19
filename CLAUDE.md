@@ -32,6 +32,7 @@ packages/binaries/   Go: locate/install/verify/update sidecar binaries
 packages/presets/    Go: built-in + user presets, JSON persistence
 packages/history/    Go: the record of finished downloads, JSON persistence
 packages/doctor/     Go: diagnoses why downloads fail, and repairs what it can
+packages/updater/    Go: replaces Lasso with a newer release of itself
 packages/ui/         React: shared components + design tokens
 scripts/             fetch-binaries.sh and build helpers
 DESIGN-webflow.md    The visual design system. Do not modify it.
@@ -303,6 +304,45 @@ Two things keep that working:
 `announce` posts from a goroutine: the queue's state callback must not block,
 and the first notification waits on a permission prompt, which waits on a
 person.
+
+## Updating Lasso itself
+
+`packages/updater` replaces the app in place. It matters more than
+convenience: the app is not notarised, so a copy downloaded through a browser
+is quarantined and has to be let past Gatekeeper by hand every time. An update
+the app installs is never quarantined.
+
+The downloaded asset is **the app without its helper programs**. They are
+328 MB of the 329 MB bundle and change only when `binaries.lock.json` does, so
+`Contents/Resources/bin` is emptied down to its `manifest.json` in
+`Lasso-app.zip` and the installed copies are carried across during the update.
+5.5 MB rather than 147.
+
+That manifest is the safety catch. If the release pins different helper
+versions, carrying the old ones across would leave someone on a build that
+says it updated and did not, so the update is refused with `ErrHelpersChanged`
+and the DMG is the way through.
+
+Two things are easy to get wrong here, and one of them already shipped:
+
+- **Reseal after carrying the helpers in.** They are written into a bundle
+  that was signed without them, so the seal no longer matches and the app
+  opens as "damaged". `prepare` re-signs and then verifies, and refuses to
+  install anything that does not.
+- **Swap with two renames on the same volume**, old copy kept until the new
+  one is in place and moved back if it is not. `os.MkdirTemp` stages beside
+  the bundle for exactly this reason — the system temp directory is usually
+  another volume, where a rename is a copy and no longer atomic.
+
+The old bundle stays until the next launch, because the process doing the
+replacing is running out of it. `updater.CleanUp` removes it at startup, from
+a derived path rather than a search.
+
+`ditto`, not `archive/zip`: it carries the extended attributes and symlinks a
+signed bundle depends on. Every external command goes through the injected
+`Runner`, which is what lets the unit tests cover the failure paths without a
+toolchain — and `LASSO_UPDATE_API` points the whole thing at a local server so
+the integration test exercises a real update on a real bundle.
 
 ## Errors and the doctor
 

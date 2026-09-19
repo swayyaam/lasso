@@ -747,3 +747,46 @@ export namespace presets {
 
 }
 
+export namespace updater {
+	
+	export class Result {
+	    version: string;
+	    installed: boolean;
+	    needsRestart: boolean;
+	    output: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Result(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.installed = source["installed"];
+	        this.needsRestart = source["needsRestart"];
+	        this.output = source["output"];
+	    }
+	}
+	export class Update {
+	    version: string;
+	    notes: string;
+	    pageUrl: string;
+	    available: boolean;
+	    bytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Update(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.notes = source["notes"];
+	        this.pageUrl = source["pageUrl"];
+	        this.available = source["available"];
+	        this.bytes = source["bytes"];
+	    }
+	}
+
+}
+

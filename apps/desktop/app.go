@@ -14,6 +14,7 @@ import (
 	"github.com/swayyaam/lasso/packages/doctor"
 	"github.com/swayyaam/lasso/packages/history"
 	"github.com/swayyaam/lasso/packages/presets"
+	"github.com/swayyaam/lasso/packages/updater"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -51,6 +52,11 @@ func NewApp() *App { return &App{} }
 // settings screen still needs to open so the user can see what is wrong.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// An update leaves the version it replaced beside the new one, because the
+	// process doing the replacing was still running out of it. This is the
+	// first moment it is safe to remove.
+	updater.CleanUp(bundlePath())
 
 	support, err := binaries.SupportDir()
 	if err != nil {
@@ -651,6 +657,61 @@ func (a *App) probeCookies(ctx context.Context, browser core.Browser) error {
 	// none of which says anything about whether the jar can be opened.
 	if classified := core.ClassifyError(output, runErr); classified.Kind == core.ErrCookieAccess {
 		return classified
+	}
+	return nil
+}
+
+// ---- Updating Lasso itself ----
+
+// AppVersion is the running app's version, read from its own Info.plist.
+//
+// Empty in development, where there is no bundle to read it from — the UI
+// treats that as "not applicable" rather than as a version of "".
+func (a *App) AppVersion() string {
+	return appVersion(bundlePath())
+}
+
+// CheckForUpdate asks whether a newer release exists. It downloads nothing.
+func (a *App) CheckForUpdate() (updater.Update, error) {
+	u, err := newUpdater()
+	if err != nil {
+		return updater.Update{}, err
+	}
+	return u.Check(a.ctx)
+}
+
+// InstallUpdate downloads and installs the newest release.
+//
+// It refuses while anything is downloading. Finishing means restarting, and
+// restarting means this process exits — which would cancel every download in
+// flight and leave part files behind.
+func (a *App) InstallUpdate() (updater.Result, error) {
+	a.mu.RLock()
+	queue := a.queue
+	a.mu.RUnlock()
+
+	if queue != nil {
+		for _, item := range queue.Items() {
+			if !item.State.IsTerminal() && item.State != core.StatePaused {
+				return updater.Result{}, fmt.Errorf("finish or pause your downloads first: updating restarts Lasso, which would cancel them")
+			}
+		}
+	}
+
+	u, err := newUpdater()
+	if err != nil {
+		return updater.Result{}, err
+	}
+	return u.Install(a.ctx)
+}
+
+// RestartToFinish launches the installed version and quits this one.
+func (a *App) RestartToFinish() error {
+	if err := relaunch(a.ctx, bundlePath()); err != nil {
+		return err
+	}
+	if a.ctx != nil {
+		runtime.Quit(a.ctx)
 	}
 	return nil
 }

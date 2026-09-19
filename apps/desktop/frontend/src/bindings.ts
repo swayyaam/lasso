@@ -2,5 +2,5 @@
 // never reach into the generated tree directly and regenerating cannot ripple
 // through the app.
 export * as api from "../wailsjs/go/main/App";
-export { binaries, core, doctor, history, main, presets } from "../wailsjs/go/models";
+export { binaries, core, doctor, history, main, presets, updater } from "../wailsjs/go/models";
 export { EventsOff, EventsOn } from "../wailsjs/runtime/runtime";

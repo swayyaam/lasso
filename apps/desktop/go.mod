@@ -31,6 +31,7 @@ require (
 	github.com/samber/lo v1.49.1 // indirect
 	github.com/swayyaam/lasso/packages/doctor v0.0.0
 	github.com/swayyaam/lasso/packages/history v0.0.0
+	github.com/swayyaam/lasso/packages/updater v0.0.0
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
@@ -52,3 +53,5 @@ replace github.com/swayyaam/lasso/packages/presets => ../../packages/presets
 replace github.com/swayyaam/lasso/packages/history => ../../packages/history
 
 replace github.com/swayyaam/lasso/packages/doctor => ../../packages/doctor
+
+replace github.com/swayyaam/lasso/packages/updater => ../../packages/updater

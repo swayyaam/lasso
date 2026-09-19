@@ -7,4 +7,5 @@ use (
 	./packages/doctor
 	./packages/history
 	./packages/presets
+	./packages/updater
 )

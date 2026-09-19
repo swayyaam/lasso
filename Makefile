@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-GO_MODULES := packages/core packages/binaries packages/presets packages/history packages/doctor apps/desktop
+GO_MODULES := packages/core packages/binaries packages/presets packages/history packages/doctor packages/updater apps/desktop
 
 # `go install` puts wails in GOPATH/bin (or GOBIN), which is frequently not on
 # PATH. Resolve it explicitly so the build does not depend on shell setup.
@@ -11,7 +11,7 @@ GOBIN := $(shell go env GOPATH)/bin
 endif
 WAILS := $(shell command -v wails 2>/dev/null || echo $(GOBIN)/wails)
 
-.PHONY: help setup doctor dev build test test-go test-js lint lint-go lint-js fetch-binaries clean
+.PHONY: help setup doctor dev build dmg release-assets test test-go test-js lint lint-go lint-js fetch-binaries clean
 
 help: ## Show available targets
 	@echo "Lasso — make targets"
@@ -66,6 +66,9 @@ build: ## Build Lasso.app into apps/desktop/build/bin
 
 dmg: build ## Build Lasso.app and package it into an unsigned DMG
 	./scripts/make-dmg.sh
+
+release-assets: dmg ## Build the DMG, the thin update zip and SHA256SUMS
+	./scripts/make-release-assets.sh
 
 test: test-go test-js ## Run all tests
 

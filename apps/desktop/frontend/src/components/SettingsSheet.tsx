@@ -3,6 +3,7 @@ import { Banner, Button, Card, Chip, Details, Dropdown, Eyebrow, Icon, LoadingSt
 import { api, binaries, main } from "../bindings";
 import { BROWSERS } from "./AdvancedDrawer";
 import { useDoctor } from "./DoctorPanel";
+import { UpdatePanel } from "./UpdatePanel";
 
 /**
  * SettingsSheet covers the canvas rather than opening a second window.
@@ -159,6 +160,11 @@ export function SettingsSheet({
               </div>
             </>
           )}
+
+          <div className="mt-md flex flex-col gap-sm border-t border-hairline pt-md">
+            <Eyebrow>Lasso</Eyebrow>
+            <UpdatePanel />
+          </div>
 
           <div className="mt-md flex flex-col gap-sm border-t border-hairline pt-md">
             <Eyebrow>Helper programs</Eyebrow>

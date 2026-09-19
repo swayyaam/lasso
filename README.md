@@ -130,6 +130,12 @@ repairs what it can.
 If a download fails in a way that looks like a setup problem rather than a bad
 link, the failed row offers the doctor directly.
 
+**Settings → Lasso** checks for a new version of the app and installs it in
+place, so updating does not mean downloading the disk image again and dragging
+it over the old copy. Because the app installs it rather than a browser
+downloading it, an update never has to be let past Gatekeeper — that one extra
+click is only ever for the first install.
+
 Sites change often, and yt-dlp changes with them. **Settings → Update yt-dlp**
 fetches the newest version, checks it against the official checksums, proves it
 runs, and only then swaps it in. A failed update leaves your working copy alone.
