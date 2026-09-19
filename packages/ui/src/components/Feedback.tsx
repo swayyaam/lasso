@@ -7,20 +7,48 @@ import { Spinner } from "./Button";
  *
  * It says what will appear and how to make it appear, rather than just
  * announcing emptiness.
+ *
+ * The icon sits in a full-saturation accent tile — the document's category-card
+ * treatment at the smallest scale it makes sense at. An empty pane is the one
+ * place with room for colour and nothing competing for attention, and a white
+ * rectangle with two lines of grey text in it is the part of an interface that
+ * most reads as unfinished.
  */
 export function EmptyState({
   title,
   description,
   action,
+  icon,
+  tone = "purple",
   className,
 }: {
   title: string;
   description?: ReactNode;
   action?: ReactNode;
+  icon?: ReactNode;
+  tone?: "purple" | "blue" | "pink" | "orange" | "green";
   className?: string;
 }) {
+  const tiles: Record<string, string> = {
+    purple: "bg-accent-purple text-on-primary",
+    blue: "bg-accent-blue-deep text-on-primary",
+    pink: "bg-accent-pink text-on-primary",
+    orange: "bg-accent-orange text-on-primary",
+    green: "bg-accent-green text-primary",
+  };
+
   return (
     <div className={cx("flex flex-col items-center justify-center gap-xs px-lg py-xxl text-center", className)}>
+      {icon && (
+        <div
+          className={cx(
+            "mb-xxs flex size-10 items-center justify-center rounded-md shadow-layered",
+            tiles[tone],
+          )}
+        >
+          {icon}
+        </div>
+      )}
       <p className="text-body-sm font-medium text-ink-muted">{title}</p>
       {description && <p className="max-w-note text-caption text-ink-tertiary">{description}</p>}
       {action && <div className="mt-xs">{action}</div>}

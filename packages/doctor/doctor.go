@@ -13,6 +13,7 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -94,6 +95,15 @@ type Config struct {
 	// actually be read. Injected because the only honest test is asking yt-dlp
 	// to try, which needs a subprocess.
 	CookieProbe func(ctx context.Context, browser core.Browser) error
+	// BrowserInstalled reports whether a browser is on this Mac at all.
+	//
+	// This is what separates the two causes of "could not find that browser's
+	// cookies". A protected location reports "no such file" to a process
+	// without permission rather than "permission denied", so an installed
+	// browser Lasso may not read is indistinguishable from one that was never
+	// installed — unless something looks for the application itself, which is
+	// not protected.
+	BrowserInstalled func(browser core.Browser) bool
 }
 
 // Doctor runs checks and applies fixes.
@@ -373,13 +383,40 @@ func (d *Doctor) checkCookies(ctx context.Context) Check {
 		check.Status = StatusFail
 		check.Summary = "Cannot read " + string(d.cfg.Cookies) + "'s cookies."
 		check.Detail = err.Error()
-		check.Remedy = core.UserMessage(err)
+		check.Remedy = d.cookieRemedy(err)
 		return check
 	}
 
 	check.Status = StatusOK
 	check.Summary = "Using cookies from " + string(d.cfg.Cookies) + "."
 	return check
+}
+
+// cookieRemedy narrows the classifier's advice using something only the doctor
+// can know: whether the browser is actually on this Mac.
+//
+// The classifier has to offer both causes, because from yt-dlp's output they
+// look the same. Here the application itself can be looked for, and finding it
+// settles the question — an installed browser whose cookies cannot be found is
+// macOS hiding them, not a missing browser.
+func (d *Doctor) cookieRemedy(err error) string {
+	message := core.UserMessage(err)
+
+	var downloadErr *core.DownloadError
+	if !errors.As(err, &downloadErr) || downloadErr.Kind != core.ErrCookieAccess {
+		return message
+	}
+	if d.cfg.BrowserInstalled == nil {
+		return message
+	}
+
+	if d.cfg.BrowserInstalled(d.cfg.Cookies) {
+		return string(d.cfg.Cookies) + " is installed, so this is a permissions problem rather than " +
+			"a missing browser: macOS reports a protected folder as absent to an app that may not " +
+			"read it. Give Lasso Full Disk Access in System Settings › Privacy & Security."
+	}
+	return string(d.cfg.Cookies) + " is not installed on this Mac. Choose a browser you actually " +
+		"use in Settings, or turn cookies off."
 }
 
 // humanBytes renders a size the way the interface does.

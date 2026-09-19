@@ -130,6 +130,11 @@ func formatArgs(o Options) []string {
 
 // audioSelector prefers a source stream that already matches the target format,
 // so yt-dlp can remux instead of re-encoding and losing quality.
+//
+// FLAC deliberately has no such preference. There is no lossless source to
+// match on the sites this is used with, so the only thing worth asking for is
+// the best audio available — which -S abr already orders — and letting ffmpeg
+// encode that. Matching on extension here would pick a container, not quality.
 func audioSelector(format string) string {
 	switch format {
 	case "m4a":
@@ -155,11 +160,30 @@ func sortArgs(o Options) []string {
 		fields = append(fields, "res:"+strconv.Itoa(height))
 	}
 
+	// After resolution, before codec. A user asking for HDR wants it at the
+	// size they chose, not a smaller HDR encode — but they want it more than
+	// they want any particular codec, since HDR is what the codec is carrying.
+	//
+	// yt-dlp's own ordering is DV > HDR12 > HDR10+ > HDR10 > HLG > SDR, so the
+	// bare field is already "prefer the best dynamic range available". It is a
+	// preference: a video with no HDR encode still gets the best it has.
+	if o.PreferHDR && !o.Pick.IsAudioOnly() {
+		fields = append(fields, "hdr")
+	}
+
 	if o.VideoCodec != VideoCodecAuto && !o.Pick.IsAudioOnly() {
 		fields = append(fields, "vcodec:"+string(o.VideoCodec))
 	}
 	if o.AudioCodec != AudioCodecAuto {
 		fields = append(fields, "acodec:"+string(o.AudioCodec))
+	}
+
+	// Stated rather than left to the default ordering. An audio-only download
+	// is the whole file, so the highest bitrate the site offers is always the
+	// right source — and it matters most for the lossless formats, where the
+	// encode can only ever be as good as what it was given.
+	if o.Pick.IsAudioOnly() {
+		fields = append(fields, "abr")
 	}
 	// Steer stream selection toward something the container accepts natively.
 	// MKV holds essentially anything, so it needs no hint.

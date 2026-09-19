@@ -2,6 +2,7 @@ package core
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -413,5 +414,166 @@ func TestWithheldListStillOffersWhatItHas(t *testing.T) {
 	}
 	if !slices.Contains(tierHeights(got), 360) {
 		t.Errorf("tiers = %v, want 360p to remain offerable", tierHeights(got))
+	}
+}
+
+// hdrFormat builds a video format carrying a dynamic range, the way yt-dlp
+// reports one.
+func hdrFormat(id string, w, h int, fps float64, dynamicRange string) Format {
+	f := videoFormat(id, w, h, fps, "")
+	f.DynamicRange = dynamicRange
+	return f
+}
+
+func TestHDRComesFromTheDynamicRangeField(t *testing.T) {
+	// The note usually says "2160p60" and nothing more, which is why HDR never
+	// used to surface. dynamic_range is where yt-dlp actually states it.
+	cases := []struct {
+		dynamicRange string
+		want         bool
+		wantName     string
+	}{
+		{"HDR10", true, "HDR10"},
+		{"HDR10+", true, "HDR10+"},
+		{"HLG", true, "HLG"},
+		{"DV", true, "DV"},
+		{"SDR", false, ""},
+		{"", false, ""},
+		{"sdr", false, ""},
+	}
+
+	for _, c := range cases {
+		t.Run(c.dynamicRange, func(t *testing.T) {
+			f := hdrFormat("1", 3840, 2160, 60, c.dynamicRange)
+			if got := f.IsHDR(); got != c.want {
+				t.Errorf("IsHDR() = %v, want %v", got, c.want)
+			}
+			if got := f.HDRName(); got != c.wantName {
+				t.Errorf("HDRName() = %q, want %q", got, c.wantName)
+			}
+		})
+	}
+}
+
+func TestHDRSurfacesOnTheTier(t *testing.T) {
+	got := AnalyseFormats([]Format{
+		hdrFormat("401", 3840, 2160, 60, "HDR10"),
+		videoFormat("137", 1920, 1080, 30, ""),
+		audioFormat("140"),
+	})
+
+	var found bool
+	for _, tier := range got.Tiers {
+		if tier.Height != 2160 {
+			continue
+		}
+		found = true
+		if !tier.HasHDR {
+			t.Error("the 4K tier does not report HDR")
+		}
+		if tier.HDRFormat != "HDR10" {
+			t.Errorf("HDRFormat = %q, want the kind named", tier.HDRFormat)
+		}
+		if !tier.HasHighFrameRate {
+			t.Error("60fps did not surface alongside it")
+		}
+	}
+	if !found {
+		t.Fatalf("no 4K tier in %v", tierHeights(got))
+	}
+
+	// And the SDR rung must not inherit it.
+	for _, tier := range got.Tiers {
+		if tier.Height == 1080 && tier.HasHDR {
+			t.Error("an SDR tier was marked HDR")
+		}
+	}
+}
+
+func TestTierSizeAddsAudioToAVideoOnlyStream(t *testing.T) {
+	video := videoFormat("137", 1920, 1080, 30, "")
+	video.Filesize = 100_000_000
+	audio := audioFormat("140")
+	audio.Filesize = 5_000_000
+
+	got := AnalyseFormats([]Format{video, audio})
+	for _, tier := range got.Tiers {
+		if tier.Height == 1080 && tier.Bytes != 105_000_000 {
+			t.Errorf("Bytes = %d, want video plus audio", tier.Bytes)
+		}
+	}
+	if got.AudioBytes != 5_000_000 {
+		t.Errorf("AudioBytes = %d, want the best audio stream", got.AudioBytes)
+	}
+	if got.BestBytes != 105_000_000 {
+		t.Errorf("BestBytes = %d, want what the top rung costs", got.BestBytes)
+	}
+}
+
+func TestMuxedTierSizeDoesNotDoubleCountAudio(t *testing.T) {
+	muxed := muxedFormat("18", 640, 360)
+	muxed.Filesize = 20_000_000
+	audio := audioFormat("140")
+	audio.Filesize = 5_000_000
+
+	got := AnalyseFormats([]Format{muxed, audio})
+	for _, tier := range got.Tiers {
+		if tier.Height == 360 && tier.Bytes != 20_000_000 {
+			t.Errorf("Bytes = %d, want the muxed stream's own size", tier.Bytes)
+		}
+	}
+}
+
+func TestUnknownSizeStaysUnknown(t *testing.T) {
+	// Fragmented and live streams state no size. A number that is quietly
+	// wrong is worse than no number.
+	got := AnalyseFormats([]Format{videoFormat("1", 1920, 1080, 30, ""), audioFormat("140")})
+	for _, tier := range got.Tiers {
+		if tier.Bytes != 0 {
+			t.Errorf("Bytes = %d, want 0 when nothing stated a size", tier.Bytes)
+		}
+	}
+}
+
+func TestLosslessAudioIsAboutTheCodecNotTheTarget(t *testing.T) {
+	// The distinction the FLAC preset lives or dies on: a real FLAC file made
+	// from an Opus stream is not lossless audio, and the interface can only be
+	// honest about that if this is right.
+	lossy := audioFormat("140")
+	lossy.ACodec = "opus"
+	if lossy.IsLosslessAudio() {
+		t.Error("opus reported as lossless")
+	}
+	if AnalyseFormats([]Format{lossy}).LosslessAudio {
+		t.Error("a source serving only opus was reported as lossless")
+	}
+
+	lossless := audioFormat("bandcamp-flac")
+	lossless.ACodec = "flac"
+	if !lossless.IsLosslessAudio() {
+		t.Error("flac not reported as lossless")
+	}
+	if !AnalyseFormats([]Format{lossless}).LosslessAudio {
+		t.Error("a source serving flac was not reported as lossless")
+	}
+
+	for _, codec := range []string{"alac", "pcm_s16le", "wav"} {
+		f := audioFormat("x")
+		f.ACodec = codec
+		if !f.IsLosslessAudio() {
+			t.Errorf("%q not reported as lossless", codec)
+		}
+	}
+}
+
+func TestAudioPicksAskForTheBestBitrate(t *testing.T) {
+	// An audio-only download is the whole file, so the best bitrate the site
+	// offers is always the right source.
+	o := baseOptions()
+	o.Pick = PickAudioFLAC
+
+	sort, ok := argValue(BuildArgs(o), "-S")
+	if !ok || !slices.Contains(strings.Split(sort, ","), "abr") {
+		t.Errorf("sort = %q, want it to order by audio bitrate", sort)
 	}
 }

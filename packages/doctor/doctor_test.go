@@ -285,3 +285,69 @@ func TestReportSummaryCounts(t *testing.T) {
 		}
 	}
 }
+
+func TestInstalledBrowserPointsAtPermissionsNotAbsence(t *testing.T) {
+	// The finding that prompted this: macOS answers a process without
+	// permission with "no such file", so an installed browser Lasso may not
+	// read looks exactly like a browser that was never installed. Telling the
+	// user it is not installed sends them hunting for something already there.
+	missing := core.ClassifyError(
+		`ERROR: could not find chrome cookies database in "/Users/x/Library/Application Support/Google/Chrome"`,
+		errors.New("exit status 1"),
+	)
+
+	d := newDoctor(t, func(c *Config) {
+		c.Cookies = core.BrowserChrome
+		c.CookieProbe = func(context.Context, core.Browser) error { return missing }
+		c.BrowserInstalled = func(core.Browser) bool { return true }
+	})
+
+	check := find(t, d.Run(context.Background()), CheckCookies)
+	if check.Status != StatusFail {
+		t.Fatalf("Status = %q, want %q", check.Status, StatusFail)
+	}
+	if !strings.Contains(check.Remedy, "Full Disk Access") {
+		t.Errorf("Remedy = %q, want the permission remedy for an installed browser", check.Remedy)
+	}
+	if strings.Contains(check.Remedy, "not installed") {
+		t.Errorf("Remedy = %q, claims a browser that is present is absent", check.Remedy)
+	}
+}
+
+func TestAbsentBrowserSaysSo(t *testing.T) {
+	missing := core.ClassifyError(
+		`ERROR: could not find brave cookies database in "/Users/x/Library/Application Support/BraveSoftware"`,
+		errors.New("exit status 1"),
+	)
+
+	d := newDoctor(t, func(c *Config) {
+		c.Cookies = core.BrowserBrave
+		c.CookieProbe = func(context.Context, core.Browser) error { return missing }
+		c.BrowserInstalled = func(core.Browser) bool { return false }
+	})
+
+	check := find(t, d.Run(context.Background()), CheckCookies)
+	if !strings.Contains(check.Remedy, "not installed") {
+		t.Errorf("Remedy = %q, want it to say the browser is absent", check.Remedy)
+	}
+	if strings.Contains(check.Remedy, "Full Disk Access") {
+		t.Errorf("Remedy = %q, sends the user to a permission that would not help", check.Remedy)
+	}
+}
+
+func TestNonCookieFailuresKeepTheClassifiersAdvice(t *testing.T) {
+	// The narrowing only applies to a cookie-access failure. Anything else
+	// keeps whatever the classifier said.
+	other := core.ClassifyError("ERROR: HTTP Error 429: Too Many Requests", errors.New("exit status 1"))
+
+	d := newDoctor(t, func(c *Config) {
+		c.Cookies = core.BrowserChrome
+		c.CookieProbe = func(context.Context, core.Browser) error { return other }
+		c.BrowserInstalled = func(core.Browser) bool { return true }
+	})
+
+	check := find(t, d.Run(context.Background()), CheckCookies)
+	if !strings.Contains(check.Remedy, "slow down") {
+		t.Errorf("Remedy = %q, want the classifier's own message", check.Remedy)
+	}
+}

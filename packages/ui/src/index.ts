@@ -22,6 +22,8 @@ export { Input } from "./components/Input";
 export { Details, MonoBlock } from "./components/Mono";
 export { ProgressBar } from "./components/Progress";
 export { StatusBadge } from "./components/StatusBadge";
+export { Dot, Tag } from "./components/Tag";
+export type { TagTone } from "./components/Tag";
 export type { Tone } from "./components/StatusBadge";
 export { Disclosure } from "./components/Disclosure";
 export { Tooltip, TooltipProvider } from "./components/Tooltip";

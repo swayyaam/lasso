@@ -188,11 +188,21 @@ const (
 		"Give Lasso Full Disk Access in System Settings › Privacy & Security, then try again — " +
 		"or choose a different browser in Settings."
 
-	// cookieMissingMessage is for a jar that is not there at all, which means
-	// the browser is not installed or has never been opened. Full Disk Access
-	// would do nothing for it.
-	cookieMissingMessage = "Lasso could not find that browser's cookies — it may not be installed, " +
-		"or may never have been opened. Choose a browser you actually use in Settings."
+	// cookieMissingMessage is for a jar that is not there as far as Lasso can
+	// tell, which has two causes that look identical from here.
+	//
+	// The obvious one is that the browser is not installed. The other is that
+	// macOS is hiding it: a protected location reports "no such file" to a
+	// process without permission rather than "permission denied", so an
+	// installed browser whose data Lasso may not read is indistinguishable
+	// from one that was never installed. Naming only the first sends someone
+	// with the second to look for a browser that is already there.
+	//
+	// The doctor can tell them apart, because it can look for the application
+	// itself. This message cannot, so it says both.
+	cookieMissingMessage = "Lasso could not find that browser's cookies. Either it is not " +
+		"installed, or macOS is hiding its data from Lasso — Full Disk Access in System " +
+		"Settings covers the second. Run the doctor to find out which."
 )
 
 // cookieRefusals are the ways the operating system, or yt-dlp, says a cookie

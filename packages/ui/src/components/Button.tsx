@@ -18,6 +18,18 @@ type Size = "sm" | "md" | "icon";
  * Every variant defines hover *and* active. A button that only changes on
  * hover feels unresponsive at the moment of clicking, which is the moment the
  * feedback is actually wanted.
+ *
+ * Depth comes from the document's layered drop shadow — five stops at very low
+ * individual opacities, its only atmospheric effect — plus a one-pixel press.
+ * A raised control that does not move when pressed reads as a picture of a
+ * button, which is what "flat" actually means: not the absence of gradient,
+ * but the absence of response.
+ *
+ * Primary additionally carries a shallow top-down gradient across the ink
+ * ramp. That is a derivation: the source specifies a flat #080808 fill. On a
+ * white canvas a large flat near-black rectangle reads as a hole rather than
+ * as a raised surface, and two stops of the same ink give it a top edge
+ * without introducing a colour the system does not have.
  */
 export function Button({
   variant = "secondary",
@@ -40,23 +52,38 @@ export function Button({
   trailingIcon?: ReactNode;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   const variants: Record<Variant, string> = {
-    // The canonical near-black CTA. Hover and press walk up the ink ramp
-    // rather than fading, so the control never looks disabled mid-press.
-    primary: "bg-primary text-on-primary hover:bg-primary-hover active:bg-primary-focus shadow-sm",
+    // The canonical near-black CTA.
+    primary: cx(
+      "bg-primary bg-gradient-to-b from-ink-strong to-primary text-on-primary",
+      "shadow-layered hover:from-ink-muted hover:to-ink-strong hover:shadow-layered-strong",
+      "active:translate-y-px active:shadow-sm active:from-primary active:to-primary",
+    ),
     // The white outline CTA: canvas fill, hairline border. Both the fill and
     // the border move, which is what makes it read as raised rather than as
     // text that happens to be boxed.
-    secondary:
-      "bg-canvas text-ink border border-hairline hover:bg-surface-2 hover:border-hairline-strong active:bg-surface-3",
+    secondary: cx(
+      "bg-canvas text-ink border border-hairline shadow-sm",
+      "hover:bg-surface-1 hover:border-hairline-strong hover:shadow-layered",
+      "active:translate-y-px active:bg-surface-2 active:shadow-none",
+    ),
     // Ghost. Nothing until pointed at, then a fill — the quiet actions in a
     // row of controls, where a border on each would fence the row into stripes.
+    // No shadow at any point: it is not a raised surface, so lifting it on
+    // hover would be a lie about what it is.
     tertiary: "bg-transparent text-ink-subtle hover:bg-surface-2 hover:text-ink active:bg-surface-3",
-    danger:
-      "bg-transparent text-danger-strong border border-danger/30 hover:bg-danger-surface hover:border-danger/60 active:bg-danger-surface",
+    danger: cx(
+      "bg-canvas text-danger-strong border border-danger/30 shadow-sm",
+      "hover:bg-danger-surface hover:border-danger/60 hover:shadow-layered",
+      "active:translate-y-px active:shadow-none",
+    ),
   };
 
   const sizes: Record<Size, string> = {
-    sm: "h-7 px-sm gap-xxs",
+    // px-xs, not px-sm. A ghost button's padding is invisible, so at 12px two
+    // adjacent labels sit ~32px apart with nothing between them to explain the
+    // gap — which is what made the queue row's Pause and Cancel look unrelated
+    // to each other and to the row.
+    sm: "h-7 px-xs gap-xxs",
     md: "h-9 px-md gap-xs",
     // Square, for a glyph with no label. The accessible name has to come from
     // aria-label or a tooltip.
@@ -70,10 +97,10 @@ export function Button({
       className={cx(
         "no-drag inline-flex shrink-0 items-center justify-center rounded-sm",
         "text-button whitespace-nowrap",
-        "transition-[background-color,border-color,color,box-shadow] duration-150 ease-standard",
+        "transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-standard",
         // Disabled resolves to documented colours rather than an opacity fade,
         // so a disabled primary does not read as a dimmer primary.
-        "disabled:pointer-events-none disabled:border-transparent disabled:bg-surface-2 disabled:text-ink-faint disabled:shadow-none",
+        "disabled:pointer-events-none disabled:border-transparent disabled:bg-surface-2 disabled:from-surface-2 disabled:to-surface-2 disabled:text-ink-faint disabled:shadow-none",
         sizes[size],
         variants[variant],
         className,

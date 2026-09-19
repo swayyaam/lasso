@@ -39,6 +39,10 @@ type Format struct {
 	Filesize       int64   `json:"filesize"`
 	FilesizeApprox int64   `json:"filesizeApprox"`
 	TBR            float64 `json:"tbr"`
+	// DynamicRange is yt-dlp's own word for the format's dynamic range:
+	// "SDR", "HDR10", "HDR10+", "HLG", "DV". It is the only reliable place
+	// this is stated — the format note usually does not mention it.
+	DynamicRange string `json:"dynamicRange"`
 }
 
 // HasVideo reports whether the format carries a video track.
@@ -132,6 +136,7 @@ type rawFormat struct {
 	Filesize       *int64   `json:"filesize"`
 	FilesizeApprox *int64   `json:"filesize_approx"`
 	TBR            *float64 `json:"tbr"`
+	DynamicRange   string   `json:"dynamic_range"`
 }
 
 type rawEntry struct {
@@ -198,6 +203,7 @@ func ParseMetadata(data []byte) (*Metadata, error) {
 			Filesize:       deref(f.Filesize),
 			FilesizeApprox: deref(f.FilesizeApprox),
 			TBR:            deref(f.TBR),
+			DynamicRange:   f.DynamicRange,
 		})
 	}
 	m.Quality = AnalyseFormats(m.Formats)

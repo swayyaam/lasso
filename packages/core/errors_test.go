@@ -35,11 +35,15 @@ func TestClassifyMissingCookieJar(t *testing.T) {
 	if got.Kind != ErrCookieAccess {
 		t.Fatalf("Kind = %q, want %q", got.Kind, ErrCookieAccess)
 	}
-	if strings.Contains(got.Message, "Full Disk Access") {
-		t.Errorf("message %q sends the user to a permission that is not the problem", got.Message)
+	// Both causes have to be named. A protected location reports "no such
+	// file" to a process without permission, so an installed browser Lasso may
+	// not read looks exactly like one that was never installed — and claiming
+	// only the first sends someone hunting for a browser already on their Mac.
+	if !strings.Contains(got.Message, "not") || !strings.Contains(got.Message, "installed") {
+		t.Errorf("message %q does not offer the missing-browser cause", got.Message)
 	}
-	if !strings.Contains(got.Message, "not be installed") {
-		t.Errorf("message %q does not explain that the browser is missing", got.Message)
+	if !strings.Contains(got.Message, "hiding") {
+		t.Errorf("message %q does not offer the permission cause", got.Message)
 	}
 }
 

@@ -669,3 +669,45 @@ func TestContinueIsAlwaysAsked(t *testing.T) {
 		t.Error("--no-continue would discard a paused download's progress")
 	}
 }
+
+func TestPreferHDRSortsAfterResolution(t *testing.T) {
+	o := baseOptions()
+	o.Pick = Pick2160p
+	o.PreferHDR = true
+	o.VideoCodec = VideoCodecH265
+
+	sort, ok := argValue(BuildArgs(o), "-S")
+	if !ok {
+		t.Fatal("no sort fields")
+	}
+	fields := strings.Split(sort, ",")
+
+	res, hdr, vcodec := indexIn(fields, "res:2160"), indexIn(fields, "hdr"), indexIn(fields, "vcodec:h265")
+	if hdr < 0 {
+		t.Fatalf("sort %q does not ask for HDR", sort)
+	}
+	// Resolution first: an HDR encode at the wrong size is not what was asked
+	// for. Codec after: HDR is the thing the codec is carrying.
+	if !(res < hdr && hdr < vcodec) {
+		t.Errorf("sort order %q, want res before hdr before vcodec", sort)
+	}
+}
+
+func TestHDRIsNotAskedForOnAudio(t *testing.T) {
+	o := baseOptions()
+	o.Pick = PickAudioFLAC
+	o.PreferHDR = true
+
+	if sort, ok := argValue(BuildArgs(o), "-S"); ok && strings.Contains(sort, "hdr") {
+		t.Errorf("sort %q asks for HDR on an audio-only download", sort)
+	}
+}
+
+func indexIn(fields []string, want string) int {
+	for i, f := range fields {
+		if f == want {
+			return i
+		}
+	}
+	return -1
+}

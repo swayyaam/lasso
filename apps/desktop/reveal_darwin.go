@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
+
+	"github.com/swayyaam/lasso/packages/core"
 )
 
 // openInFinder reveals a file in Finder.
@@ -42,4 +46,46 @@ func openFullDiskAccessSettings() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return exec.CommandContext(ctx, "/usr/bin/open", fullDiskAccessURL).Run()
+}
+
+// browserApps maps a cookie source to the application bundles it could be.
+//
+// Looking for the application is how the doctor separates "that browser is not
+// installed" from "macOS will not let Lasso read its data" — the two report
+// identically through yt-dlp, because a protected folder answers a process
+// without permission with "no such file" rather than "permission denied".
+//
+// /Applications is not itself protected, so this check works without any grant.
+var browserApps = map[core.Browser][]string{
+	core.BrowserSafari:  {"Safari.app"},
+	core.BrowserChrome:  {"Google Chrome.app"},
+	core.BrowserFirefox: {"Firefox.app"},
+	core.BrowserBrave:   {"Brave Browser.app"},
+	core.BrowserArc:     {"Arc.app"},
+}
+
+// browserSearchPaths are where an application can live. A user-installed copy
+// under ~/Applications is as real as one in /Applications.
+func browserSearchPaths() []string {
+	paths := []string{"/Applications", "/System/Applications", "/System/Cryptexes/App/System/Applications"}
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths, filepath.Join(home, "Applications"))
+	}
+	return paths
+}
+
+// browserInstalled reports whether a browser is on this Mac.
+func browserInstalled(browser core.Browser) bool {
+	bundles, ok := browserApps[browser]
+	if !ok {
+		return false
+	}
+	for _, dir := range browserSearchPaths() {
+		for _, bundle := range bundles {
+			if info, err := os.Stat(filepath.Join(dir, bundle)); err == nil && info.IsDir() {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Button, EmptyState, VirtualList } from "@lasso/ui";
+import { Button, EmptyState, Icon, VirtualList } from "@lasso/ui";
 import { core } from "../bindings";
 import { QUEUE_ROW_HEIGHT, QueueRow } from "./QueueRow";
 
@@ -32,6 +32,8 @@ export function QueuePane({ items }: { items: core.Item[] }) {
     <>
       {items.length === 0 ? (
         <EmptyState
+          tone="blue"
+          icon={<Icon.Download className="size-5" strokeWidth={1.75} aria-hidden />}
           title="Nothing downloading"
           description="Paste a link on the left and pick a quality. Downloads appear here with progress, and you can cancel or retry any of them."
         />

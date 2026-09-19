@@ -1,12 +1,22 @@
-import { Chip, Eyebrow, cx } from "@lasso/ui";
+import { Chip, Dot, Eyebrow, Tag } from "@lasso/ui";
+import type { TagTone } from "@lasso/ui";
 import { core } from "../bindings";
+import { formatBytes } from "../format";
 
-export const AUDIO_PICKS = [
-  { id: "audio-m4a", label: "M4A" },
-  { id: "audio-mp3", label: "MP3" },
-  { id: "audio-opus", label: "Opus" },
-  { id: "audio-flac", label: "FLAC" },
-] as const;
+/**
+ * The audio formats, each with its place in the five-stop category palette.
+ *
+ * The dot says the one thing four letters cannot: which of these throws data
+ * away and which does not. FLAC is the only lossless target, so it is the only
+ * green one — and when the source is itself lossy, the note below says so
+ * rather than letting the colour imply a quality the file cannot have.
+ */
+export const AUDIO_PICKS: { id: string; label: string; tone: TagTone; hint: string }[] = [
+  { id: "audio-m4a", label: "M4A", tone: "blue", hint: "AAC in an MP4 container — plays everywhere" },
+  { id: "audio-mp3", label: "MP3", tone: "orange", hint: "The most compatible, and the oldest" },
+  { id: "audio-opus", label: "Opus", tone: "purple", hint: "Best sound per byte; what YouTube usually serves" },
+  { id: "audio-flac", label: "FLAC", tone: "green", hint: "Lossless container — only as good as its source" },
+];
 
 /** pickFor maps a tier height onto the quick-pick identifier. */
 function pickFor(height: number): string {
@@ -25,6 +35,11 @@ function pickFor(height: number): string {
  * The same honesty cuts the other way: when the site has withheld everything
  * above its fallback stream, showing a lone 360p chip with no explanation reads
  * as "this video is only 360p". The note says otherwise.
+ *
+ * Each rung carries what it will cost and what it can do — a size, and a tag
+ * for HDR, high frame rate or the top of the ladder. Those are the facts that
+ * decide between two rungs, and reading them off the chips beats opening a
+ * format table.
  */
 export function QualityPicks({
   quality,
@@ -46,6 +61,10 @@ export function QualityPicks({
 
   if (!showVideo && !showAudio) return null;
 
+  // Only worth saying when it changes what the user should expect, which is
+  // when they have actually asked for the lossless one.
+  const losslessFromLossy = value === "audio-flac" && quality != null && !quality.losslessAudio;
+
   return (
     <div className="flex flex-col gap-sm">
       {showVideo && (
@@ -65,7 +84,10 @@ export function QualityPicks({
 
           <div className="flex flex-wrap gap-xxs">
             <Chip selected={value === "best"} disabled={disabled} onClick={() => onChange("best")}>
-              {quality?.bestLabel ? `Best · ${quality.bestLabel}` : "Best"}
+              <span className="flex items-baseline gap-xxs">
+                {quality?.bestLabel ? `Best · ${quality.bestLabel}` : "Best"}
+                <Size bytes={quality?.bestBytes ?? 0} selected={value === "best"} />
+              </span>
             </Chip>
 
             {tiers.map((tier) => (
@@ -79,12 +101,8 @@ export function QualityPicks({
                 <span className="flex items-baseline gap-xxs">
                   {tier.label}
                   {tier.detail && <span className="text-caption opacity-60">{tier.detail}</span>}
-                  {(tier.hasHighFrameRate || tier.hasHDR) && (
-                    <span className="flex gap-0.5">
-                      {tier.hasHighFrameRate && <Badge>60</Badge>}
-                      {tier.hasHDR && <Badge>HDR</Badge>}
-                    </span>
-                  )}
+                  <Size bytes={tier.bytes} selected={value === pickFor(tier.height)} />
+                  <Capabilities tier={tier} />
                 </span>
               </Chip>
             ))}
@@ -101,27 +119,74 @@ export function QualityPicks({
                 key={pick.id}
                 selected={value === pick.id}
                 disabled={disabled}
+                title={pick.hint}
                 onClick={() => onChange(pick.id)}
               >
-                {pick.label}
+                <span className="flex items-center gap-xxs">
+                  <Dot tone={pick.tone} />
+                  {pick.label}
+                  <Size bytes={quality?.audioBytes ?? 0} selected={value === pick.id} />
+                </span>
               </Chip>
             ))}
           </div>
+
+          {losslessFromLossy && (
+            <p className="max-w-note text-caption text-ink-tertiary">
+              This source only serves compressed audio, so the FLAC file will be a
+              larger copy of the same sound rather than a better one. Opus keeps it
+              at the size the site actually sent.
+            </p>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-/** Badge marks a capability that only some tiers have. */
-function Badge({ children }: { children: React.ReactNode }) {
+/**
+ * Size is what the rung will cost.
+ *
+ * Nothing is rendered when the source did not say, which is normal for
+ * fragmented and live streams — a guess here would be read as a fact.
+ */
+function Size({ bytes, selected }: { bytes: number; selected: boolean }) {
+  const text = formatBytes(bytes);
+  if (!text) return null;
+
   return (
-    <span
-      className={cx(
-        "rounded-xs bg-surface-4 px-1 text-[10px] font-medium leading-4 text-ink-subtle",
-      )}
-    >
-      {children}
+    <span className={selected ? "text-caption opacity-70" : "text-caption text-ink-tertiary"}>
+      {text}
     </span>
   );
+}
+
+/** Capabilities are the tags that separate two rungs of the same height. */
+function Capabilities({ tier }: { tier: core.ResolutionTier }) {
+  const tags = [];
+
+  if (tier.height >= 4320) {
+    tags.push(
+      <Tag key="max" tone="pink" title="The top of the ladder">
+        8K
+      </Tag>,
+    );
+  }
+  if (tier.hasHDR) {
+    tags.push(
+      <Tag key="hdr" tone="purple" title={`High dynamic range (${tier.hdrFormat || "HDR"})`}>
+        {tier.hdrFormat || "HDR"}
+      </Tag>,
+    );
+  }
+  if (tier.hasHighFrameRate) {
+    tags.push(
+      <Tag key="fps" tone="blue" title="Higher frame rate — 60fps or above">
+        60
+      </Tag>,
+    );
+  }
+
+  if (tags.length === 0) return null;
+  return <span className="flex gap-0.5">{tags}</span>;
 }

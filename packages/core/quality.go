@@ -18,6 +18,12 @@ type ResolutionTier struct {
 	HasHighFrameRate bool `json:"hasHighFrameRate"`
 	// HasHDR is true when some format at this tier is HDR.
 	HasHDR bool `json:"hasHDR"`
+	// HDRFormat names the kind, e.g. "HDR10" or "DV", for the tooltip.
+	HDRFormat string `json:"hdrFormat"`
+	// Bytes estimates the finished file at this tier: the best video stream
+	// here, plus the best audio when that stream carries none. Zero when the
+	// source does not say, which is common for fragmented and live streams.
+	Bytes int64 `json:"bytes"`
 }
 
 // QualityOptions describes what a resolved link can actually be downloaded as.
@@ -38,6 +44,17 @@ type QualityOptions struct {
 	// CountedFormats is the number of real downloadable formats, excluding
 	// storyboards.
 	CountedFormats int `json:"countedFormats"`
+	// AudioBytes estimates an audio-only download: the best audio stream.
+	AudioBytes int64 `json:"audioBytes"`
+	// BestBytes estimates what "Best" would produce.
+	BestBytes int64 `json:"bestBytes"`
+	// LosslessAudio is true when some audio stream is itself lossless.
+	//
+	// It is almost never true on the video sites this is used with, and that is
+	// the point: asking for FLAC from a source that only serves Opus or AAC
+	// produces a genuine FLAC file of audio that has already lost what it lost.
+	// The interface can only say so if the backend has looked.
+	LosslessAudio bool `json:"losslessAudio"`
 	// Limited is true when the format list has the shape a site returns to a
 	// client it will not serve properly: one low muxed stream and no separate
 	// video track at all. See looksLimited.
@@ -73,6 +90,28 @@ var tierLadder = []struct {
 // source still lands on 720 rather than being promoted.
 const tierTolerance = 0.95
 
+// losslessCodecs are the audio codecs that discard nothing.
+var losslessCodecs = []string{"flac", "alac", "pcm", "wav", "ape", "tta", "wv"}
+
+// IsLosslessAudio reports whether a format's audio is itself lossless.
+//
+// This is what separates "FLAC" the file format from "lossless" the property.
+// Encoding an Opus stream to FLAC produces a real FLAC file that is larger than
+// the original and sounds exactly like it — nothing is recovered, because
+// nothing that was thrown away is still there to recover.
+func (f Format) IsLosslessAudio() bool {
+	codec := strings.ToLower(f.ACodec)
+	if codec == "" || codec == "none" {
+		return false
+	}
+	for _, lossless := range losslessCodecs {
+		if strings.HasPrefix(codec, lossless) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsStoryboard reports whether a format is one of yt-dlp's preview mosaics
 // rather than something worth downloading.
 func (f Format) IsStoryboard() bool {
@@ -93,9 +132,35 @@ func (f Format) ShortSide() int {
 	return f.Height
 }
 
-// isHDR reads yt-dlp's dynamic-range hints out of the format note.
-func (f Format) isHDR() bool {
-	return containsFold(f.Note, "hdr") || containsFold(f.VCodec, "hdr")
+// IsHDR reports whether a format carries high dynamic range.
+//
+// DynamicRange is the field that actually answers this. yt-dlp fills it for
+// every format it knows about — "SDR" when there is nothing special — and it is
+// the only place the answer is stated plainly: a format note may say "2160p60"
+// and nothing more, which is why HDR never used to surface.
+//
+// The note and codec are still consulted, for extractors that fill neither the
+// field nor it correctly.
+func (f Format) IsHDR() bool {
+	switch strings.ToUpper(strings.TrimSpace(f.DynamicRange)) {
+	case "", "SDR":
+		// Fall through to the older hints rather than concluding SDR.
+	default:
+		return true
+	}
+	return containsFold(f.Note, "hdr") || containsFold(f.VCodec, "dvh") ||
+		containsFold(f.Note, "dolby vision")
+}
+
+// HDRName is the dynamic range to show, e.g. "HDR10" or "DV".
+func (f Format) HDRName() string {
+	if r := strings.ToUpper(strings.TrimSpace(f.DynamicRange)); r != "" && r != "SDR" {
+		return r
+	}
+	if f.IsHDR() {
+		return "HDR"
+	}
+	return ""
 }
 
 // AnalyseFormats works out which quality options a resolved link supports.
@@ -109,8 +174,17 @@ func AnalyseFormats(formats []Format) QualityOptions {
 	type tierState struct {
 		highFrameRate bool
 		hdr           bool
+		hdrFormat     string
+		// bestVideo is the largest video stream at this rung, which is the one
+		// yt-dlp's default ordering picks. muxed says whether it already
+		// carries audio, and so whether an audio stream has to be added.
+		bestVideo int64
+		muxed     bool
 	}
 	seen := map[int]*tierState{}
+
+	// The best audio stream, added to any tier whose video has none.
+	var bestAudio int64
 
 	// A site serving a link properly offers separate video and audio streams to
 	// combine. Their total absence is the signal that something was withheld.
@@ -124,6 +198,12 @@ func AnalyseFormats(formats []Format) QualityOptions {
 
 		if f.HasAudio() {
 			options.HasAudio = true
+			if f.IsLosslessAudio() {
+				options.LosslessAudio = true
+			}
+			if !f.HasVideo() && f.Size() > bestAudio {
+				bestAudio = f.Size()
+			}
 		}
 		if !f.HasVideo() {
 			continue
@@ -155,8 +235,15 @@ func AnalyseFormats(formats []Format) QualityOptions {
 		if f.FPS > 50 {
 			state.highFrameRate = true
 		}
-		if f.isHDR() {
+		if f.IsHDR() {
 			state.hdr = true
+			if state.hdrFormat == "" {
+				state.hdrFormat = f.HDRName()
+			}
+		}
+		if size := f.Size(); size > state.bestVideo {
+			state.bestVideo = size
+			state.muxed = f.HasAudio()
 		}
 	}
 
@@ -171,6 +258,8 @@ func AnalyseFormats(formats []Format) QualityOptions {
 			Detail:           rung.detail,
 			HasHighFrameRate: state.highFrameRate,
 			HasHDR:           state.hdr,
+			HDRFormat:        state.hdrFormat,
+			Bytes:            estimate(state.bestVideo, state.muxed, bestAudio),
 		})
 	}
 
@@ -180,7 +269,26 @@ func AnalyseFormats(formats []Format) QualityOptions {
 
 	options.BestLabel = labelFor(options.BestHeight)
 	options.Limited = looksLimited(options.HasVideo, options.BestHeight, adaptive)
+	options.AudioBytes = bestAudio
+	if len(options.Tiers) > 0 {
+		// "Best" downloads the top rung, so it costs what the top rung costs.
+		options.BestBytes = options.Tiers[0].Bytes
+	}
 	return options
+}
+
+// estimate adds the audio stream to a video stream that has none.
+//
+// Zero in means zero out: a size nobody stated is not worth guessing at, and a
+// number that is quietly wrong is worse than no number at all.
+func estimate(video int64, muxed bool, audio int64) int64 {
+	if video <= 0 {
+		return 0
+	}
+	if muxed {
+		return video
+	}
+	return video + audio
 }
 
 // looksLimited reports whether a format list looks withheld rather than simply

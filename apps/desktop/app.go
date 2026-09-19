@@ -606,6 +606,7 @@ func (a *App) doctor() (*doctor.Doctor, error) {
 		FreeBytes:        freeBytes,
 		MinimumFreeBytes: minimumFreeBytes,
 		CookieProbe:      a.probeCookies,
+		BrowserInstalled: browserInstalled,
 	})
 }
 

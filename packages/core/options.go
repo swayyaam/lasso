@@ -160,11 +160,14 @@ const DefaultTemplate = "%(title)s [%(id)s].%(ext)s"
 // Options is the complete description of one download request. It is the sole
 // input to BuildArgs, which is a pure function of it.
 type Options struct {
-	URL          string       `json:"url"`
-	Pick         QuickPick    `json:"pick"`
-	Container    Container    `json:"container"`
-	VideoCodec   VideoCodec   `json:"videoCodec"`
-	AudioCodec   AudioCodec   `json:"audioCodec"`
+	URL        string     `json:"url"`
+	Pick       QuickPick  `json:"pick"`
+	Container  Container  `json:"container"`
+	VideoCodec VideoCodec `json:"videoCodec"`
+	AudioCodec AudioCodec `json:"audioCodec"`
+	// PreferHDR asks for the high-dynamic-range encode where one exists. It is
+	// a preference, not a filter: a video with no HDR encode still downloads.
+	PreferHDR    bool         `json:"preferHDR"`
 	Subtitles    Subtitles    `json:"subtitles"`
 	Enhancements Enhancements `json:"enhancements"`
 	Playlist     Playlist     `json:"playlist"`

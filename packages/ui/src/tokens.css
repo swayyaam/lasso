@@ -79,6 +79,9 @@
   --color-accent-purple: #7a3dff;
   --color-accent-pink: #ed52cb;
   --color-accent-blue: #3b89ff;
+  /* The deeper stop, for fills that carry white text: #3b89ff with white on
+     it is about 3:1, which is not enough for a small label. */
+  --color-accent-blue-deep: #006acc;
   --color-accent-orange: #ff6b00;
   --color-accent-green: #00d722;
 

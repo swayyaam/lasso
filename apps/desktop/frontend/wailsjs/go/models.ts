@@ -169,6 +169,7 @@ export namespace core {
 	    filesize: number;
 	    filesizeApprox: number;
 	    tbr: number;
+	    dynamicRange: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Format(source);
@@ -187,6 +188,7 @@ export namespace core {
 	        this.filesize = source["filesize"];
 	        this.filesizeApprox = source["filesizeApprox"];
 	        this.tbr = source["tbr"];
+	        this.dynamicRange = source["dynamicRange"];
 	    }
 	}
 	export class Progress {
@@ -291,6 +293,7 @@ export namespace core {
 	    container: string;
 	    videoCodec: string;
 	    audioCodec: string;
+	    preferHDR: boolean;
 	    subtitles: Subtitles;
 	    enhancements: Enhancements;
 	    playlist: Playlist;
@@ -311,6 +314,7 @@ export namespace core {
 	        this.container = source["container"];
 	        this.videoCodec = source["videoCodec"];
 	        this.audioCodec = source["audioCodec"];
+	        this.preferHDR = source["preferHDR"];
 	        this.subtitles = this.convertValues(source["subtitles"], Subtitles);
 	        this.enhancements = this.convertValues(source["enhancements"], Enhancements);
 	        this.playlist = this.convertValues(source["playlist"], Playlist);
@@ -395,6 +399,8 @@ export namespace core {
 	    detail: string;
 	    hasHighFrameRate: boolean;
 	    hasHDR: boolean;
+	    hdrFormat: string;
+	    bytes: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ResolutionTier(source);
@@ -407,6 +413,8 @@ export namespace core {
 	        this.detail = source["detail"];
 	        this.hasHighFrameRate = source["hasHighFrameRate"];
 	        this.hasHDR = source["hasHDR"];
+	        this.hdrFormat = source["hdrFormat"];
+	        this.bytes = source["bytes"];
 	    }
 	}
 	export class QualityOptions {
@@ -417,6 +425,9 @@ export namespace core {
 	    bestLabel: string;
 	    approximate: boolean;
 	    countedFormats: number;
+	    audioBytes: number;
+	    bestBytes: number;
+	    losslessAudio: boolean;
 	    limited: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -432,6 +443,9 @@ export namespace core {
 	        this.bestLabel = source["bestLabel"];
 	        this.approximate = source["approximate"];
 	        this.countedFormats = source["countedFormats"];
+	        this.audioBytes = source["audioBytes"];
+	        this.bestBytes = source["bestBytes"];
+	        this.losslessAudio = source["losslessAudio"];
 	        this.limited = source["limited"];
 	    }
 	

@@ -35,6 +35,8 @@ export function HistoryPane({ entries }: { entries: history.Entry[] | null }) {
   if (entries.length === 0) {
     return (
       <EmptyState
+        tone="purple"
+        icon={<Icon.History className="size-5" strokeWidth={1.75} aria-hidden />}
         title="No downloads yet"
         description="Finished downloads are listed here, so you can find the file again or run the same download a second time."
       />

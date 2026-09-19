@@ -88,7 +88,12 @@ export function AdvancedDrawer({
         title="Format"
         open={open === "format"}
         onToggle={() => toggle("format")}
-        summary={summarise([options.container || "auto container", options.videoCodec, options.audioCodec])}
+        summary={summarise([
+          options.container || "auto container",
+          options.videoCodec,
+          options.audioCodec,
+          options.preferHDR ? "HDR" : "",
+        ])}
       >
         <Field label="Container" hint={audioOnly ? "Audio-only downloads use the audio format instead." : undefined}>
           <Dropdown
@@ -119,6 +124,14 @@ export function AdvancedDrawer({
             />
           </Field>
         </div>
+
+        <Checkbox
+          label="Prefer HDR"
+          hint="Takes the high-dynamic-range encode where the video has one. A preference, not a filter — an SDR-only video still downloads."
+          disabled={audioOnly}
+          checked={options.preferHDR ?? false}
+          onChange={(e) => patch({ preferHDR: e.target.checked } as Partial<core.Options>)}
+        />
       </Disclosure>
 
       <Disclosure

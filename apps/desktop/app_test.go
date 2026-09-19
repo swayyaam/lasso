@@ -138,3 +138,21 @@ func TestAssetMiddlewarePassesOtherPathsThrough(t *testing.T) {
 		t.Error("middleware swallowed a request that was not for a thumbnail")
 	}
 }
+
+func TestBrowserInstalledFindsSafari(t *testing.T) {
+	// Safari ships with macOS, so on any Mac this test can run on it is there.
+	// The point of the check is that it works without any permission grant:
+	// /Applications is readable when a browser's data folder is not.
+	if !browserInstalled(core.BrowserSafari) {
+		t.Error("Safari not found; the application lookup is not working")
+	}
+}
+
+func TestBrowserInstalledRejectsWhatItDoesNotKnow(t *testing.T) {
+	if browserInstalled(core.BrowserNone) {
+		t.Error("reported a browser for the no-cookies setting")
+	}
+	if browserInstalled(core.Browser("netscape")) {
+		t.Error("reported a browser it has no bundle name for")
+	}
+}

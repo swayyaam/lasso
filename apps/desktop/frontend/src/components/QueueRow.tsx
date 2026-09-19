@@ -111,23 +111,31 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
       </div>
 
       {showBar ? (
-        <ProgressBar percent={percent} />
+        <ProgressBar
+          percent={percent}
+          tone={paused ? "paused" : state === "post-processing" ? "processing" : "downloading"}
+        />
       ) : (
         // Keeps the row height identical whether or not a bar is showing.
         <div className="h-1 shrink-0" aria-hidden />
       )}
 
-      <div className="flex min-w-0 items-center gap-xs">
+      {/* The status text and the actions are two groups, not one row of six
+          things. The spacer between them is the only wide gap; inside the
+          action group the buttons sit at gap-hair, so they read as a set of
+          controls for this row rather than as items scattered along it. */}
+      <div className="flex min-w-0 items-center gap-sm">
         <span
           className={cx(
             "min-w-0 flex-1 truncate text-caption tabular-nums",
-            actionError ? "text-danger-strong" : "text-ink-subtle",
+            actionError ? "text-danger-strong" : "font-normal text-ink-tertiary",
           )}
           title={actionError || statusLine(item)}
         >
           {actionError || statusLine(item)}
         </span>
 
+        <div className="flex shrink-0 items-center gap-hair">
         {pausable && (
           <Button
             size="sm"
@@ -206,6 +214,7 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
             </Button>
           </Tooltip>
         )}
+        </div>
       </div>
 
       {failed && item.message && (
