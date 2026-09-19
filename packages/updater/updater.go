@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -51,6 +52,19 @@ const (
 	AppAsset = "Lasso-app.zip"
 	// SumsAsset lists the SHA-256 of every asset in the release.
 	SumsAsset = "SHA256SUMS"
+
+	// minRequestInterval is the floor between two requests to the release
+	// API. GitHub asks callers to make requests serially and to leave at
+	// least a second between them; this is deliberately longer, because the
+	// answer to "is there a newer release" cannot change in ten seconds, and
+	// someone leaning on the button should not become a burst of traffic.
+	minRequestInterval = 10 * time.Second
+
+	// backoffBase and backoffMax space out retries after consecutive
+	// failures, so an unreachable network or a wrong URL does not turn every
+	// settings screen into another request.
+	backoffBase = 30 * time.Second
+	backoffMax  = 30 * time.Minute
 
 	checkTimeout    = 30 * time.Second
 	installTimeout  = 15 * time.Minute
@@ -111,9 +125,163 @@ type Config struct {
 }
 
 // Updater checks for and installs new releases.
+//
+// Keep one and reuse it. The limiter is the reason: an Updater built fresh
+// for every check remembers nothing, so it cannot honour a refusal it was
+// given a moment ago.
 type Updater struct {
 	cfg Config
 	log []string
+
+	// checking serialises calls to the release API. The limiter's own mutex
+	// guards its fields; this one guards the request itself.
+	checking sync.Mutex
+	lim      limiter
+}
+
+// limiter is what keeps Lasso inside GitHub's allowance.
+//
+// Exceeding the unauthenticated allowance — 60 requests an hour per address —
+// is answered with a 403 and nothing worse. What actually gets a caller
+// blocked is the behaviour around it: ignoring a refusal and asking again
+// straight away, retrying a failure in a tight loop, running requests
+// concurrently. So this refuses locally instead of letting any of that reach
+// GitHub, and it applies to every caller including a deliberate press of
+// "Check again" — a rule the user interface can opt out of is not a rule.
+//
+// Its other half is the ETag. A conditional request that GitHub answers 304
+// does not count against the rate limit at all, so the common case — asking
+// again when nothing has been released — becomes free rather than cheap.
+type limiter struct {
+	mu sync.Mutex
+
+	// next is the earliest another request may be sent, and why. reason is
+	// nil when the wait is only spacing, which is the case where serving the
+	// last answer is honest.
+	next   time.Time
+	reason error
+
+	failures int
+
+	etag   string
+	cached releaseInfo
+	valid  bool
+}
+
+// hold decides whether a request may go out now.
+//
+// It returns the release to serve instead, or the error to report, or neither
+// when the caller should go ahead and ask.
+func (l *limiter) hold(now time.Time) (releaseInfo, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if now.Before(l.next) {
+		if l.reason != nil {
+			return releaseInfo{}, false, l.reason
+		}
+		if l.valid {
+			return l.cached, true, nil
+		}
+		// Inside the spacing window with nothing to serve. Rare, and still
+		// not a reason to send a request.
+		return releaseInfo{}, false, fmt.Errorf("Lasso just checked for updates; try again in a moment")
+	}
+	return releaseInfo{}, false, nil
+}
+
+// conditional returns the ETag to ask with, if there is one.
+func (l *limiter) conditional() (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.etag, l.etag != "" && l.valid
+}
+
+// sent records a request leaving, which spaces out the next one whatever the
+// answer turns out to be.
+func (l *limiter) sent(now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.next = now.Add(minRequestInterval)
+	l.reason = nil
+}
+
+// ok records a release that came back with a body.
+func (l *limiter) ok(now time.Time, etag string, r releaseInfo) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.failures, l.reason = 0, nil
+	l.etag, l.cached, l.valid = etag, r, true
+	l.next = now.Add(minRequestInterval)
+}
+
+// unchanged records a 304, which keeps the cache and costs no allowance.
+func (l *limiter) unchanged(now time.Time) (releaseInfo, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.failures, l.reason = 0, nil
+	l.next = now.Add(minRequestInterval)
+	return l.cached, l.valid
+}
+
+// forget drops the cached release, so the next request asks outright.
+func (l *limiter) forget() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.etag, l.cached, l.valid = "", releaseInfo{}, false
+}
+
+// refused records GitHub turning the request away, and holds every later one
+// until it says the limit has reset.
+func (l *limiter) refused(until time.Time, err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.failures++
+	l.reason = err
+	if until.After(l.next) {
+		l.next = until
+	}
+}
+
+// failed records a request that did not arrive, and backs off so a broken
+// network is not retried on every settings screen.
+func (l *limiter) failed(now time.Time, err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.failures++
+	wait := backoffBase << min(l.failures-1, 16)
+	if wait > backoffMax || wait <= 0 {
+		wait = backoffMax
+	}
+	l.reason = err
+	l.next = now.Add(wait)
+}
+
+// refusalWindow reads how long GitHub wants to be left alone.
+//
+// Retry-After comes first because it is what a secondary rate limit sends,
+// and a secondary limit is the one that escalates to a block if ignored.
+// X-RateLimit-Reset covers the ordinary hourly allowance.
+func refusalWindow(resp *http.Response, now time.Time) time.Time {
+	if after := resp.Header.Get("Retry-After"); after != "" {
+		if secs, err := strconv.Atoi(after); err == nil && secs > 0 {
+			return now.Add(time.Duration(secs) * time.Second)
+		}
+		if when, err := http.ParseTime(after); err == nil && when.After(now) {
+			return when
+		}
+	}
+	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		if reset := resp.Header.Get("X-RateLimit-Reset"); reset != "" {
+			if unix, err := strconv.ParseInt(reset, 10, 64); err == nil {
+				if when := time.Unix(unix, 0); when.After(now) {
+					return when
+				}
+			}
+		}
+	}
+	// A refusal with no guidance still earns more room than plain spacing.
+	return now.Add(backoffBase)
 }
 
 // New builds an Updater.
@@ -190,6 +358,18 @@ func (u *Updater) Check(ctx context.Context) (Update, error) {
 }
 
 func (u *Updater) latest(ctx context.Context) (releaseInfo, error) {
+	// Serial, never concurrent: GitHub asks for that directly, and two checks
+	// racing would each see the other's allowance as unspent.
+	u.checking.Lock()
+	defer u.checking.Unlock()
+
+	now := time.Now()
+	if cached, serve, err := u.lim.hold(now); err != nil {
+		return releaseInfo{}, err
+	} else if serve {
+		return cached, nil
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.cfg.ReleaseAPI, nil)
 	if err != nil {
 		return releaseInfo{}, err
@@ -198,21 +378,45 @@ func (u *Updater) latest(ctx context.Context) (releaseInfo, error) {
 	// GitHub asks every caller to identify itself, and it makes Lasso's
 	// traffic legible in their logs rather than anonymous Go.
 	req.Header.Set("User-Agent", "Lasso/"+u.cfg.CurrentVersion)
+	// A 304 does not count against the rate limit, so asking conditionally
+	// makes the usual answer — nothing new — cost nothing at all.
+	if etag, ok := u.lim.conditional(); ok {
+		req.Header.Set("If-None-Match", etag)
+	}
 
+	u.lim.sent(now)
 	resp, err := u.cfg.HTTP.Do(req)
 	if err != nil {
-		return releaseInfo{}, fmt.Errorf("could not reach the update server: %w", err)
+		wrapped := fmt.Errorf("could not reach the update server: %w", err)
+		u.lim.failed(time.Now(), wrapped)
+		return releaseInfo{}, wrapped
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotModified {
+		if cached, ok := u.lim.unchanged(time.Now()); ok {
+			return cached, nil
+		}
+		// 304 with nothing to show it against. Not worth an error: drop the
+		// ETag so the next attempt asks outright.
+		u.lim.forget()
+		return releaseInfo{}, fmt.Errorf("the update server said nothing had changed, but Lasso had nothing to compare")
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return releaseInfo{}, describeAPIFailure(resp)
+		failure := describeAPIFailure(resp)
+		u.lim.refused(refusalWindow(resp, time.Now()), failure)
+		return releaseInfo{}, failure
 	}
 
 	var release releaseInfo
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxSumsSize)).Decode(&release); err != nil {
-		return releaseInfo{}, fmt.Errorf("could not read the release: %w", err)
+		wrapped := fmt.Errorf("could not read the release: %w", err)
+		u.lim.failed(time.Now(), wrapped)
+		return releaseInfo{}, wrapped
 	}
+
+	u.lim.ok(time.Now(), resp.Header.Get("ETag"), release)
 	return release, nil
 }
 
@@ -223,19 +427,37 @@ func (u *Updater) latest(ctx context.Context) (releaseInfo, error) {
 // office behind one NAT as easily as it is one person. "403 Forbidden" tells
 // that person nothing; the limit resetting on its own is the entire answer.
 func describeAPIFailure(resp *http.Response) error {
-	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
-		if resp.Header.Get("X-RateLimit-Remaining") == "0" {
-			when := "shortly"
-			if reset := resp.Header.Get("X-RateLimit-Reset"); reset != "" {
-				if unix, err := strconv.ParseInt(reset, 10, 64); err == nil {
-					if wait, ok := humanWait(time.Until(time.Unix(unix, 0))); ok {
-						when = "in about " + wait
-					}
+	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
+		return fmt.Errorf("the update server answered %s", resp.Status)
+	}
+
+	// The hourly allowance, spent. It refills on its own, and the clock is
+	// the only thing worth telling anyone.
+	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		when := "shortly"
+		if reset := resp.Header.Get("X-RateLimit-Reset"); reset != "" {
+			if unix, err := strconv.ParseInt(reset, 10, 64); err == nil {
+				if wait, ok := humanWait(time.Until(time.Unix(unix, 0))); ok {
+					when = "in about " + wait
 				}
 			}
-			return fmt.Errorf("GitHub is rate-limiting update checks from your network. It will work again %s — or download the new version from the releases page.", when)
 		}
+		return fmt.Errorf("GitHub is rate-limiting update checks from your network. It will work again %s — or download the new version from the releases page.", when)
 	}
+
+	// A secondary limit: GitHub telling a caller it is going too fast rather
+	// than that it has run out. This is the one that escalates to a block
+	// when it is ignored, so Lasso waits exactly as long as it is told.
+	if after := resp.Header.Get("Retry-After"); after != "" {
+		when := "shortly"
+		if secs, err := strconv.Atoi(after); err == nil && secs > 0 {
+			if wait, ok := humanWait(time.Duration(secs) * time.Second); ok {
+				when = "in about " + wait
+			}
+		}
+		return fmt.Errorf("GitHub asked Lasso to slow down. It will check again %s.", when)
+	}
+
 	return fmt.Errorf("the update server answered %s", resp.Status)
 }
 

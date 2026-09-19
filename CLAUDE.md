@@ -338,6 +338,36 @@ The old bundle stays until the next launch, because the process doing the
 replacing is running out of it. `updater.CleanUp` removes it at startup, from
 a derived path rather than a search.
 
+### Staying inside GitHub's allowance
+
+The release API is called unauthenticated, which GitHub allows 60 times an
+hour **per address** — an address being a whole office behind one connection
+as easily as one person. Going over earns a 403 and nothing worse. What gets a
+caller blocked is the behaviour around it, so `updater.limiter` makes that
+behaviour impossible rather than merely unlikely:
+
+- **A refusal is honoured locally.** Once GitHub answers `X-RateLimit-Remaining: 0`
+  or sends `Retry-After`, no request leaves until that window passes — and the
+  stored explanation is returned instead. This applies to **every** caller,
+  including a deliberate press of "Check again". A rule the interface can opt
+  out of is not a rule.
+- **Requests are conditional.** The ETag of the last release is sent as
+  `If-None-Match`, and GitHub does not count a 304 against the allowance. The
+  usual answer — nothing new — therefore costs nothing.
+- **Requests are serial**, behind `Updater.checking`, because GitHub asks for
+  that and two racing checks each spend allowance the other did not see.
+- **Ten seconds minimum between requests**, which serves the last answer
+  rather than erroring: the answer cannot change in ten seconds.
+- **Failures back off** from 30 s to 30 min, so a dead network is not retried
+  every time the settings screen opens.
+
+The six-hour cache in `apps/desktop` sits above all of that and is a separate
+policy — "do not bother asking" rather than "must not ask".
+
+**Keep one `Updater` for the life of the process.** `App.releaseUpdater` does.
+An `Updater` built per check carries a limiter that remembers nothing, which
+silently undoes every guarantee above — this was the original bug.
+
 `ditto`, not `archive/zip`: it carries the extended attributes and symlinks a
 signed bundle depends on. Every external command goes through the injected
 `Runner`, which is what lets the unit tests cover the failure paths without a

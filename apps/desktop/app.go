@@ -47,6 +47,19 @@ type App struct {
 	// Settings repeatedly must not spend that budget.
 	updateChecked time.Time
 	lastUpdate    updater.Update
+
+	// One updater, kept for the life of the process. It carries the rate
+	// limiter that keeps Lasso inside GitHub's allowance, and a limiter
+	// rebuilt for every check would remember no refusal it had been given.
+	updOnce sync.Once
+	upd     *updater.Updater
+	updErr  error
+}
+
+// releaseUpdater returns the process's one updater, building it on first use.
+func (a *App) releaseUpdater() (*updater.Updater, error) {
+	a.updOnce.Do(func() { a.upd, a.updErr = newUpdater() })
+	return a.upd, a.updErr
 }
 
 // updateCheckTTL is how long a check is reused for. Long enough that browsing
@@ -697,7 +710,7 @@ func (a *App) CheckForUpdate(force bool) (updater.Update, error) {
 		return cached, nil
 	}
 
-	u, err := newUpdater()
+	u, err := a.releaseUpdater()
 	if err != nil {
 		return updater.Update{}, err
 	}
@@ -733,7 +746,7 @@ func (a *App) InstallUpdate() (updater.Result, error) {
 		}
 	}
 
-	u, err := newUpdater()
+	u, err := a.releaseUpdater()
 	if err != nil {
 		return updater.Result{}, err
 	}

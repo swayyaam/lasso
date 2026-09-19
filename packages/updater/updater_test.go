@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -649,5 +651,210 @@ func TestCheckIdentifiesItself(t *testing.T) {
 
 	if !strings.HasPrefix(agent, "Lasso/") {
 		t.Errorf("User-Agent = %q, want Lasso to identify itself", agent)
+	}
+}
+
+// --- Staying inside GitHub's allowance -------------------------------------
+//
+// Exceeding the hourly allowance only earns a 403. What gets a caller blocked
+// is what it does next, so these cover the "next": asking again immediately,
+// retrying a failure in a loop, and ignoring a Retry-After.
+
+// countingAPI serves a release and counts how many requests actually arrive.
+type countingAPI struct {
+	mu       sync.Mutex
+	requests int
+	etags    []string
+	handler  func(w http.ResponseWriter, r *http.Request, n int)
+}
+
+func (c *countingAPI) start(t *testing.T) string {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.mu.Lock()
+		c.requests++
+		n := c.requests
+		c.etags = append(c.etags, r.Header.Get("If-None-Match"))
+		c.mu.Unlock()
+		c.handler(w, r, n)
+	}))
+	t.Cleanup(server.Close)
+	return server.URL
+}
+
+func (c *countingAPI) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.requests
+}
+
+func releaseJSON(w http.ResponseWriter) {
+	fmt.Fprint(w, `{"tag_name":"v9.9.9","body":"notes","html_url":"https://example.com",
+		"assets":[{"name":"Lasso-app.zip","browser_download_url":"https://example.com/a.zip","size":5}]}`)
+}
+
+func TestARefusalStopsTheNextRequestLeaving(t *testing.T) {
+	// The one that matters. Being told "0 remaining" and asking again anyway
+	// is the behaviour that turns a throttle into a block, so the second
+	// check must not reach the network at all.
+	api := &countingAPI{handler: func(w http.ResponseWriter, _ *http.Request, _ int) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(time.Now().Add(30*time.Minute).Unix()))
+		w.WriteHeader(http.StatusForbidden)
+	}}
+	u, _ := New(Config{
+		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
+		CurrentVersion: "0.1.0",
+		ReleaseAPI:     api.start(t),
+	})
+
+	if _, err := u.Check(context.Background()); err == nil {
+		t.Fatal("a rate-limited check reported success")
+	}
+	// Someone leaning on "Check again".
+	for i := 0; i < 5; i++ {
+		_, err := u.Check(context.Background())
+		if err == nil {
+			t.Fatal("a check during the rate-limit window reported success")
+		}
+		if !strings.Contains(err.Error(), "rate-limiting") {
+			t.Errorf("error = %v, want the rate-limit explanation repeated from memory", err)
+		}
+	}
+	if got := api.count(); got != 1 {
+		t.Errorf("%d requests reached GitHub; want 1, the rest refused locally", got)
+	}
+}
+
+func TestRetryAfterIsObeyed(t *testing.T) {
+	// A secondary rate limit. GitHub says how long to wait and this is the
+	// signal it escalates on, so the wait is taken literally.
+	api := &countingAPI{handler: func(w http.ResponseWriter, _ *http.Request, _ int) {
+		w.Header().Set("Retry-After", "120")
+		w.WriteHeader(http.StatusForbidden)
+	}}
+	u, _ := New(Config{
+		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
+		CurrentVersion: "0.1.0",
+		ReleaseAPI:     api.start(t),
+	})
+
+	_, err := u.Check(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "slow down") {
+		t.Fatalf("error = %v, want it to name the slow-down", err)
+	}
+	if _, err := u.Check(context.Background()); err == nil {
+		t.Fatal("a check inside the Retry-After window reported success")
+	}
+	if got := api.count(); got != 1 {
+		t.Errorf("%d requests reached GitHub; want 1 — Retry-After was ignored", got)
+	}
+}
+
+func TestRepeatedChecksAskConditionallyAndReuseTheAnswer(t *testing.T) {
+	// A 304 costs nothing against the allowance, so the usual case — nothing
+	// new since last time — should cost nothing.
+	api := &countingAPI{handler: func(w http.ResponseWriter, r *http.Request, n int) {
+		w.Header().Set("ETag", `W/"abc"`)
+		if n > 1 {
+			if r.Header.Get("If-None-Match") != `W/"abc"` {
+				t.Errorf("request %d did not ask conditionally", n)
+			}
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		releaseJSON(w)
+	}}
+	u, _ := New(Config{
+		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
+		CurrentVersion: "0.1.0",
+		ReleaseAPI:     api.start(t),
+	})
+
+	first, err := u.Check(context.Background())
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if !first.Available || first.Version != "9.9.9" {
+		t.Fatalf("first check = %+v, want 9.9.9 available", first)
+	}
+
+	// Inside the spacing window: served from memory, nothing sent.
+	again, err := u.Check(context.Background())
+	if err != nil {
+		t.Fatalf("second Check: %v", err)
+	}
+	if again.Version != first.Version || !again.Available {
+		t.Errorf("second check = %+v, want the same answer as the first", again)
+	}
+	if got := api.count(); got != 1 {
+		t.Errorf("%d requests for two checks; want 1", got)
+	}
+
+	// Past the spacing window it asks again — conditionally, and the 304
+	// still yields the full answer.
+	u.lim.next = time.Now().Add(-time.Second)
+	third, err := u.Check(context.Background())
+	if err != nil {
+		t.Fatalf("third Check: %v", err)
+	}
+	if third.Version != "9.9.9" || !third.Available {
+		t.Errorf("third check = %+v, want the cached release returned for the 304", third)
+	}
+	if got := api.count(); got != 2 {
+		t.Errorf("%d requests; want 2", got)
+	}
+}
+
+func TestAnUnreachableServerBacksOff(t *testing.T) {
+	// A wrong URL or a dead network must not mean a fresh request every time
+	// the settings screen opens.
+	u, _ := New(Config{
+		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
+		CurrentVersion: "0.1.0",
+		// Reserved by RFC 6761 to never resolve.
+		ReleaseAPI: "http://update.invalid/releases/latest",
+		HTTP:       &http.Client{Timeout: 2 * time.Second},
+	})
+
+	if _, err := u.Check(context.Background()); err == nil {
+		t.Fatal("a check against an unreachable server reported success")
+	}
+	wait := time.Until(u.lim.next)
+	if wait < backoffBase-time.Second {
+		t.Errorf("next attempt allowed in %v; want at least %v", wait, backoffBase)
+	}
+}
+
+func TestChecksDoNotRunConcurrently(t *testing.T) {
+	// GitHub asks for serial requests, and two racing checks would each
+	// spend allowance the other had not accounted for.
+	var inFlight, overlapped int32
+	api := &countingAPI{handler: func(w http.ResponseWriter, _ *http.Request, _ int) {
+		if atomic.AddInt32(&inFlight, 1) > 1 {
+			atomic.StoreInt32(&overlapped, 1)
+		}
+		time.Sleep(20 * time.Millisecond)
+		atomic.AddInt32(&inFlight, -1)
+		releaseJSON(w)
+	}}
+	u, _ := New(Config{
+		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
+		CurrentVersion: "0.1.0",
+		ReleaseAPI:     api.start(t),
+	})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); u.Check(context.Background()) }()
+	}
+	wg.Wait()
+
+	if atomic.LoadInt32(&overlapped) == 1 {
+		t.Error("two checks were in flight at once")
+	}
+	if got := api.count(); got != 1 {
+		t.Errorf("%d requests for 8 concurrent checks; want 1", got)
 	}
 }
