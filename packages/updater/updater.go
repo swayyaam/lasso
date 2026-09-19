@@ -228,15 +228,36 @@ func describeAPIFailure(resp *http.Response) error {
 			when := "shortly"
 			if reset := resp.Header.Get("X-RateLimit-Reset"); reset != "" {
 				if unix, err := strconv.ParseInt(reset, 10, 64); err == nil {
-					if wait := time.Until(time.Unix(unix, 0)).Round(time.Minute); wait > 0 {
-						when = "in about " + wait.String()
+					if wait, ok := humanWait(time.Until(time.Unix(unix, 0))); ok {
+						when = "in about " + wait
 					}
 				}
 			}
-			return fmt.Errorf("GitHub is rate-limiting update checks from your network. It will work again %s — or download the new version from the releases page", when)
+			return fmt.Errorf("GitHub is rate-limiting update checks from your network. It will work again %s — or download the new version from the releases page.", when)
 		}
 	}
 	return fmt.Errorf("the update server answered %s", resp.Status)
+}
+
+// humanWait renders a wait the way a sentence needs it.
+//
+// Duration.String() gives "24m0s", which belongs in a log rather than in
+// something a person reads. GitHub's window is an hour, so minutes and the
+// exact hour cover the whole real range; a wait far outside it means the
+// local clock is wrong, and a time quoted against a wrong clock is worse than
+// no time at all, so that case declines to give one.
+func humanWait(d time.Duration) (string, bool) {
+	minutes := int(d.Round(time.Minute).Minutes())
+	switch {
+	case minutes < 1 || minutes > 120:
+		return "", false
+	case minutes == 1:
+		return "a minute", true
+	case minutes < 60:
+		return fmt.Sprintf("%d minutes", minutes), true
+	default:
+		return "an hour", true
+	}
 }
 
 // Install downloads the newest release and puts it in place.

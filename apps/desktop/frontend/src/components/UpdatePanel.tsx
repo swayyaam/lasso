@@ -22,18 +22,21 @@ export function UpdatePanel() {
   const [currentVersion, setCurrentVersion] = useState("");
   const [update, setUpdate] = useState<updater.Update | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
-  const [error, setError] = useState("");
+  // Severity is tracked because the two failures here are not alike. A check
+  // that could not reach GitHub — a rate limit above all — fixes itself and is
+  // a note; a failed install is the app not being replaced, which is not.
+  const [error, setError] = useState<Problem | null>(null);
   const [log, setLog] = useState("");
 
   // force is false on open, so reopening Settings reuses the cached answer
   // rather than spending the hour's allowance of unauthenticated calls.
   const check = useCallback(async (force: boolean) => {
     setPhase("checking");
-    setError("");
+    setError(null);
     try {
       setUpdate(await api.CheckForUpdate(force));
     } catch (e) {
-      setError(clean(e));
+      setError({ text: clean(e), severe: false });
     } finally {
       setPhase("idle");
     }
@@ -46,14 +49,14 @@ export function UpdatePanel() {
 
   async function install() {
     setPhase("installing");
-    setError("");
+    setError(null);
     try {
       const result = await api.InstallUpdate();
       setLog(result.output ?? "");
       setPhase(result.needsRestart ? "installed" : "idle");
       if (!result.needsRestart) await check(true);
     } catch (e) {
-      setError(clean(e));
+      setError({ text: clean(e), severe: true });
       setPhase("idle");
     }
   }
@@ -61,11 +64,11 @@ export function UpdatePanel() {
   // The app quits as part of this, so there is nothing to do afterwards and
   // nothing to show if it works.
   async function restart() {
-    setError("");
+    setError(null);
     try {
       await api.RestartToFinish();
     } catch (e) {
-      setError(clean(e));
+      setError({ text: clean(e), severe: true });
     }
   }
 
@@ -93,7 +96,7 @@ export function UpdatePanel() {
             </Details>
           )}
         </div>
-        {error && <p className="text-caption text-danger-strong">{error}</p>}
+        {error && <Problem problem={error} />}
       </div>
     );
   }
@@ -142,10 +145,10 @@ function Status({
   phase: Phase;
   update: updater.Update | null;
   currentVersion: string;
-  error: string;
+  error: Problem | null;
 }) {
   if (error) {
-    return <p className="max-w-note text-caption text-danger-strong">{error}</p>;
+    return <Problem problem={error} className="max-w-note" />;
   }
   if (phase === "checking" && !update) {
     return <p className="text-caption text-ink-subtle">Checking for updates…</p>;
@@ -168,6 +171,30 @@ function Status({
   return (
     <p className="text-caption text-ink-tertiary">
       {currentVersion ? `Lasso ${currentVersion} is up to date.` : "Lasso is up to date."}
+    </p>
+  );
+}
+
+type Problem = { text: string; severe: boolean };
+
+/**
+ * Problem renders a failure at the weight it deserves.
+ *
+ * Red is reserved for a download that failed and for a startup that cannot
+ * continue. A check that could not reach GitHub is neither — it is most often
+ * the hourly rate limit, which clears on its own and says so — so it reads in
+ * muted ink beside the button that retries it.
+ */
+function Problem({ problem, className }: { problem: Problem; className?: string }) {
+  return (
+    <p
+      className={cx(
+        "text-caption",
+        problem.severe ? "text-danger-strong" : "text-ink-muted",
+        className,
+      )}
+    >
+      {problem.text}
     </p>
   );
 }

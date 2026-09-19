@@ -574,9 +574,40 @@ func TestRateLimitIsExplainedRatherThanShown(t *testing.T) {
 	if strings.Contains(err.Error(), "403") {
 		t.Errorf("error = %v, want the status code kept out of it", err)
 	}
-	// The reset time is the actionable part.
-	if !strings.Contains(err.Error(), "23m") {
+	// The reset time is the actionable part, in words rather than in Go's
+	// duration syntax — "23m0s" is a log line, not a sentence.
+	if !strings.Contains(err.Error(), "23 minutes") {
 		t.Errorf("error = %v, want it to say when it will work again", err)
+	}
+	if strings.Contains(err.Error(), "m0s") {
+		t.Errorf("error = %v, want no raw Duration in it", err)
+	}
+}
+
+func TestHumanWaitReadsAsASentence(t *testing.T) {
+	// The whole point of this helper is that its output is dropped into
+	// prose, so each case is checked as the words it produces.
+	cases := []struct {
+		in   time.Duration
+		want string
+		ok   bool
+	}{
+		{20 * time.Second, "", false}, // rounds to nothing to say
+		{90 * time.Second, "2 minutes", true},
+		{time.Minute, "a minute", true},
+		{23 * time.Minute, "23 minutes", true},
+		{59 * time.Minute, "59 minutes", true},
+		{time.Hour, "an hour", true},
+		// A wrong local clock, which would otherwise quote a confident and
+		// completely wrong time.
+		{9 * time.Hour, "", false},
+		{-5 * time.Minute, "", false},
+	}
+	for _, c := range cases {
+		got, ok := humanWait(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("humanWait(%v) = %q, %v; want %q, %v", c.in, got, ok, c.want, c.ok)
+		}
 	}
 }
 
