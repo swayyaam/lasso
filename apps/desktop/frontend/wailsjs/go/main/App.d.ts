@@ -16,7 +16,7 @@ export function BinaryStatus():Promise<binaries.Status>;
 
 export function Cancel(arg1:string):Promise<void>;
 
-export function CheckForUpdate():Promise<updater.Update>;
+export function CheckForUpdate(arg1:boolean):Promise<updater.Update>;
 
 export function ChooseFolder():Promise<string>;
 

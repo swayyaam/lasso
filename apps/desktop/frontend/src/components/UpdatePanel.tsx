@@ -25,11 +25,13 @@ export function UpdatePanel() {
   const [error, setError] = useState("");
   const [log, setLog] = useState("");
 
-  const check = useCallback(async () => {
+  // force is false on open, so reopening Settings reuses the cached answer
+  // rather than spending the hour's allowance of unauthenticated calls.
+  const check = useCallback(async (force: boolean) => {
     setPhase("checking");
     setError("");
     try {
-      setUpdate(await api.CheckForUpdate());
+      setUpdate(await api.CheckForUpdate(force));
     } catch (e) {
       setError(clean(e));
     } finally {
@@ -38,7 +40,7 @@ export function UpdatePanel() {
   }, []);
 
   useEffect(() => {
-    void check();
+    void check(false);
     api.AppVersion().then(setCurrentVersion).catch(() => setCurrentVersion(""));
   }, [check]);
 
@@ -49,7 +51,7 @@ export function UpdatePanel() {
       const result = await api.InstallUpdate();
       setLog(result.output ?? "");
       setPhase(result.needsRestart ? "installed" : "idle");
-      if (!result.needsRestart) await check();
+      if (!result.needsRestart) await check(true);
     } catch (e) {
       setError(clean(e));
       setPhase("idle");
@@ -114,7 +116,7 @@ export function UpdatePanel() {
         ) : (
           <Button
             busy={phase === "checking"}
-            onClick={() => void check()}
+            onClick={() => void check(true)}
             icon={<Icon.Recheck className="size-3.5" strokeWidth={1.75} aria-hidden />}
           >
             Check again

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/swayyaam/lasso/packages/binaries"
 	"github.com/swayyaam/lasso/packages/core"
@@ -40,7 +41,18 @@ type App struct {
 	// startupErr records a failure that leaves the app unable to download, so
 	// every call can report it rather than panicking on a nil dependency.
 	startupErr error
+
+	// The last update check, cached. GitHub allows 60 unauthenticated calls an
+	// hour from one address, and an address can be a whole office — so opening
+	// Settings repeatedly must not spend that budget.
+	updateChecked time.Time
+	lastUpdate    updater.Update
 }
+
+// updateCheckTTL is how long a check is reused for. Long enough that browsing
+// the settings screen costs nothing, short enough that a release published
+// this morning is offered this afternoon.
+const updateCheckTTL = 6 * time.Hour
 
 // NewApp creates the application.
 func NewApp() *App { return &App{} }
@@ -672,12 +684,35 @@ func (a *App) AppVersion() string {
 }
 
 // CheckForUpdate asks whether a newer release exists. It downloads nothing.
-func (a *App) CheckForUpdate() (updater.Update, error) {
+//
+// The answer is cached, because the interface checks whenever the settings
+// screen opens and GitHub's allowance for an unauthenticated caller is 60 an
+// hour per address. Pressing the button passes force and always asks.
+func (a *App) CheckForUpdate(force bool) (updater.Update, error) {
+	a.mu.RLock()
+	cached, checked := a.lastUpdate, a.updateChecked
+	a.mu.RUnlock()
+
+	if !force && !checked.IsZero() && time.Since(checked) < updateCheckTTL {
+		return cached, nil
+	}
+
 	u, err := newUpdater()
 	if err != nil {
 		return updater.Update{}, err
 	}
-	return u.Check(a.ctx)
+	update, err := u.Check(a.ctx)
+	if err != nil {
+		// Deliberately not cached: a failure is usually the network or a rate
+		// limit, and both are worth retrying rather than being remembered for
+		// six hours.
+		return updater.Update{}, err
+	}
+
+	a.mu.Lock()
+	a.lastUpdate, a.updateChecked = update, time.Now()
+	a.mu.Unlock()
+	return update, nil
 }
 
 // InstallUpdate downloads and installs the newest release.
@@ -702,7 +737,14 @@ func (a *App) InstallUpdate() (updater.Result, error) {
 	if err != nil {
 		return updater.Result{}, err
 	}
-	return u.Install(a.ctx)
+	result, err := u.Install(a.ctx)
+	if err == nil && result.Installed {
+		// What was cached describes a version that is no longer running.
+		a.mu.Lock()
+		a.updateChecked = time.Time{}
+		a.mu.Unlock()
+	}
+	return result, err
 }
 
 // RestartToFinish launches the installed version and quits this one.

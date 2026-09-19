@@ -195,6 +195,9 @@ func (u *Updater) latest(ctx context.Context) (releaseInfo, error) {
 		return releaseInfo{}, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	// GitHub asks every caller to identify itself, and it makes Lasso's
+	// traffic legible in their logs rather than anonymous Go.
+	req.Header.Set("User-Agent", "Lasso/"+u.cfg.CurrentVersion)
 
 	resp, err := u.cfg.HTTP.Do(req)
 	if err != nil {
@@ -203,7 +206,7 @@ func (u *Updater) latest(ctx context.Context) (releaseInfo, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return releaseInfo{}, fmt.Errorf("the update server answered %s", resp.Status)
+		return releaseInfo{}, describeAPIFailure(resp)
 	}
 
 	var release releaseInfo
@@ -211,6 +214,29 @@ func (u *Updater) latest(ctx context.Context) (releaseInfo, error) {
 		return releaseInfo{}, fmt.Errorf("could not read the release: %w", err)
 	}
 	return release, nil
+}
+
+// describeAPIFailure turns a refusal into something worth reading.
+//
+// Rate limiting is the one that actually happens: GitHub allows 60
+// unauthenticated requests an hour per address, and an address is a whole
+// office behind one NAT as easily as it is one person. "403 Forbidden" tells
+// that person nothing; the limit resetting on its own is the entire answer.
+func describeAPIFailure(resp *http.Response) error {
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+		if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+			when := "shortly"
+			if reset := resp.Header.Get("X-RateLimit-Reset"); reset != "" {
+				if unix, err := strconv.ParseInt(reset, 10, 64); err == nil {
+					if wait := time.Until(time.Unix(unix, 0)).Round(time.Minute); wait > 0 {
+						when = "in about " + wait.String()
+					}
+				}
+			}
+			return fmt.Errorf("GitHub is rate-limiting update checks from your network. It will work again %s — or download the new version from the releases page", when)
+		}
+	}
+	return fmt.Errorf("the update server answered %s", resp.Status)
 }
 
 // Install downloads the newest release and puts it in place.

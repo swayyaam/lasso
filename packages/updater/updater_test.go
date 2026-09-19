@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ---- fixtures ---------------------------------------------------------
@@ -542,5 +543,80 @@ func assertUntouched(t *testing.T, bundle, version string) {
 	}
 	if _, err := os.Stat(bundle + ".old"); err == nil {
 		t.Error("a failed update left the old bundle moved aside")
+	}
+}
+
+func TestRateLimitIsExplainedRatherThanShown(t *testing.T) {
+	// GitHub allows 60 unauthenticated calls an hour per address, and an
+	// address can be a whole office. "403 Forbidden" tells that person
+	// nothing, and the limit resetting on its own is the whole answer.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(time.Now().Add(23*time.Minute).Unix()))
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"message":"API rate limit exceeded"}`)
+	}))
+	t.Cleanup(server.Close)
+
+	u, _ := New(Config{
+		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
+		CurrentVersion: "0.1.0",
+		ReleaseAPI:     server.URL,
+	})
+
+	_, err := u.Check(context.Background())
+	if err == nil {
+		t.Fatal("a rate-limited check reported success")
+	}
+	if !strings.Contains(err.Error(), "rate-limiting") {
+		t.Errorf("error = %v, want it to name rate limiting", err)
+	}
+	if strings.Contains(err.Error(), "403") {
+		t.Errorf("error = %v, want the status code kept out of it", err)
+	}
+	// The reset time is the actionable part.
+	if !strings.Contains(err.Error(), "23m") {
+		t.Errorf("error = %v, want it to say when it will work again", err)
+	}
+}
+
+func TestOtherFailuresKeepTheirStatus(t *testing.T) {
+	// Only rate limiting gets the special explanation; anything else is more
+	// useful reported as it came back.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	u, _ := New(Config{
+		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
+		CurrentVersion: "0.1.0",
+		ReleaseAPI:     server.URL,
+	})
+
+	_, err := u.Check(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "500") {
+		t.Errorf("error = %v, want the status reported", err)
+	}
+}
+
+func TestCheckIdentifiesItself(t *testing.T) {
+	// GitHub asks every caller to say who it is.
+	var agent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agent = r.Header.Get("User-Agent")
+		json.NewEncoder(w).Encode(map[string]any{"tag_name": "v0.1.0"})
+	}))
+	t.Cleanup(server.Close)
+
+	u, _ := New(Config{
+		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
+		CurrentVersion: "0.1.0",
+		ReleaseAPI:     server.URL,
+	})
+	u.Check(context.Background())
+
+	if !strings.HasPrefix(agent, "Lasso/") {
+		t.Errorf("User-Agent = %q, want Lasso to identify itself", agent)
 	}
 }

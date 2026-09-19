@@ -18,8 +18,8 @@ export function Cancel(arg1) {
   return window['go']['main']['App']['Cancel'](arg1);
 }
 
-export function CheckForUpdate() {
-  return window['go']['main']['App']['CheckForUpdate']();
+export function CheckForUpdate(arg1) {
+  return window['go']['main']['App']['CheckForUpdate'](arg1);
 }
 
 export function ChooseFolder() {
