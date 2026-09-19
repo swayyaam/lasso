@@ -511,6 +511,12 @@ func (q *Queue) dispatch(ctx context.Context) {
 			q.mu.Lock()
 			q.running--
 			delete(q.cancels, id)
+			// The run has read this already. Clearing it here covers the case
+			// where it never did: a download that finished in the moment
+			// between Pause marking it and the kill arriving would otherwise
+			// leave the mark behind, and the next cancellation of the same
+			// item would be read as a pause.
+			delete(q.pausing, id)
 			q.cond.Broadcast()
 			q.mu.Unlock()
 			cancel()

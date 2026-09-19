@@ -1048,20 +1048,40 @@ func TestPausedItemIsNotDispatched(t *testing.T) {
 		return nil
 	}}
 
-	h := newQueueHarness(t, runner, 2)
-	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	// Dispatching is deliberately not started yet: racing Pause against the
+	// dispatcher would make this test pass or fail on timing rather than on
+	// the behaviour it is checking.
+	q, err := NewQueue(QueueConfig{Runner: runner, ProgressInterval: time.Nanosecond})
+	if err != nil {
+		t.Fatalf("NewQueue: %v", err)
+	}
+	defer q.Close()
 
-	// Pause it before the dispatcher can reach it, then give it every chance to.
-	_ = h.q.Pause(item.ID)
+	item, _ := q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	if err := q.Pause(item.ID); err != nil {
+		t.Fatalf("Pause: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q.Start(ctx)
+	// Now give the dispatcher every chance to pick it up.
 	time.Sleep(50 * time.Millisecond)
 
-	paused, _ := h.q.Get(item.ID)
+	paused, _ := q.Get(item.ID)
 	if paused.State != StatePaused {
 		t.Fatalf("State = %q, want %q", paused.State, StatePaused)
 	}
 	if got := started.Load(); got != 0 {
 		t.Errorf("the download ran %d times while paused, want 0", got)
 	}
+
+	// And it does run once resumed, so the test above is not passing because
+	// nothing was ever dispatchable.
+	if err := q.Resume(item.ID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	waitUntil(t, func() bool { return started.Load() == 1 }, "the resumed download to start")
 }
 
 func TestPauseRefusesAFinishedDownload(t *testing.T) {
@@ -1101,4 +1121,52 @@ func TestPausedItemCanBeRemoved(t *testing.T) {
 	if err := q.Remove(item.ID); err != nil {
 		t.Errorf("Remove of a paused item: %v", err)
 	}
+}
+
+func TestPauseMarkDoesNotOutliveTheDownload(t *testing.T) {
+	// Pause marks the id and then kills the process. A download that finishes
+	// in between is never told it was paused, so the mark has to be cleared
+	// anyway — otherwise the next cancellation of this item reads as a pause.
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, _ func(string)) error {
+		if isMetadataCall(args) {
+			stdout(`{"id":"x","title":"Clip"}`)
+		}
+		return nil
+	}}
+
+	h := newQueueHarness(t, runner, 1)
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	h.waitFor(t, item.ID, StateDone)
+
+	// Stand in for the race: the mark is set, but the run has already ended.
+	h.q.mu.Lock()
+	h.q.pausing[item.ID] = true
+	h.q.items[item.ID].State = StateFailed
+	h.q.mu.Unlock()
+
+	if err := h.q.Retry(item.ID); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	h.waitFor(t, item.ID, StateDone)
+
+	// The state is announced from inside the run; the mark is cleared just
+	// after it returns, so this waits rather than assuming an order.
+	waitUntil(t, func() bool {
+		h.q.mu.Lock()
+		defer h.q.mu.Unlock()
+		return !h.q.pausing[item.ID]
+	}, "the pause mark to be cleared once the run ended")
+}
+
+// waitUntil polls for a condition, failing the test if it never holds.
+func waitUntil(t *testing.T, cond func() bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Errorf("timed out waiting for %s", what)
 }
