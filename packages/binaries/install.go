@@ -357,3 +357,51 @@ func needsInstall(name Name, installed, bundled string) bool {
 	}
 	return installed != bundled
 }
+
+// Repair re-applies every fixup to the binaries already in place, without
+// copying anything.
+//
+// Install cannot do this: it is keyed on the version stamp, so a binary that is
+// present and current is skipped — which is exactly the binary that has stopped
+// working. The usual causes are a quarantine flag inherited after the .app was
+// moved, or a signature macOS has decided it no longer trusts, and both are
+// repaired in place. Nothing is re-downloaded and no stamp is rewritten.
+//
+// A binary that is missing entirely is reported rather than fixed: that is
+// Install's job, and silently reinstalling here would hide a broken install
+// behind a repair that appears to succeed.
+func (m *Manager) Repair(ctx context.Context) (InstallReport, error) {
+	report := InstallReport{Fixups: map[Name][]string{}}
+
+	for _, name := range requiredBinaries {
+		spec := m.manifest.Binaries[name]
+		target := filepath.Join(m.paths.Bin, spec.relPath(name))
+
+		if _, err := os.Stat(target); err != nil {
+			report.Fixups[name] = []string{"not installed"}
+			continue
+		}
+
+		fixes, err := m.fixup(ctx, target, spec)
+		if err != nil {
+			return report, fmt.Errorf("repairing %s: %w", name, err)
+		}
+
+		// The onedir build is a tree of Mach-O images; signing only the
+		// launcher leaves the ~107 images under _internal untouched, and one
+		// bad signature in there is enough for macOS to refuse the lot.
+		if spec.Layout == LayoutDir {
+			treeFixes, err := m.fixupTree(ctx, filepath.Join(m.paths.Bin, spec.rootRel(name)), target)
+			if err != nil {
+				return report, fmt.Errorf("repairing %s: %w", name, err)
+			}
+			fixes = append(fixes, treeFixes...)
+		}
+
+		if len(fixes) > 0 {
+			report.Fixups[name] = fixes
+		}
+		report.Skipped = append(report.Skipped, name)
+	}
+	return report, nil
+}

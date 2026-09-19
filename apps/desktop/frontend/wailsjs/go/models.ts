@@ -512,6 +512,71 @@ export namespace core {
 
 }
 
+export namespace doctor {
+	
+	export class Check {
+	    id: string;
+	    title: string;
+	    status: string;
+	    summary: string;
+	    remedy: string;
+	    detail: string;
+	    fixable: boolean;
+	    fixLabel: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Check(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.status = source["status"];
+	        this.summary = source["summary"];
+	        this.remedy = source["remedy"];
+	        this.detail = source["detail"];
+	        this.fixable = source["fixable"];
+	        this.fixLabel = source["fixLabel"];
+	    }
+	}
+	export class Report {
+	    checks: Check[];
+	    healthy: boolean;
+	    summary: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Report(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.checks = this.convertValues(source["checks"], Check);
+	        this.healthy = source["healthy"];
+	        this.summary = source["summary"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace history {
 	
 	export class Entry {

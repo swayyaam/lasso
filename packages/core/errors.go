@@ -158,8 +158,8 @@ func ClassifyError(output string, err error) *DownloadError {
 	// permitted" on its own is a protected download folder, and the mention of
 	// --cookies-from-browser would otherwise be read as "you need to sign in" —
 	// advice that goes nowhere when cookies were asked for and could not be read.
-	if isCookieAccessFailure(haystack) {
-		return &DownloadError{Kind: ErrCookieAccess, Message: cookieAccessMessage, Raw: raw, Err: err}
+	if message, ok := cookieAccessFailure(haystack); ok {
+		return &DownloadError{Kind: ErrCookieAccess, Message: message, Raw: raw, Err: err}
 	}
 
 	for _, c := range classifiers {
@@ -178,38 +178,60 @@ func ClassifyError(output string, err error) *DownloadError {
 	}
 }
 
-// cookieAccessMessage is the remedy for a cookie jar Lasso is not allowed to
-// read. Safari's always needs Full Disk Access — macOS keeps it inside Safari's
-// container, which is protected whatever the file permissions say.
-const cookieAccessMessage = "macOS would not let Lasso read your browser's cookies. " +
-	"Give Lasso Full Disk Access in System Settings › Privacy & Security, then try again — " +
-	"or choose a different browser in Settings."
+// A cookie jar can fail in two ways that want opposite advice, so they get
+// separate messages under the same kind.
+const (
+	// cookieRefusedMessage is for a jar that exists and cannot be opened.
+	// Safari's always needs Full Disk Access: macOS keeps it inside Safari's
+	// container, which is protected whatever the file permissions say.
+	cookieRefusedMessage = "macOS would not let Lasso read your browser's cookies. " +
+		"Give Lasso Full Disk Access in System Settings › Privacy & Security, then try again — " +
+		"or choose a different browser in Settings."
+
+	// cookieMissingMessage is for a jar that is not there at all, which means
+	// the browser is not installed or has never been opened. Full Disk Access
+	// would do nothing for it.
+	cookieMissingMessage = "Lasso could not find that browser's cookies — it may not be installed, " +
+		"or may never have been opened. Choose a browser you actually use in Settings."
+)
 
 // cookieRefusals are the ways the operating system, or yt-dlp, says a cookie
-// jar could not be opened or decrypted.
+// jar exists but will not open.
 var cookieRefusals = []string{
 	"operation not permitted", "permission denied", "could not copy",
-	"failed to decrypt", "unable to decrypt", "could not find cookie",
-	"unable to read", "no such file or directory",
+	"failed to decrypt", "unable to decrypt", "unable to read",
 }
 
-// isCookieAccessFailure reports whether output describes a cookie jar that
-// could not be read, as opposed to any other permission problem.
+// cookieMissing are the ways it says there is no jar to open.
+var cookieMissing = []string{
+	"could not find", "does not exist", "no such file or directory", "not found",
+}
+
+// cookieAccessFailure reports whether output describes a cookie jar that could
+// not be read, and which of the two remedies applies.
 //
-// Both halves are required. A download folder Lasso cannot write to produces
-// the same "operation not permitted", and sending that user to Full Disk Access
-// for their cookies would be worse than saying nothing.
-func isCookieAccessFailure(haystack string) bool {
-	mentionsCookies := strings.Contains(haystack, "cookie")
-	if !mentionsCookies {
-		return false
+// Both halves are required: the output must be about cookies *and* describe a
+// failure to get at them. A download folder Lasso cannot write to produces the
+// same "operation not permitted", and sending that user to Full Disk Access for
+// their cookies would be worse than saying nothing.
+//
+// Refusal is checked before absence because a jar that is present but locked
+// often reports both, and the permission problem is the actionable one.
+func cookieAccessFailure(haystack string) (string, bool) {
+	if !strings.Contains(haystack, "cookie") {
+		return "", false
 	}
 	for _, refusal := range cookieRefusals {
 		if strings.Contains(haystack, refusal) {
-			return true
+			return cookieRefusedMessage, true
 		}
 	}
-	return false
+	for _, missing := range cookieMissing {
+		if strings.Contains(haystack, missing) {
+			return cookieMissingMessage, true
+		}
+	}
+	return "", false
 }
 
 // UserMessage returns a plain-language message for any error.

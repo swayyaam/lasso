@@ -25,6 +25,34 @@ func TestClassifyCookieAccessFailure(t *testing.T) {
 	}
 }
 
+func TestClassifyMissingCookieJar(t *testing.T) {
+	// Verbatim from a real run, with the browser set to one that is not
+	// installed. This is a different problem from a jar that will not open,
+	// and Full Disk Access would do nothing for it.
+	output := `ERROR: could not find chrome cookies database in "/Users/someone/Library/Application Support/Google/Chrome"`
+
+	got := ClassifyError(output, errors.New("exit status 1"))
+	if got.Kind != ErrCookieAccess {
+		t.Fatalf("Kind = %q, want %q", got.Kind, ErrCookieAccess)
+	}
+	if strings.Contains(got.Message, "Full Disk Access") {
+		t.Errorf("message %q sends the user to a permission that is not the problem", got.Message)
+	}
+	if !strings.Contains(got.Message, "not be installed") {
+		t.Errorf("message %q does not explain that the browser is missing", got.Message)
+	}
+}
+
+func TestRefusedJarBeatsMissingJar(t *testing.T) {
+	// A locked jar often reports both shapes. The permission problem is the
+	// one the user can act on.
+	output := `ERROR: Operation not permitted: could not find cookies database`
+
+	if got := ClassifyError(output, errors.New("exit status 1")); !strings.Contains(got.Message, "Full Disk Access") {
+		t.Errorf("message = %q, want the permission remedy to win", got.Message)
+	}
+}
+
 func TestCookieAccessDoesNotClaimAProtectedDownloadFolder(t *testing.T) {
 	// Same refusal from the operating system, entirely different cause. Sending
 	// this user to Full Disk Access for their cookies would be a dead end.

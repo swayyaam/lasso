@@ -30,9 +30,12 @@ apps/desktop/        Wails app: main.go, bindings, frontend/
 packages/core/       Go: arg builder, metadata fetch, progress parser, queue
 packages/binaries/   Go: locate/install/verify/update sidecar binaries
 packages/presets/    Go: built-in + user presets, JSON persistence
+packages/history/    Go: the record of finished downloads, JSON persistence
+packages/doctor/     Go: diagnoses why downloads fail, and repairs what it can
 packages/ui/         React: shared components + design tokens
 scripts/             fetch-binaries.sh and build helpers
-docs/design.md       The visual design system. Do not modify it.
+DESIGN-webflow.md    The visual design system. Do not modify it.
+docs/design.md       Superseded by the above; kept for history.
 ```
 
 Go modules are wired together with `go.work`; JS packages with pnpm workspaces
@@ -183,24 +186,84 @@ neighbours in the Dock and does not share the system corner radius.
 
 ## Design
 
-`docs/design.md` is the visual language and is **read-only**. It documents
-Linear's marketing site, so map it onto app screens rather than copying page
-patterns: use the small end of the type scale, skip hero/pricing/footer
-constructs.
+`DESIGN-webflow.md` in the repo root is the visual language and is
+**read-only**. It documents Webflow's marketing site, so map it onto app
+screens rather than copying page patterns: use the small end of the type
+scale, skip hero/pricing/footer constructs.
+
+It replaced `docs/design.md`, which documented Linear's site and described a
+dark app. That file is kept for history and is no longer the source of truth —
+if the two disagree, this one wins.
 
 Decisions made on top of it, for this app:
 
-- **Dark only.** The system documents no light theme; Lasso does not ship one.
-- **One added semantic colour**: an app-only error red, used solely for failed
-  downloads and blocking startup errors. Everything else obeys the "no second
-  chromatic accent" rule — lavender stays scarce (brand mark, primary CTA, focus
-  ring, link emphasis).
-- **Compressed density**: same tokens, smaller rungs — 16 px card padding,
-  `body-sm` 14 px as the workhorse, `caption` 12 px for meta.
-- **Two-pane window**: composer left, queue right; stacks below ~900 px.
+- **Light only.** The system is a white canvas with near-black ink. The window
+  and the webview are set to Aqua so the traffic lights and any native control
+  match it.
+- **A near-white surface ladder.** The source has no grey steps: a card is
+  canvas plus a hairline border. An app needs fills for hover, selection and
+  inset panels, so `surface-1..4` step from canvas toward hairline.
+- **Readable shades of the semantic accents.** `#00d722` green and `#ee1d36`
+  red are surface-fill colours; as small text on white they fail contrast. Each
+  has a `-strong` variant for text and a tinted surface. These are shades of
+  the documented stops, not a sixth accent.
+- **Compressed density**: the document's weights, tracking and shape system
+  exactly; its marketing sizes taken at the small end. 16 px card padding,
+  `body-sm` 14 px as the workhorse, `caption` 12.8 px at the signature 550
+  weight for labels.
+- **Two-pane window**: composer left, queue and history right; stacks below
+  ~900 px.
+
+Two rules from the document are easy to break and worth restating. The five
+chromatic accents (purple / pink / blue / orange / green) are **surface fills,
+never button backgrounds** — the conversion hierarchy is two-colour, near-black
+for primary and white-on-hairline for secondary. And **nothing is a pill**:
+buttons, chips and badges are 4 px, cards are 8 px, and full-round is reserved
+for circular icon containers and scrollbar tracks.
 
 Colours, spacing, radii and type come **only** from the token config in
-`packages/ui`. No hardcoded hex in components — this is lint-enforced.
+`packages/ui`. No hardcoded hex in components — this is lint-enforced by
+`scripts/check-tokens.mjs`.
+
+## Components and icons
+
+Most primitives in `packages/ui` are hand-rolled against the tokens. Three are
+Radix, chosen where the hard part is behaviour rather than appearance:
+
+- **Sheet** (Dialog) — focus trap, focus restore, inert background, scroll lock.
+- **Dropdown** (Select) — typeahead, roving focus, scroll-into-view. A native
+  `<select>` renders its popup with the OS's own chrome, which follows neither
+  the tokens nor the shape system.
+- **Tooltip** — dismissal rules, and not appearing on touch.
+
+Anything else would be a styled div with extra weight, so it is not worth the
+dependency.
+
+Icons are lucide, and every one the app uses is named in `packages/ui/src/icons.ts`
+rather than imported from lucide at the call site. That is what stops the same
+action picking a different glyph in two places. Names describe the action
+(`Retry`), not the picture (`RotateCcw`). They render at 14 px with
+`strokeWidth={1.75}`: lucide's default 2 px stroke reads heavier than the
+system's 400/500 type weights beside it.
+
+## Errors and the doctor
+
+`packages/core` classifies a yt-dlp failure into an `ErrorKind` and a
+plain-language sentence, keeping the raw output for a details toggle. Add a new
+signature to the classifier with a test that uses the **verbatim** output — the
+wordings that matter are the ones real runs produce, and several have been
+missed by paraphrasing them.
+
+`packages/doctor` answers the other half: whether the problem is Lasso's own
+setup. It checks the helper programs, the download folder, free space and
+whether the configured browser's cookies can actually be read, and repairs what
+it can. Every check says what was found, what it means and what to do, and the
+ones Lasso can fix expose a button rather than a paragraph.
+
+`doctor.SuggestsDoctor` decides whether a failure is worth offering diagnostics
+for, and is deliberately narrow: a private video or a geo-block is the site's
+answer, not a local problem, and offering diagnostics for those would teach the
+user that the offer means nothing.
 
 ## Commands
 

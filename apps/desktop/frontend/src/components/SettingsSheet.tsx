@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Banner, Button, Card, Chip, Details, Eyebrow, LoadingState, MonoBlock, Select, cx } from "@lasso/ui";
+import { Banner, Button, Card, Chip, Details, Dropdown, Eyebrow, Icon, LoadingState, MonoBlock, cx } from "@lasso/ui";
 import { api, binaries, main } from "../bindings";
+import { BROWSERS } from "./AdvancedDrawer";
+import { useDoctor } from "./DoctorPanel";
 
 /**
  * SettingsSheet covers the canvas rather than opening a second window.
@@ -27,6 +29,7 @@ export function SettingsSheet({
   const [updateResult, setUpdateResult] = useState<binaries.UpdateResult | null>(null);
   const [updateError, setUpdateError] = useState("");
   const [saved, setSaved] = useState(false);
+  const openDoctor = useDoctor();
 
   useEffect(() => setDraft(settings), [settings]);
 
@@ -94,7 +97,11 @@ export function SettingsSheet({
                     >
                       <MiddleTruncate text={draft.downloadFolder} />
                     </span>
-                    <Button size="sm" onClick={chooseFolder}>
+                    <Button
+                      size="sm"
+                      onClick={chooseFolder}
+                      icon={<Icon.Folder className="size-3.5" strokeWidth={1.75} aria-hidden />}
+                    >
                       Choose…
                     </Button>
                   </div>
@@ -127,18 +134,13 @@ export function SettingsSheet({
                     : "Needed for private, members-only and age-restricted videos."
                 }
                 control={
-                  <Select
-                    className="w-44"
+                  <Dropdown
+                    className="w-48"
+                    ariaLabel="Cookies from browser"
                     value={draft.cookies ?? ""}
-                    onChange={(e) => setDraft({ ...draft, cookies: e.target.value })}
-                  >
-                    <option value="">None</option>
-                    <option value="safari">Safari</option>
-                    <option value="chrome">Chrome</option>
-                    <option value="firefox">Firefox</option>
-                    <option value="brave">Brave</option>
-                    <option value="arc">Arc</option>
-                  </Select>
+                    options={BROWSERS}
+                    onChange={(value) => setDraft({ ...draft, cookies: value })}
+                  />
                 }
               />
 
@@ -171,6 +173,19 @@ export function SettingsSheet({
             ))}
 
             <Row
+              label="Diagnostics"
+              hint="Checks the helper programs, the download folder, free space and cookies — and repairs what it can."
+              control={
+                <Button
+                  onClick={openDoctor}
+                  icon={<Icon.Doctor className="size-3.5" strokeWidth={1.75} aria-hidden />}
+                >
+                  Run the doctor
+                </Button>
+              }
+            />
+
+            <Row
               label="yt-dlp updates"
               hint={
                 updating
@@ -179,7 +194,11 @@ export function SettingsSheet({
               }
               hintTone={updateError ? "danger" : "normal"}
               control={
-                <Button onClick={updateYtDlp} busy={updating}>
+                <Button
+                  onClick={updateYtDlp}
+                  busy={updating}
+                  icon={<Icon.Recheck className="size-3.5" strokeWidth={1.75} aria-hidden />}
+                >
                   {updating ? "Checking…" : "Update yt-dlp"}
                 </Button>
               }
@@ -229,7 +248,7 @@ function Row({
   stacked?: boolean;
 }) {
   const caption = hint && (
-    <span className={cx("text-caption", hintTone === "danger" ? "text-danger" : "text-ink-tertiary")}>
+    <span className={cx("text-caption", hintTone === "danger" ? "text-danger-strong" : "text-ink-tertiary")}>
       {hint}
     </span>
   );

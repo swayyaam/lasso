@@ -3,6 +3,7 @@ import { useBinaryStatus, useHistory, usePresets, useQueue, useSettings } from "
 import { Composer } from "./components/Composer";
 import { FirstRun, InstallingOverlay } from "./components/FirstRun";
 import { ActivityPane } from "./components/ActivityPane";
+import { DoctorProvider } from "./components/DoctorPanel";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { TitleBar } from "./components/TitleBar";
 
@@ -25,7 +26,8 @@ export function App() {
   const starting = status === null;
 
   return (
-    <div className="relative flex h-full flex-col bg-canvas">
+    <DoctorProvider>
+      <div className="relative flex h-full flex-col bg-canvas">
       <TitleBar
         onOpenSettings={() => setSettingsOpen(true)}
         ytDlpVersion={status?.versions?.["yt-dlp"]}
@@ -59,7 +61,8 @@ export function App() {
           onSave={save}
           onClose={() => setSettingsOpen(false)}
         />
-      )}
-    </div>
+        )}
+      </div>
+    </DoctorProvider>
   );
 }

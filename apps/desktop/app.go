@@ -11,6 +11,7 @@ import (
 
 	"github.com/swayyaam/lasso/packages/binaries"
 	"github.com/swayyaam/lasso/packages/core"
+	"github.com/swayyaam/lasso/packages/doctor"
 	"github.com/swayyaam/lasso/packages/history"
 	"github.com/swayyaam/lasso/packages/presets"
 
@@ -550,6 +551,102 @@ func (a *App) OpenFile(path string) error {
 		return fmt.Errorf("that file is no longer there")
 	}
 	return openFile(path)
+}
+
+// ---- Diagnostics ----
+
+// Diagnose runs every check and reports what it found.
+//
+// It is deliberately free of side effects, so the queue can offer it straight
+// from a failed download without the offer itself changing anything.
+func (a *App) Diagnose() (doctor.Report, error) {
+	d, err := a.doctor()
+	if err != nil {
+		return doctor.Report{}, err
+	}
+	return d.Run(a.ctx), nil
+}
+
+// ApplyFix repairs one check and returns what it did, so the user can see that
+// pressing the button had an effect.
+func (a *App) ApplyFix(id string) (string, error) {
+	d, err := a.doctor()
+	if err != nil {
+		return "", err
+	}
+	return d.Fix(a.ctx, id)
+}
+
+// ShouldSuggestDoctor reports whether a failure of this kind is worth offering
+// diagnostics for. The frontend asks rather than deciding, so the rule has one
+// definition and is testable in Go.
+func (a *App) ShouldSuggestDoctor(kind core.ErrorKind) bool {
+	return doctor.SuggestsDoctor(kind)
+}
+
+// doctor assembles a Doctor from the app's current state.
+//
+// It is built per call rather than held, because every input can change while
+// the app is open — the folder and browser from settings, the binaries from an
+// update — and a diagnosis of a stale configuration is worse than none.
+func (a *App) doctor() (*doctor.Doctor, error) {
+	a.mu.RLock()
+	manager, settingsStore := a.manager, a.settings
+	a.mu.RUnlock()
+
+	if manager == nil || settingsStore == nil {
+		return nil, fmt.Errorf("Lasso is still starting up")
+	}
+	settings := settingsStore.Get()
+
+	return doctor.New(doctor.Config{
+		Manager:          manager,
+		DownloadFolder:   settings.DownloadFolder,
+		Cookies:          settings.Cookies,
+		FreeBytes:        freeBytes,
+		MinimumFreeBytes: minimumFreeBytes,
+		CookieProbe:      a.probeCookies,
+	})
+}
+
+// probeCookies asks yt-dlp to open the browser's cookie jar.
+//
+// There is no way to answer this by inspection. Whether a jar can be read
+// depends on macOS's permission state, on whether the browser holds a lock,
+// and for Chromium on whether the keychain releases the decryption key — so
+// the only honest test is the thing that will actually do it, failing against
+// a site that costs nothing to ask.
+func (a *App) probeCookies(ctx context.Context, browser core.Browser) error {
+	runner, _, err := a.runnerAndSettings()
+	if err != nil {
+		return err
+	}
+
+	o := core.Options{URL: cookieProbeURL, Pick: core.PickBest}
+	o.Network.Cookies = browser
+	o.ArcProfileDir = arcProfileDir()
+	o.DenoPath = a.denoPath()
+
+	ctx, cancel := context.WithTimeout(ctx, cookieProbeTimeout)
+	defer cancel()
+
+	var errLines []string
+	runErr := runner.Run(ctx, core.CookieProbeArgs(o),
+		func(string) {},
+		func(line string) { errLines = append(errLines, line) },
+	)
+	if runErr == nil {
+		return nil
+	}
+
+	output := strings.Join(errLines, "\n")
+	// Only a cookie problem is this check's business. The probe URL may be
+	// unreachable, the site may be rate-limiting, the machine may be offline —
+	// none of which says anything about whether the jar can be opened.
+	if classified := core.ClassifyError(output, runErr); classified.Kind == core.ErrCookieAccess {
+		return classified
+	}
+	return nil
 }
 
 // ---- yt-dlp updates ----

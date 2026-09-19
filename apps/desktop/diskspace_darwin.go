@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"syscall"
+	"time"
 )
 
 // minimumFreeBytes is the floor below which Lasso will not start a download.
@@ -58,3 +59,15 @@ func formatBytes(bytes int64) string {
 	}
 	return fmt.Sprintf("%.1f %cB", value, "KMGT"[exp-1])
 }
+
+// cookieProbeURL is the page the cookie check asks yt-dlp to look at.
+//
+// It is a real, permanently available, uncontroversial video. The probe never
+// downloads it — it stops at the point where cookies have been read — but it
+// has to name something, and something that will not disappear.
+const cookieProbeURL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+
+// cookieProbeTimeout bounds the probe. A jar that cannot be opened fails
+// immediately; this is the budget for the network request that follows when it
+// opens fine, and the check is not worth making a user wait longer than.
+const cookieProbeTimeout = 45 * time.Second

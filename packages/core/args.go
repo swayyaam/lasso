@@ -329,3 +329,32 @@ func shellQuote(s string) string {
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
+
+// CookieProbeArgs asks yt-dlp to open a browser's cookie jar and nothing more.
+//
+// Whether a cookie jar can be read is not answerable by inspection: it depends
+// on macOS's permission state, on whether the browser holds a lock on the file,
+// and for Chromium on whether the keychain releases the decryption key. The
+// only honest test is the thing that will actually do it.
+//
+// yt-dlp loads cookies before it extracts anything, so a jar it cannot open
+// fails here without a single network request. When the jar opens, the request
+// that follows is a simulation — nothing is downloaded and nothing is written.
+func CookieProbeArgs(o Options) []string {
+	args := []string{
+		"--ignore-config",
+		"--simulate",
+		"--no-warnings",
+		// One item is enough to reach the point where cookies have been used,
+		// and stops a link that turns out to be a playlist walking all of it.
+		"--playlist-items", "1",
+	}
+
+	if o.DenoPath != "" {
+		args = append(args, "--js-runtimes", "deno:"+o.DenoPath)
+	}
+	if spec := cookieSpec(o); spec != "" {
+		args = append(args, "--cookies-from-browser", spec)
+	}
+	return append(args, "--", strings.TrimSpace(o.URL))
+}

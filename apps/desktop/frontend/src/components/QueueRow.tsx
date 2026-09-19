@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Button, Details, MonoBlock, ProgressBar, StatusBadge, cx } from "@lasso/ui";
+import { useEffect, useState } from "react";
+import { Button, Details, Icon, MonoBlock, ProgressBar, StatusBadge, Tooltip, cx } from "@lasso/ui";
 import type { Tone } from "@lasso/ui";
 import { api, core } from "../bindings";
+import { useDoctor } from "./DoctorPanel";
 import { basename, formatEta, formatSpeed } from "../format";
 
 /**
@@ -47,6 +48,10 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
   // since it finished. Reporting that in the status line keeps the row's fixed
   // height, which the virtualised list depends on.
   const [actionError, setActionError] = useState("");
+  const openDoctor = useDoctor();
+  // Whether a failure looks like a broken install rather than a bad link is
+  // decided in Go, so the rule has one definition and is testable there.
+  const [suggestsDoctor, setSuggestsDoctor] = useState(false);
 
   async function act(action: () => Promise<unknown>) {
     setActionError("");
@@ -56,6 +61,20 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
       setActionError(String(e).replace(/^Error:\s*/, "").trim() || "That did not work.");
     }
   }
+
+  useEffect(() => {
+    if (item.state !== "failed" || !item.errorKind) {
+      setSuggestsDoctor(false);
+      return;
+    }
+    let cancelled = false;
+    api.ShouldSuggestDoctor(item.errorKind).then((suggest) => {
+      if (!cancelled) setSuggestsDoctor(suggest);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [item.state, item.errorKind]);
 
   const state = item.state;
   const progress = item.progress;
@@ -75,7 +94,7 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
     <div
       className={cx(
         "flex flex-col gap-xs border-b border-hairline px-md py-sm",
-        failed && "bg-danger-surface/40",
+        failed && "bg-danger-surface",
       )}
       style={{ height: expanded ? undefined : QUEUE_ROW_HEIGHT }}
     >
@@ -102,7 +121,7 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
         <span
           className={cx(
             "min-w-0 flex-1 truncate text-caption tabular-nums",
-            actionError ? "text-danger" : "text-ink-subtle",
+            actionError ? "text-danger-strong" : "text-ink-subtle",
           )}
           title={actionError || statusLine(item)}
         >
@@ -110,53 +129,105 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
         </span>
 
         {pausable && (
-          <Button size="sm" variant="tertiary" onClick={() => void api.Pause(item.id)}>
+          <Button
+            size="sm"
+            variant="tertiary"
+            onClick={() => void api.Pause(item.id)}
+            icon={<Icon.Pause className="size-3.5" strokeWidth={1.75} aria-hidden />}
+          >
             Pause
           </Button>
         )}
         {paused && (
-          <Button size="sm" onClick={() => void api.Resume(item.id)}>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => void api.Resume(item.id)}
+            icon={<Icon.Resume className="size-3.5" strokeWidth={1.75} aria-hidden />}
+          >
             Resume
           </Button>
         )}
         {!terminal && (
-          <Button size="sm" variant="tertiary" onClick={() => void api.Cancel(item.id)}>
+          <Button
+            size="sm"
+            variant="tertiary"
+            onClick={() => void api.Cancel(item.id)}
+            icon={<Icon.Cancel className="size-3.5" strokeWidth={1.75} aria-hidden />}
+          >
             Cancel
           </Button>
         )}
         {(state === "failed" || state === "cancelled") && (
-          <Button size="sm" onClick={() => void api.Retry(item.id)}>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => void api.Retry(item.id)}
+            icon={<Icon.Retry className="size-3.5" strokeWidth={1.75} aria-hidden />}
+          >
             Retry
           </Button>
         )}
         {state === "done" && item.filePath && (
           <>
-            <Button size="sm" variant="tertiary" onClick={() => void act(() => api.OpenFile(item.filePath))}>
+            <Button
+              size="sm"
+              variant="tertiary"
+              onClick={() => void act(() => api.OpenFile(item.filePath))}
+              icon={<Icon.OpenFile className="size-3.5" strokeWidth={1.75} aria-hidden />}
+            >
               Open
             </Button>
-            <Button size="sm" variant="tertiary" onClick={() => void act(() => api.RevealInFinder(item.filePath))}>
-              Show
-            </Button>
+            <Tooltip label="Show in Finder">
+              <Button
+                size="icon"
+                variant="tertiary"
+                aria-label="Show in Finder"
+                onClick={() => void act(() => api.RevealInFinder(item.filePath))}
+              >
+                <Icon.RevealInFinder className="size-3.5" strokeWidth={1.75} aria-hidden />
+              </Button>
+            </Tooltip>
           </>
         )}
         {(terminal || paused) && (
           // Clearing the row is tidying the queue, not forgetting the download:
-          // its history entry stays.
-          <Button
-            size="sm"
-            variant="tertiary"
-            aria-label="Remove from queue"
-            title="Remove from queue"
-            onClick={() => void api.RemoveFromQueue(item.id)}
-          >
-            &times;
-          </Button>
+          // its history entry stays. Icon-only, because it is the least
+          // important control in the row and a label would give it equal
+          // weight with Retry.
+          <Tooltip label="Remove from queue">
+            <Button
+              size="icon"
+              variant="tertiary"
+              aria-label="Remove from queue"
+              onClick={() => void api.RemoveFromQueue(item.id)}
+            >
+              <Icon.Cancel className="size-3.5" strokeWidth={1.75} aria-hidden />
+            </Button>
+          </Tooltip>
         )}
       </div>
 
       {failed && item.message && (
         <div className="flex flex-col gap-xs pt-xxs">
-          <p className="text-caption text-danger">{item.message}</p>
+          <p className="text-caption text-danger-strong">{item.message}</p>
+
+          {suggestsDoctor && (
+            // This failure does not look like the site's answer, so the next
+            // useful step is checking Lasso's own setup rather than trying the
+            // same link again.
+            <div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={openDoctor}
+                icon={<Icon.Doctor className="size-3.5" strokeWidth={1.75} aria-hidden />}
+              >
+                Run diagnostics
+              </Button>
+            </div>
+          )}
+
           {item.detail && (
             // The raw log stays one click away on every failure, never the
             // first thing a non-technical user is shown.
