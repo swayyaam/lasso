@@ -27,7 +27,10 @@ export function ActivityPane({
   const finished = items.filter(
     (i) => i.state === "done" || i.state === "failed" || i.state === "cancelled",
   ).length;
-  const active = items.length - finished;
+  // Paused counts as neither: it is not finished, and calling it active would
+  // suggest something is still happening.
+  const paused = items.filter((i) => i.state === "paused").length;
+  const active = items.length - finished - paused;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
@@ -45,7 +48,9 @@ export function ActivityPane({
           <div className="flex items-center gap-xs">
             {items.length > 0 && (
               <span className="text-caption text-ink-tertiary tabular-nums">
-                {active > 0 ? `${active} active · ${items.length} total` : `${items.length} total`}
+                {[active > 0 ? `${active} active` : "", paused > 0 ? `${paused} paused` : "", `${items.length} total`]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             )}
             {finished > 0 && (

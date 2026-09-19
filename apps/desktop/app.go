@@ -111,6 +111,7 @@ func (a *App) startQueue(ctx context.Context, manager *binaries.Manager, concurr
 		OnState: func(item core.Item) {
 			runtime.EventsEmit(ctx, EventQueueItem, item)
 			a.record(ctx, item)
+			a.announce(item)
 		},
 		OnProgress: func(id string, p core.Progress) {
 			runtime.EventsEmit(ctx, EventQueueProgress, ProgressEvent{ID: id, Progress: p})
@@ -263,6 +264,12 @@ func (a *App) Enqueue(o core.Options, title string) (core.Item, error) {
 	o.DenoPath = manager.Path(binaries.Deno)
 	o.ArcProfileDir = arcProfileDir()
 
+	// Checked before the download starts rather than discovered halfway
+	// through it, which wastes the transfer and leaves a part file behind.
+	if err := checkDiskSpace(o.Output.Folder); err != nil {
+		return core.Item{}, err
+	}
+
 	return queue.Add(o, title)
 }
 
@@ -290,6 +297,31 @@ func (a *App) Cancel(id string) error {
 		return fmt.Errorf("nothing is downloading")
 	}
 	return queue.Cancel(id)
+}
+
+// Pause stops a download but keeps what it has transferred, so it can be
+// picked up again later.
+func (a *App) Pause(id string) error {
+	a.mu.RLock()
+	queue := a.queue
+	a.mu.RUnlock()
+
+	if queue == nil {
+		return fmt.Errorf("nothing is downloading")
+	}
+	return queue.Pause(id)
+}
+
+// Resume puts a paused download back in line.
+func (a *App) Resume(id string) error {
+	a.mu.RLock()
+	queue := a.queue
+	a.mu.RUnlock()
+
+	if queue == nil {
+		return fmt.Errorf("nothing is paused")
+	}
+	return queue.Resume(id)
 }
 
 // Retry puts a failed or cancelled download back on the queue.
@@ -505,6 +537,21 @@ func (a *App) OpenFullDiskAccessSettings() error {
 	return openFullDiskAccessSettings()
 }
 
+// OpenFile opens a finished download in whichever app macOS uses for it.
+//
+// The counterpart to RevealInFinder: showing the file is what you want when
+// you are about to move it, and opening it is what you want the rest of the
+// time.
+func (a *App) OpenFile(path string) error {
+	if path == "" {
+		return fmt.Errorf("that download has no file yet")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("that file is no longer there")
+	}
+	return openFile(path)
+}
+
 // ---- yt-dlp updates ----
 
 // UpdateYtDlp runs yt-dlp's self-update against the copy in Application
@@ -574,6 +621,20 @@ func (a *App) record(ctx context.Context, item core.Item) {
 		return
 	}
 	runtime.EventsEmit(ctx, EventHistoryChanged)
+}
+
+// announce posts a notification for a download that has ended.
+//
+// Only for outcomes worth interrupting someone over. A cancellation was the
+// user's own doing a moment ago and needs no announcement, and a pause even
+// less.
+func (a *App) announce(item core.Item) {
+	switch item.State {
+	case core.StateDone:
+		notify(item.Title, "Download finished")
+	case core.StateFailed:
+		notify(item.Title, "Download failed")
+	}
 }
 
 func (a *App) historyStore() (*history.Store, error) {

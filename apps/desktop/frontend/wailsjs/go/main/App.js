@@ -50,8 +50,16 @@ export function History() {
   return window['go']['main']['App']['History']();
 }
 
+export function OpenFile(arg1) {
+  return window['go']['main']['App']['OpenFile'](arg1);
+}
+
 export function OpenFullDiskAccessSettings() {
   return window['go']['main']['App']['OpenFullDiskAccessSettings']();
+}
+
+export function Pause(arg1) {
+  return window['go']['main']['App']['Pause'](arg1);
 }
 
 export function Presets() {
@@ -68,6 +76,10 @@ export function RemoveFromQueue(arg1) {
 
 export function RenamePreset(arg1, arg2) {
   return window['go']['main']['App']['RenamePreset'](arg1, arg2);
+}
+
+export function Resume(arg1) {
+  return window['go']['main']['App']['Resume'](arg1);
 }
 
 export function Retry(arg1) {

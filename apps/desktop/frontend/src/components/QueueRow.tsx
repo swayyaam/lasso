@@ -18,6 +18,7 @@ const STATE_LABELS: Record<string, string> = {
   fetching: "Getting details",
   downloading: "Downloading",
   "post-processing": "Finishing",
+  paused: "Paused",
   done: "Done",
   failed: "Failed",
   cancelled: "Cancelled",
@@ -28,6 +29,7 @@ const STATE_TONES: Record<string, Tone> = {
   failed: "danger",
   cancelled: "neutral",
   queued: "neutral",
+  paused: "neutral",
   fetching: "active",
   downloading: "active",
   "post-processing": "active",
@@ -41,17 +43,17 @@ const STATE_TONES: Record<string, Tone> = {
  * log, and the list gives it the extra height it needs.
  */
 export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolean }) {
-  // Revealing can fail — the file may have been moved or deleted since it
-  // finished. Reporting that in the status line keeps the row's fixed height,
-  // which the virtualised list depends on.
-  const [revealError, setRevealError] = useState("");
+  // Opening or revealing can fail — the file may have been moved or deleted
+  // since it finished. Reporting that in the status line keeps the row's fixed
+  // height, which the virtualised list depends on.
+  const [actionError, setActionError] = useState("");
 
-  async function reveal() {
-    setRevealError("");
+  async function act(action: () => Promise<unknown>) {
+    setActionError("");
     try {
-      await api.RevealInFinder(item.filePath);
+      await action();
     } catch (e) {
-      setRevealError(String(e).replace(/^Error:\s*/, "").trim() || "Could not show that file.");
+      setActionError(String(e).replace(/^Error:\s*/, "").trim() || "That did not work.");
     }
   }
 
@@ -59,9 +61,15 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
   const progress = item.progress;
   const terminal = state === "done" || state === "failed" || state === "cancelled";
   const failed = state === "failed";
+  const paused = state === "paused";
+  // Pausing is only meaningful while bytes are moving. Post-processing is
+  // ffmpeg working on a complete file, and stopping that just wastes it.
+  const pausable = state === "downloading";
 
   const percent = progress?.percent ?? -1;
-  const showBar = state === "downloading" || state === "post-processing";
+  // A paused row keeps its bar so the gap between where it stopped and the end
+  // is visible — that is the whole difference between paused and not started.
+  const showBar = state === "downloading" || state === "post-processing" || paused;
 
   return (
     <div
@@ -94,13 +102,23 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
         <span
           className={cx(
             "min-w-0 flex-1 truncate text-caption tabular-nums",
-            revealError ? "text-danger" : "text-ink-subtle",
+            actionError ? "text-danger" : "text-ink-subtle",
           )}
-          title={revealError || statusLine(item)}
+          title={actionError || statusLine(item)}
         >
-          {revealError || statusLine(item)}
+          {actionError || statusLine(item)}
         </span>
 
+        {pausable && (
+          <Button size="sm" variant="tertiary" onClick={() => void api.Pause(item.id)}>
+            Pause
+          </Button>
+        )}
+        {paused && (
+          <Button size="sm" onClick={() => void api.Resume(item.id)}>
+            Resume
+          </Button>
+        )}
         {!terminal && (
           <Button size="sm" variant="tertiary" onClick={() => void api.Cancel(item.id)}>
             Cancel
@@ -112,11 +130,16 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
           </Button>
         )}
         {state === "done" && item.filePath && (
-          <Button size="sm" variant="tertiary" onClick={() => void reveal()}>
-            Show in Finder
-          </Button>
+          <>
+            <Button size="sm" variant="tertiary" onClick={() => void act(() => api.OpenFile(item.filePath))}>
+              Open
+            </Button>
+            <Button size="sm" variant="tertiary" onClick={() => void act(() => api.RevealInFinder(item.filePath))}>
+              Show
+            </Button>
+          </>
         )}
-        {terminal && (
+        {(terminal || paused) && (
           // Clearing the row is tidying the queue, not forgetting the download:
           // its history entry stays.
           <Button
@@ -187,6 +210,9 @@ function statusLine(item: core.Item): string {
     }
     case "post-processing":
       return p?.detail || "Finishing up…";
+    case "paused":
+      // Naming where it stopped is what makes resuming feel like continuing.
+      return p?.percent >= 0 ? `Paused at ${p.percent.toFixed(0)}%` : "Paused";
     case "done":
       // item.filePath, not progress.filename: the latter names the file being
       // written, which a post-processor deletes on its way to the real one.

@@ -30,7 +30,11 @@ export function ForgetHistoryEntry(arg1:string):Promise<void>;
 
 export function History():Promise<Array<history.Entry>>;
 
+export function OpenFile(arg1:string):Promise<void>;
+
 export function OpenFullDiskAccessSettings():Promise<void>;
+
+export function Pause(arg1:string):Promise<void>;
 
 export function Presets():Promise<Array<presets.Preset>>;
 
@@ -39,6 +43,8 @@ export function QueueItems():Promise<Array<core.Item>>;
 export function RemoveFromQueue(arg1:string):Promise<void>;
 
 export function RenamePreset(arg1:string,arg2:string):Promise<void>;
+
+export function Resume(arg1:string):Promise<void>;
 
 export function Retry(arg1:string):Promise<void>;
 

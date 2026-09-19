@@ -658,3 +658,14 @@ func indexOf(args []string, flag string) int {
 	}
 	return -1
 }
+
+func TestContinueIsAlwaysAsked(t *testing.T) {
+	// Pause and resume are built on this: resuming re-runs the same command and
+	// relies on yt-dlp continuing the .part file rather than starting over.
+	if !hasFlag(BuildArgs(baseOptions()), "--continue") {
+		t.Error("--continue missing, so a resumed download would start from zero")
+	}
+	if hasFlag(BuildArgs(baseOptions()), "--no-continue") {
+		t.Error("--no-continue would discard a paused download's progress")
+	}
+}

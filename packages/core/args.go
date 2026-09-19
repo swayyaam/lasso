@@ -19,6 +19,11 @@ func BuildArgs(o Options) []string {
 	// First, so a user's own ~/.config/yt-dlp/config cannot change the result.
 	args = append(args, "--ignore-config")
 
+	// Stated rather than assumed. Resuming a paused download is exactly this
+	// flag continuing a .part file, and yt-dlp's default being the same today
+	// is not a reason to leave the behaviour Lasso depends on unwritten.
+	args = append(args, "--continue")
+
 	args = append(args, formatArgs(o)...)
 	args = append(args, sortArgs(o)...)
 	args = append(args, containerArgs(o)...)

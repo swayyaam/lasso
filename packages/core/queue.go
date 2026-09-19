@@ -17,9 +17,12 @@ const (
 	StateFetching       State = "fetching"
 	StateDownloading    State = "downloading"
 	StatePostProcessing State = "post-processing"
-	StateDone           State = "done"
-	StateFailed         State = "failed"
-	StateCancelled      State = "cancelled"
+	// StatePaused is stopped but resumable. It is not terminal: yt-dlp leaves
+	// its .part file in place and picks up where it left off.
+	StatePaused    State = "paused"
+	StateDone      State = "done"
+	StateFailed    State = "failed"
+	StateCancelled State = "cancelled"
 )
 
 // IsTerminal reports whether a state is final: nothing further happens without
@@ -114,6 +117,9 @@ type Queue struct {
 	items   map[string]*Item
 	order   []string
 	cancels map[string]context.CancelFunc
+	// pausing marks ids whose cancellation is a pause. The process is killed
+	// the same way either way; this is what tells the two apart afterwards.
+	pausing map[string]bool
 
 	wg sync.WaitGroup
 }
@@ -148,6 +154,7 @@ func NewQueue(cfg QueueConfig) (*Queue, error) {
 		subsRetryIn: retryIn,
 		items:       map[string]*Item{},
 		cancels:     map[string]context.CancelFunc{},
+		pausing:     map[string]bool{},
 	}
 	q.cond = sync.NewCond(&q.mu)
 	q.emitter = NewProgressEmitter(interval, func(id string, p Progress) {
@@ -317,18 +324,91 @@ func (q *Queue) Retry(id string) error {
 	return nil
 }
 
-// Remove drops a finished item from the queue.
+// Pause stops a download so it can be picked up again later.
 //
-// Only a terminal item can go: removing a running one would leave its download
-// with nowhere to report, so the caller cancels first and removes after.
-func (q *Queue) Remove(id string) error {
+// There is no such thing as suspending yt-dlp usefully: holding the process
+// open keeps the connection open, and sites time it out. So a pause is a stop
+// that keeps its work — the process group is killed exactly as cancelling
+// kills it, and the .part file it leaves behind is what resuming continues
+// from.
+func (q *Queue) Pause(id string) error {
 	q.mu.Lock()
 	item, ok := q.items[id]
 	if !ok {
 		q.mu.Unlock()
 		return fmt.Errorf("no such download")
 	}
-	if !item.State.IsTerminal() {
+	if item.State == StatePaused {
+		q.mu.Unlock()
+		return nil
+	}
+	if item.State.IsTerminal() {
+		q.mu.Unlock()
+		return fmt.Errorf("that download has already finished")
+	}
+
+	cancel, running := q.cancels[id]
+	if !running {
+		// Still waiting its turn: it can simply stop waiting.
+		item.State = StatePaused
+		item.Message = ""
+		snapshot := *item
+		q.cond.Broadcast()
+		q.mu.Unlock()
+
+		q.notify(snapshot)
+		return nil
+	}
+
+	// Recorded before the kill so the run that is about to end knows which of
+	// the two this was.
+	q.pausing[id] = true
+	q.mu.Unlock()
+
+	cancel()
+	return nil
+}
+
+// Resume puts a paused download back in line.
+//
+// It is queued rather than started outright, so resuming several at once still
+// respects the concurrency limit.
+func (q *Queue) Resume(id string) error {
+	q.mu.Lock()
+	item, ok := q.items[id]
+	if !ok {
+		q.mu.Unlock()
+		return fmt.Errorf("no such download")
+	}
+	if item.State != StatePaused {
+		q.mu.Unlock()
+		return fmt.Errorf("that download is not paused")
+	}
+
+	item.State = StateQueued
+	item.Message = ""
+	snapshot := *item
+	q.cond.Broadcast()
+	q.mu.Unlock()
+
+	q.notify(snapshot)
+	return nil
+}
+
+// Remove drops an item from the queue.
+//
+// Anything not actually running can go — finished, paused, or still waiting
+// its turn. Removing a running download would leave it reporting into nothing,
+// so the caller cancels or pauses first and removes after.
+func (q *Queue) Remove(id string) error {
+	q.mu.Lock()
+	if _, ok := q.items[id]; !ok {
+		q.mu.Unlock()
+		return fmt.Errorf("no such download")
+	}
+	if _, running := q.cancels[id]; running {
+		// A running download would be left reporting into nothing. Finished,
+		// paused and still-waiting items are not running, so they can go.
 		q.mu.Unlock()
 		return fmt.Errorf("that download is still running")
 	}
@@ -547,6 +627,18 @@ func (q *Queue) fail(id, output string, err error, ctx context.Context) {
 	state := StateFailed
 	if downloadErr.Kind == ErrCancelled {
 		state = StateCancelled
+
+		q.mu.Lock()
+		paused := q.pausing[id]
+		delete(q.pausing, id)
+		q.mu.Unlock()
+
+		if paused {
+			// Whatever was transferred stays on disk, and the progress already
+			// recorded stays on the item, so resuming shows where it got to.
+			q.transition(id, StatePaused, nil)
+			return
+		}
 	}
 	q.transition(id, state, downloadErr)
 }

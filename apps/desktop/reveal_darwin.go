@@ -16,6 +16,17 @@ func openInFinder(path string) error {
 	return exec.CommandContext(ctx, "/usr/bin/open", "-R", "--", path).Run()
 }
 
+// openFile opens a file with whatever macOS considers its default app.
+//
+// Like openInFinder, it execs with an argument slice, so a filename containing
+// shell metacharacters is just a filename. The "--" matters here too: a file
+// whose name begins with a dash would otherwise be read as an option.
+func openFile(path string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "/usr/bin/open", "--", path).Run()
+}
+
 // fullDiskAccessURL opens System Settings at the pane that governs Safari's
 // cookie container.
 //

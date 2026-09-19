@@ -980,3 +980,125 @@ func TestRemovingKeepsTheRestInOrder(t *testing.T) {
 		t.Errorf("order = %v, want the middle item gone and the rest in place", got)
 	}
 }
+
+func TestPauseIsNotCancel(t *testing.T) {
+	// Both kill the process group, so the only thing separating them is what
+	// the queue records afterwards. Getting this wrong loses the download.
+	block := make(chan struct{})
+	var attempts atomic.Int32
+
+	runner := &funcRunner{run: func(ctx context.Context, args []string, stdout, _ func(string)) error {
+		if isMetadataCall(args) {
+			stdout(`{"id":"x","title":"Clip"}`)
+			return nil
+		}
+		attempts.Add(1)
+		stdout(`{"stage":"downloading","downloaded":50,"total":100}`)
+		select {
+		case <-block:
+			stdout(`{"stage":"complete","path":"/tmp/Clip.mp4"}`)
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}}
+
+	h := newQueueHarness(t, runner, 1)
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	h.waitFor(t, item.ID, StateDownloading)
+
+	if err := h.q.Pause(item.ID); err != nil {
+		t.Fatalf("Pause: %v", err)
+	}
+	h.waitFor(t, item.ID, StatePaused)
+
+	paused, _ := h.q.Get(item.ID)
+	if paused.State != StatePaused {
+		t.Fatalf("State = %q, want %q", paused.State, StatePaused)
+	}
+	if paused.ErrorKind != "" {
+		t.Errorf("ErrorKind = %q, want a pause not to be recorded as a failure", paused.ErrorKind)
+	}
+	// The bar should still say where it got to, or resuming looks like starting.
+	if paused.Progress.Downloaded != 50 {
+		t.Errorf("Downloaded = %d, want the progress so far to survive", paused.Progress.Downloaded)
+	}
+
+	close(block)
+	if err := h.q.Resume(item.ID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	h.waitFor(t, item.ID, StateDone)
+
+	if got := attempts.Load(); got != 2 {
+		t.Errorf("ran %d times, want the resume to have started a second attempt", got)
+	}
+}
+
+func TestPausedItemIsNotDispatched(t *testing.T) {
+	// A paused item must not be picked up again on its own; only Resume queues
+	// it. Otherwise pausing would do nothing but restart the download.
+	var started atomic.Int32
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, _ func(string)) error {
+		if isMetadataCall(args) {
+			stdout(`{"id":"x","title":"Clip"}`)
+			return nil
+		}
+		started.Add(1)
+		return nil
+	}}
+
+	h := newQueueHarness(t, runner, 2)
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+
+	// Pause it before the dispatcher can reach it, then give it every chance to.
+	_ = h.q.Pause(item.ID)
+	time.Sleep(50 * time.Millisecond)
+
+	paused, _ := h.q.Get(item.ID)
+	if paused.State != StatePaused {
+		t.Fatalf("State = %q, want %q", paused.State, StatePaused)
+	}
+	if got := started.Load(); got != 0 {
+		t.Errorf("the download ran %d times while paused, want 0", got)
+	}
+}
+
+func TestPauseRefusesAFinishedDownload(t *testing.T) {
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, _ func(string)) error {
+		if isMetadataCall(args) {
+			stdout(`{"id":"x","title":"Clip"}`)
+		}
+		return nil
+	}}
+
+	h := newQueueHarness(t, runner, 1)
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	h.waitFor(t, item.ID, StateDone)
+
+	if err := h.q.Pause(item.ID); err == nil {
+		t.Error("Pause accepted a download that had already finished")
+	}
+	if err := h.q.Resume(item.ID); err == nil {
+		t.Error("Resume accepted a download that was never paused")
+	}
+}
+
+func TestPausedItemCanBeRemoved(t *testing.T) {
+	// It is not running, so there is nothing for removal to strand.
+	runner := &funcRunner{run: func(context.Context, []string, func(string), func(string)) error { return nil }}
+
+	q, err := NewQueue(QueueConfig{Runner: runner})
+	if err != nil {
+		t.Fatalf("NewQueue: %v", err)
+	}
+	defer q.Close()
+
+	item, _ := q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	if err := q.Pause(item.ID); err != nil {
+		t.Fatalf("Pause: %v", err)
+	}
+	if err := q.Remove(item.ID); err != nil {
+		t.Errorf("Remove of a paused item: %v", err)
+	}
+}
