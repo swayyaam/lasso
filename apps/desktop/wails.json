@@ -11,7 +11,7 @@
   },
   "info": {
     "productName": "Lasso",
-    "productVersion": "0.1.3",
+    "productVersion": "0.1.4",
     "comments": "A minimal front end for yt-dlp.",
     "copyright": "\u00a9 2026 Swayam Mishra"
   }
