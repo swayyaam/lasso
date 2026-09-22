@@ -29,30 +29,62 @@ export function SettingsSheet({
   const [updating, setUpdating] = useState(false);
   const [updateResult, setUpdateResult] = useState<binaries.UpdateResult | null>(null);
   const [updateError, setUpdateError] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const openDoctor = useDoctor();
+
+  // Shallow and key-driven rather than field-by-field, so a new setting is
+  // covered the day it is added rather than the day someone remembers this.
+  const dirty =
+    draft != null &&
+    settings != null &&
+    (Object.keys({ ...settings, ...draft }) as (keyof main.Settings)[]).some(
+      (k) => draft[k] !== settings[k],
+    );
 
   useEffect(() => setDraft(settings), [settings]);
 
+  // No dependency array on purpose: the handler closes over `dirty`, and one
+  // registered once would go on believing whatever `dirty` was when the sheet
+  // opened — which is false, so Escape would resume discarding silently.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  });
+
+  /**
+   * requestClose handles the two ways out that do not commit: Escape and a
+   * click on the backdrop. Neither is a deliberate "apply", so an unsaved
+   * draft asks rather than evaporating.
+   */
+  function requestClose() {
+    if (dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }
+
+  /**
+   * done is the commit. The button says Done, so it applies what is on screen
+   * — a sheet whose confirming button silently discarded the edits above it
+   * is the bug this replaces. A refused save keeps the sheet open, with the
+   * reason under the rows it came from.
+   */
+  async function done() {
+    if (draft && dirty && !(await onSave(draft))) {
+      // Let the refusal be the only thing asking for attention.
+      setConfirmDiscard(false);
+      return;
+    }
+    onClose();
+  }
 
   async function chooseFolder() {
     const folder = await api.ChooseFolder();
     if (folder && draft) setDraft({ ...draft, downloadFolder: folder });
-  }
-
-  async function save() {
-    if (!draft) return;
-    if (await onSave(draft)) {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1600);
-    }
   }
 
   async function updateYtDlp() {
@@ -71,16 +103,38 @@ export function SettingsSheet({
   return (
     <div
       className="absolute inset-0 z-10 flex justify-center overflow-y-auto bg-overlay/70 p-lg backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && requestClose()}
     >
       <div className="h-fit w-full max-w-sheet">
         <Card className="flex flex-col">
           <div className="flex items-center justify-between pb-md">
             <h2 className="text-card-title text-ink">Settings</h2>
-            <Button variant="tertiary" size="sm" onClick={onClose}>
+            <Button
+              variant={dirty ? "primary" : "tertiary"}
+              size="sm"
+              onClick={() => void done()}
+            >
               Done
             </Button>
           </div>
+
+          {confirmDiscard && (
+            <div className="pb-sm">
+              <Banner title="You have unsaved changes" tone="neutral">
+                <div className="flex items-center gap-xs pt-xs">
+                  <Button size="sm" variant="primary" onClick={() => void done()}>
+                    Save and close
+                  </Button>
+                  <Button size="sm" onClick={onClose}>
+                    Discard
+                  </Button>
+                  <Button size="sm" variant="tertiary" onClick={() => setConfirmDiscard(false)}>
+                    Keep editing
+                  </Button>
+                </div>
+              </Banner>
+            </div>
+          )}
 
           {!draft ? (
             <LoadingState label="Loading settings…" />
@@ -153,11 +207,6 @@ export function SettingsSheet({
                 </div>
               )}
 
-              <div className="flex justify-end pt-md">
-                <Button variant="primary" onClick={save}>
-                  {saved ? "Saved" : "Save"}
-                </Button>
-              </div>
             </>
           )}
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,11 +29,29 @@ type VerifyResult struct {
 // It doubles as the warm-up for the first launch after an install: the initial
 // exec of each binary triggers macOS's signature scan, and paying that here
 // keeps it out of the user's first download.
+//
+// The binaries are verified concurrently, which is what makes that warm-up
+// bearable. The scan is the slow part and it is not this process doing the
+// work, so four serial scans spend four times as long waiting as one round of
+// four at once — around six seconds each on a first launch. Warm, it is the
+// difference between yt-dlp's quarter-second and the sum of all four.
+//
+// Results stay in requiredBinaries order: the startup screen lists them, and a
+// list that reorders itself by whichever binary answered first would be a
+// strange thing to read.
 func (m *Manager) Verify(ctx context.Context) []VerifyResult {
-	results := make([]VerifyResult, 0, len(requiredBinaries))
-	for _, name := range requiredBinaries {
-		results = append(results, m.verifyOne(ctx, name))
+	results := make([]VerifyResult, len(requiredBinaries))
+
+	var wg sync.WaitGroup
+	for i, name := range requiredBinaries {
+		wg.Add(1)
+		go func(i int, name Name) {
+			defer wg.Done()
+			results[i] = m.verifyOne(ctx, name)
+		}(i, name)
 	}
+	wg.Wait()
+
 	return results
 }
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVerifyReportsEveryBinary(t *testing.T) {
@@ -156,5 +157,49 @@ func TestVerifyRespectsCancellation(t *testing.T) {
 
 	if failures := Failures(m.Verify(ctx)); len(failures) != len(requiredBinaries) {
 		t.Errorf("got %d failures on a cancelled context, want all %d", len(failures), len(requiredBinaries))
+	}
+}
+
+func TestVerifyRunsTheBinariesConcurrently(t *testing.T) {
+	// Verify doubles as the first-launch warm-up, where each binary pays
+	// macOS's signature scan — around six seconds for yt-dlp's onedir build.
+	// Serially that is the sum of four scans; together it is the longest one.
+	// The waiting is not this process's work to do, so it should overlap.
+	m, _ := newFakeManager(t)
+	ctx := context.Background()
+	if _, err := m.Install(ctx); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	// Replace each fake with one that sleeps, so overlap is measurable
+	// rather than inferred.
+	const nap = 200 * time.Millisecond
+	for _, name := range requiredBinaries {
+		path := m.Path(name)
+		script := "#!/bin/sh\nsleep 0.2\necho " + string(name) + " 1.0\n"
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	start := time.Now()
+	results := m.Verify(ctx)
+	elapsed := time.Since(start)
+
+	serial := nap * time.Duration(len(requiredBinaries))
+	if elapsed >= serial {
+		t.Errorf("Verify took %v for %d binaries sleeping %v each; serial would be %v, so nothing overlapped",
+			elapsed, len(requiredBinaries), nap, serial)
+	}
+
+	// Order is part of the contract: the startup screen lists these, and a
+	// list ordered by whichever binary answered first would read oddly.
+	if len(results) != len(requiredBinaries) {
+		t.Fatalf("got %d results, want %d", len(results), len(requiredBinaries))
+	}
+	for i, want := range requiredBinaries {
+		if results[i].Name != want {
+			t.Errorf("results[%d] = %s, want %s — order was not preserved", i, results[i].Name, want)
+		}
 	}
 }
