@@ -204,6 +204,10 @@ Both updaters read GitHub's release files rather than its API, at most once
 every few hours unless you ask. There is no telemetry and no analytics, and
 nothing is sent anywhere about what you download.
 
+The [privacy policy](PRIVACY.md) lists every file Lasso keeps and every
+connection it makes. The [terms of use](TERMS.md) cover what stays your
+responsibility: mainly, that what you download is yours to download.
+
 ---
 
 ## Building from source

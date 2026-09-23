@@ -303,6 +303,26 @@ export function SettingsSheet({
                 ))}
               </div>
             </Details>
+
+            <nav className="flex items-center gap-sm pt-xs text-body-sm" aria-label="Documents">
+              {/* By name, never by address: the backend owns the URLs. */}
+              {(
+                [
+                  ["privacy", "Privacy policy"],
+                  ["terms", "Terms of use"],
+                  ["licence", "Licence (GPL-3.0)"],
+                ] as const
+              ).map(([name, label]) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => void api.OpenDocument(name)}
+                  className="no-drag rounded-sm font-medium text-info-strong hover:text-ink"
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
           </div>
           </>
           )}

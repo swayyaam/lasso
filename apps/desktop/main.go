@@ -27,7 +27,10 @@ func main() {
 	// One copy per support folder; see instanceLock. A second copy brings the
 	// first to the front and leaves — the same thing launching a running app
 	// from the Dock does.
-	if support, err := binaries.SupportDir(); err == nil {
+	//
+	// Not while generating bindings, which runs this same main to read the
+	// bound methods; see bindings_on.go.
+	if support, err := binaries.SupportDir(); err == nil && !generatingBindings {
 		lock, holder, err := acquireInstance(support)
 		if errors.Is(err, errInstanceHeld) {
 			activateInstance(holder)

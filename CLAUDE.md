@@ -101,6 +101,10 @@ packages.
   each shape, and the TypeScript is generated from it.
 - **Regenerate bindings** with `wails generate module` in `apps/desktop` after
   changing a bound method signature or any type it mentions.
+  Generation runs the app's own `main`, built with the `bindings` tag, which
+  is why `main` skips the one-copy lock in that build (`bindings_on.go`).
+  Without that, a running Lasso made generation hand over and write nothing,
+  while still reporting success.
   `frontend/wailsjs/` is generated but committed, so a fresh clone can
   typecheck without running Wails.
 - **Avoid `time.Time` in bound types.** Wails cannot model it and emits `any`.
@@ -140,6 +144,13 @@ These are standing requirements, not optimisations to consider later.
 Lasso makes exactly four kinds of outbound request: yt-dlp's own traffic, the
 yt-dlp updater, Lasso's own updater, and thumbnail fetches through
 `core.ThumbnailCache`. There is no telemetry and no analytics.
+
+**`PRIVACY.md` is a promise about this section.** It lists every file in the
+support folder and every connection, with when each happens. A change that
+adds a stored file, a new kind of request, or a new moment a request is made
+updates `PRIVACY.md` in the same commit, and bumps its date. `TERMS.md` is a
+notice, not licence terms: the GPL forbids adding restrictions, so nothing
+there may limit running, changing or sharing Lasso.
 
 Both updaters go through `packages/ghrelease`, and neither touches
 `api.github.com` — see "Staying inside GitHub's allowance" below.

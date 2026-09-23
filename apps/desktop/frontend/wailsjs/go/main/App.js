@@ -78,6 +78,10 @@ export function InstallUpdate() {
   return window['go']['main']['App']['InstallUpdate']();
 }
 
+export function OpenDocument(arg1) {
+  return window['go']['main']['App']['OpenDocument'](arg1);
+}
+
 export function OpenFile(arg1) {
   return window['go']['main']['App']['OpenFile'](arg1);
 }

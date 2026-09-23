@@ -46,6 +46,8 @@ export function History():Promise<Array<history.Entry>>;
 
 export function InstallUpdate():Promise<updater.Result>;
 
+export function OpenDocument(arg1:string):Promise<void>;
+
 export function OpenFile(arg1:string):Promise<void>;
 
 export function OpenFullDiskAccessSettings():Promise<void>;
