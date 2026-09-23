@@ -22,6 +22,13 @@ const (
 	// It carries nothing: the frontend asks for the list, which keeps one
 	// definition of what history is rather than two.
 	EventHistoryChanged = "history:changed"
+	// EventMenu carries a menu command for the interface to carry out, one of
+	// the Menu* names.
+	EventMenu = "menu"
+	// EventLinkWaiting says a link arrived from outside the window. It carries
+	// nothing: the interface collects it with TakeIncomingLink, which is also
+	// how it finds one that arrived before it was listening.
+	EventLinkWaiting = "link:waiting"
 )
 
 // EventNames is the set of event names, exposed so TypeScript can subscribe
@@ -33,6 +40,17 @@ type EventNames struct {
 	SettingsChanged string `json:"settingsChanged"`
 	QueueRemoved    string `json:"queueRemoved"`
 	HistoryChanged  string `json:"historyChanged"`
+	Menu            string `json:"menu"`
+	LinkWaiting     string `json:"linkWaiting"`
+}
+
+// MenuCommands names what EventMenu can carry, handed over for the same reason
+// as the event names.
+type MenuCommands struct {
+	Settings  string `json:"settings"`
+	Download  string `json:"download"`
+	Downloads string `json:"downloads"`
+	History   string `json:"history"`
 }
 
 // ProgressEvent is one throttled progress update for a queue item.

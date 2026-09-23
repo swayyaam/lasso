@@ -62,12 +62,15 @@ export function ChooseScreen({
   onPresetsChanged,
   disabled,
   onQueued,
+  downloadRequests,
 }: {
   link: Link;
   presets: presetModels.Preset[] | null;
   onPresetsChanged: () => void;
   disabled: boolean;
   onQueued: () => void;
+  /** Counts File › Download presses; a change is a request to download. */
+  downloadRequests: number;
 }) {
   const { metadata, resolving, error } = link;
   const [options, setOptions] = useState<core.Options>(EMPTY_OPTIONS);
@@ -145,6 +148,16 @@ export function ChooseScreen({
   const current = choices.find((c) => c.pick === options.pick);
   const count = playlist ? selected.size : 1;
   const canDownload = Boolean(metadata) && !metadata?.blocked && !resolving && !disabled && !busy && count > 0;
+
+  // ⌘↩. Only presses made while this screen is open count: the counter's
+  // value on arrival is where it starts.
+  const seenRequests = useRef(downloadRequests);
+  useEffect(() => {
+    if (downloadRequests === seenRequests.current) return;
+    seenRequests.current = downloadRequests;
+    if (canDownload && !moreOpen) void download();
+    // download reads the latest state itself; only a new press should run it.
+  }, [downloadRequests]);
 
   return (
     <div

@@ -60,6 +60,15 @@ type App struct {
 	// reports. Fed by every resolve and every finished download.
 	botChecks doctor.BotChecks
 
+	// incoming is a link from outside the window, waiting to be collected.
+	incoming incoming
+
+	// unfinished is the set of downloads the Dock badge counts. Kept from the
+	// queue's own callbacks rather than read back from the queue, which would
+	// take the queue's lock from inside its own notification.
+	badgeMu    sync.Mutex
+	unfinished map[string]bool
+
 	// One updater, kept for the life of the process.
 	updMu sync.Mutex
 	upd   *updater.Updater
@@ -181,12 +190,16 @@ func (a *App) startQueue(ctx context.Context, manager *binaries.Manager, concurr
 			a.record(ctx, item)
 			a.announce(item)
 			a.botChecks.Observe(item.Options.URL, item.ErrorKind, item.State == core.StateDone)
+			a.countForBadge(item.ID, !item.State.IsTerminal())
 		},
 		OnProgress: func(id string, p core.Progress) {
 			runtime.EventsEmit(ctx, EventQueueProgress, ProgressEvent{ID: id, Progress: p})
 		},
 		OnRemove: func(ids []string) {
 			runtime.EventsEmit(ctx, EventQueueRemoved, ids)
+			for _, id := range ids {
+				a.countForBadge(id, false)
+			}
 		},
 	})
 	if err != nil {
@@ -197,6 +210,12 @@ func (a *App) startQueue(ctx context.Context, manager *binaries.Manager, concurr
 	a.mu.Lock()
 	a.queue = queue
 	a.mu.Unlock()
+
+	// A queue restored from the last launch arrives without notifications,
+	// so the badge starts from what it holds.
+	for _, item := range queue.Items() {
+		a.countForBadge(item.ID, !item.State.IsTerminal())
+	}
 	return nil
 }
 
@@ -229,7 +248,14 @@ func (a *App) Events() EventNames {
 		SettingsChanged: EventSettingsChanged,
 		QueueRemoved:    EventQueueRemoved,
 		HistoryChanged:  EventHistoryChanged,
+		Menu:            EventMenu,
+		LinkWaiting:     EventLinkWaiting,
 	}
+}
+
+// Commands names the menu commands EventMenu carries.
+func (a *App) Commands() MenuCommands {
+	return MenuCommands{Settings: MenuSettings, Download: MenuDownload, Downloads: MenuDownloads, History: MenuHistory}
 }
 
 // BinaryStatus reports whether the sidecar binaries are usable.
@@ -993,6 +1019,24 @@ func (a *App) record(ctx context.Context, item core.Item) {
 		return
 	}
 	runtime.EventsEmit(ctx, EventHistoryChanged)
+}
+
+// countForBadge records whether one download is unfinished and puts the new
+// total on the Dock icon.
+func (a *App) countForBadge(id string, unfinished bool) {
+	a.badgeMu.Lock()
+	if a.unfinished == nil {
+		a.unfinished = map[string]bool{}
+	}
+	if unfinished {
+		a.unfinished[id] = true
+	} else {
+		delete(a.unfinished, id)
+	}
+	count := len(a.unfinished)
+	a.badgeMu.Unlock()
+
+	setDockBadge(count)
 }
 
 // announce posts a notification for a download that has ended.

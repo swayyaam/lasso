@@ -45,7 +45,8 @@ func main() {
 		Title:  "Lasso",
 		Width:  1080,
 		Height: 740,
-		// Below this the two panes stop making sense and the layout stacks.
+		// Narrow enough for a half-screen window on a 13-inch display; below
+		// it a thumbnail, a title and two labelled buttons stop fitting a row.
 		MinWidth:  880,
 		MinHeight: 600,
 		AssetServer: &assetserver.Options{
@@ -60,6 +61,7 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		Menu:             app.appMenu(),
 		Bind: []any{
 			app,
 		},
@@ -76,6 +78,10 @@ func main() {
 				Title:   "Lasso",
 				Message: "A minimal front end for yt-dlp.",
 			},
+			// A lasso:// link, or a web link dropped on the Dock icon.
+			OnUrlOpen: app.onURLOpen,
+			// A .webloc or .url opened with Lasso, or dropped on its icon.
+			OnFileOpen: app.onFileOpen,
 		},
 	})
 	if err != nil {

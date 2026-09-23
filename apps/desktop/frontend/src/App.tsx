@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
-import { useBinaryStatus, useHistory, useLatest, usePresets, useQueue, useSettings } from "./hooks/useBackend";
+import {
+  useBinaryStatus,
+  useHistory,
+  useLatest,
+  useOutsideInput,
+  usePresets,
+  useQueue,
+  useSettings,
+} from "./hooks/useBackend";
 import { forgetResolved, useLink } from "./hooks/useLink";
 import { looksLikeURL } from "./format";
+import { DropTarget } from "./components/DropTarget";
 import { FirstRun, InstallingOverlay } from "./components/FirstRun";
 import { DoctorProvider } from "./components/DoctorPanel";
 import { SettingsSheet } from "./components/SettingsSheet";
@@ -22,7 +31,8 @@ const MOVING = new Set(["queued", "fetching", "downloading", "post-processing"])
  *  - Downloading: the queue, with a field for the next link.
  *
  * History is a place of its own, reached from the title bar or from Ready's
- * "Show all". Pasting a link anywhere, on any of them, goes to Choose.
+ * "Show all". A link pasted anywhere, dropped on the window, or handed over
+ * from outside — lasso://, the Dock, a .webloc — goes to Choose.
  */
 export function App() {
   const status = useBinaryStatus();
@@ -34,6 +44,8 @@ export function App() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [place, setPlace] = useState<"home" | "history">("home");
+  // File › Download asks Choose to start; a counter, so each press is new.
+  const [downloadRequests, setDownloadRequests] = useState(0);
 
   const ready = status?.ready ?? false;
   const starting = status === null;
@@ -64,6 +76,29 @@ export function App() {
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   }, [latest]);
+
+  useOutsideInput({
+    onLink: (url) => {
+      if (latest.current.ready) latest.current.open(url);
+    },
+    onCommand: (command) => {
+      switch (command) {
+        case "settings":
+          setSettingsOpen(true);
+          break;
+        case "download":
+          setDownloadRequests((n) => n + 1);
+          break;
+        case "downloads":
+          link.clear();
+          setPlace("home");
+          break;
+        case "history":
+          if (latest.current.ready) setPlace("history");
+          break;
+      }
+    },
+  });
 
   const home = link.open ? "choose" : items.length > 0 ? "downloads" : "ready";
   // The indicator only earns its place when the downloads are not on screen.
@@ -98,6 +133,7 @@ export function App() {
                 onPresetsChanged={refresh}
                 disabled={!ready}
                 onQueued={link.clear}
+                downloadRequests={downloadRequests}
               />
             ) : home === "downloads" ? (
               <DownloadsScreen items={items} onSubmit={open} disabled={!ready} />
@@ -113,6 +149,8 @@ export function App() {
             )}
           </main>
         )}
+
+        {ready && !settingsOpen && <DropTarget onDrop={open} />}
 
         {settingsOpen && (
           <SettingsSheet

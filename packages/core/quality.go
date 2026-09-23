@@ -210,6 +210,11 @@ func AnalyseFormats(formats []Format, playback Playback) QualityOptions {
 	// tallest is the real top resolution, whether or not it plays here.
 	tallest := 0
 
+	// below gathers what sits under the lowest rung. It never becomes a tier,
+	// but a video that tops out at 240p still needs Best to know whether it
+	// plays here and what it weighs.
+	below := &tierState{}
+
 	for _, f := range formats {
 		if f.IsStoryboard() {
 			continue
@@ -243,14 +248,15 @@ func AnalyseFormats(formats []Format, playback Playback) QualityOptions {
 			tallest = short
 		}
 
-		height, ok := tierFor(short)
-		if !ok {
-			continue
-		}
-		state, exists := seen[height]
-		if !exists {
-			state = &tierState{}
-			seen[height] = state
+		var state *tierState
+		if height, ok := tierFor(short); ok {
+			var exists bool
+			if state, exists = seen[height]; !exists {
+				state = &tierState{}
+				seen[height] = state
+			}
+		} else {
+			state = below
 		}
 		if f.FPS > 50 {
 			state.highFrameRate = true
@@ -302,6 +308,10 @@ func AnalyseFormats(formats []Format, playback Playback) QualityOptions {
 	// outright when none does — the same choice formatArgs makes.
 	options.BestHeight = tallest
 	options.BestLabel = labelFor(tallest)
+	if len(options.Tiers) == 0 && options.HasVideo {
+		options.BestBytes = below.estimate(bestAudio)
+		options.BestPlayable = below.plays
+	}
 	if len(options.Tiers) > 0 {
 		best := options.Tiers[0]
 		for _, tier := range options.Tiers {

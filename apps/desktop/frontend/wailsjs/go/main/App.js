@@ -34,6 +34,10 @@ export function ClearHistory() {
   return window['go']['main']['App']['ClearHistory']();
 }
 
+export function Commands() {
+  return window['go']['main']['App']['Commands']();
+}
+
 export function DeletePreset(arg1) {
   return window['go']['main']['App']['DeletePreset'](arg1);
 }
@@ -136,6 +140,10 @@ export function ShouldSuggestDoctor(arg1) {
 
 export function ShowCommand(arg1) {
   return window['go']['main']['App']['ShowCommand'](arg1);
+}
+
+export function TakeIncomingLink() {
+  return window['go']['main']['App']['TakeIncomingLink']();
 }
 
 export function Thumbnail(arg1, arg2) {

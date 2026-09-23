@@ -560,6 +560,39 @@ two apart. Once over, the recording downloads like any video.
 `OpenFile` and `RevealInFinder` resolve by ID, so a counter restarting at 1
 each launch made today's "3" and yesterday's "3" the same name.
 
+## Links from outside the window
+
+A link reaches Lasso five ways: pasted anywhere in the window, dropped on it,
+File › Paste Link (⌘⇧V), a `lasso://open?url=…` link from a bookmarklet or
+a Shortcut, and a web link or `.webloc` dropped on the Dock icon or opened
+with Lasso. Every one ends at the Choose screen, and none starts a download
+on its own.
+
+- **Anything from outside goes through `core.IncomingLink`**: http or https
+  only, and never a literal loopback, private, link-local or `.local` host.
+  A page can hand Lasso a link with one click and the browser's prompt, and
+  resolving it at once would let that page reach past the browser into the
+  local network. Do not relax this to match what a paste allows.
+- **Links are collected, not only sent.** A `lasso://` link that launches
+  Lasso arrives before the page is listening, so `openExternal` holds it and
+  `EventLinkWaiting` only says one is there. The page calls
+  `TakeIncomingLink` on start and on every event.
+- **Web links are Alternate-rank documents, not a URL scheme.** Declaring
+  the http scheme would list Lasso as a web browser. `public.url`,
+  `.webloc` and `.url` at Alternate rank make it an Open With choice and a
+  Dock drop target without ever becoming anyone's default.
+- **Every drop on the window is cancelled**, used or not. WKWebView's own
+  response to a dropped link or file is to navigate to it.
+- **Wails' file drop stays off.** It asks every dropped URL for a filesystem
+  path, which a web link does not have.
+- **The Lasso menu is built by hand**, because Wails' AppMenu role has
+  nowhere to put Settings… ⌘,. Edit stays a role: it is what makes ⌘C and ⌘V
+  work in a text field. Menu commands reach the page as `EventMenu`, named by
+  `App.Commands()`.
+- **The Dock badge counts unfinished downloads** from the queue's own
+  callbacks. Reading the queue back from inside its notification would take
+  its lock twice.
+
 ## Errors and the doctor
 
 `packages/core` classifies a yt-dlp failure into an `ErrorKind` and a

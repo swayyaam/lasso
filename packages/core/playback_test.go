@@ -95,3 +95,30 @@ func TestPlaysMatchesWhatWasMeasured(t *testing.T) {
 		t.Error("AV1 did not play on a Mac that decodes it")
 	}
 }
+
+func TestAVideoBelowTheLadderStillKnowsItPlays(t *testing.T) {
+	// "Me at the zoo", as YouTube lists it: 240p at most, in H.264 among
+	// others. With no rung to hang it on, Best used to report that nothing
+	// here plays — and the Video card said it needed IINA or VLC.
+	formats := []Format{
+		{ID: "133", Ext: "mp4", Width: 320, Height: 240, VCodec: "avc1.4d400c", ACodec: "none", Filesize: 300_000},
+		{ID: "242", Ext: "webm", Width: 320, Height: 240, VCodec: "vp9", ACodec: "none", Filesize: 250_000},
+		{ID: "140", Ext: "m4a", VCodec: "none", ACodec: "mp4a.40.2", Filesize: 50_000},
+	}
+	q := AnalyseFormats(formats, Playback{})
+	if len(q.Tiers) != 0 {
+		t.Fatalf("tiers = %+v, want none below the ladder", q.Tiers)
+	}
+	if q.BestLabel != "240p" || !q.BestPlayable {
+		t.Errorf("Best = %s (playable %v), want 240p that plays", q.BestLabel, q.BestPlayable)
+	}
+	if q.BestBytes != 350_000 {
+		t.Errorf("BestBytes = %d, want the H.264 stream plus audio", q.BestBytes)
+	}
+
+	// And when nothing down there plays, it still says so.
+	q = AnalyseFormats(formats[1:], Playback{})
+	if q.BestPlayable {
+		t.Error("a VP9-only 240p video does not play natively")
+	}
+}

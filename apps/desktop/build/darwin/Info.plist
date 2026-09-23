@@ -37,5 +37,42 @@
              appear in the Dock. -->
         <key>LSUIElement</key>
         <false/>
+        <!-- lasso://open?url=… — how a bookmarklet or a Shortcut hands Lasso
+             a page. See core.IncomingLink for what is accepted. -->
+        <key>CFBundleURLTypes</key>
+        <array>
+            <dict>
+                <key>CFBundleURLName</key>
+                <string>com.swayyaam.lasso.link</string>
+                <key>CFBundleURLSchemes</key>
+                <array>
+                    <string>lasso</string>
+                </array>
+                <key>CFBundleTypeRole</key>
+                <string>Viewer</string>
+            </dict>
+        </array>
+
+        <!-- Web links, so one can be dropped on the Dock icon or opened with
+             Lasso from the Finder. Alternate rank: Lasso is offered, never
+             made the default for any of them. Declaring the http scheme
+             instead would have listed Lasso as a web browser. -->
+        <key>CFBundleDocumentTypes</key>
+        <array>
+            <dict>
+                <key>CFBundleTypeName</key>
+                <string>Web Link</string>
+                <key>CFBundleTypeRole</key>
+                <string>Viewer</string>
+                <key>LSHandlerRank</key>
+                <string>Alternate</string>
+                <key>LSItemContentTypes</key>
+                <array>
+                    <string>public.url</string>
+                    <string>com.apple.web-internet-location</string>
+                    <string>com.microsoft.internet-shortcut</string>
+                </array>
+            </dict>
+        </array>
     </dict>
 </plist>

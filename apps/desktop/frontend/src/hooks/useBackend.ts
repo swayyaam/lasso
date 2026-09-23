@@ -194,3 +194,60 @@ export function useLatest<T>(value: T) {
   ref.current = value;
   return ref;
 }
+
+/** useCommandNames fetches the names of the menu commands once. */
+function useCommandNames() {
+  const [names, setNames] = useState<main.MenuCommands | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.Commands().then((n) => {
+      if (!cancelled) setNames(n);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return names;
+}
+
+export type Command = "settings" | "download" | "downloads" | "history";
+
+/**
+ * useOutsideInput hands the interface what reaches Lasso from outside the
+ * page: menu commands, and links from lasso://, the Dock, a .webloc or File ›
+ * Paste Link.
+ *
+ * A link is collected rather than received, so one that arrived before the
+ * page was listening — the lasso:// link that launched Lasso — is found on the
+ * first look.
+ */
+export function useOutsideInput(handlers: { onCommand: (command: Command) => void; onLink: (url: string) => void }) {
+  const names = useEventNames();
+  const commands = useCommandNames();
+  const latest = useLatest(handlers);
+
+  useEffect(() => {
+    if (!names || !commands) return;
+    const collect = () =>
+      api.TakeIncomingLink().then((link) => {
+        if (link) latest.current.onLink(link);
+      });
+    const byName: Record<string, Command> = {
+      [commands.settings]: "settings",
+      [commands.download]: "download",
+      [commands.downloads]: "downloads",
+      [commands.history]: "history",
+    };
+
+    void collect();
+    EventsOn(names.linkWaiting, () => void collect());
+    EventsOn(names.menu, (name: string) => {
+      const command = byName[name];
+      if (command) latest.current.onCommand(command);
+    });
+    return () => {
+      EventsOff(names.linkWaiting);
+      EventsOff(names.menu);
+    };
+  }, [names, commands, latest]);
+}

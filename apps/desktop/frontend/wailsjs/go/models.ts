@@ -751,6 +751,8 @@ export namespace main {
 	    settingsChanged: string;
 	    queueRemoved: string;
 	    historyChanged: string;
+	    menu: string;
+	    linkWaiting: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new EventNames(source);
@@ -764,6 +766,26 @@ export namespace main {
 	        this.settingsChanged = source["settingsChanged"];
 	        this.queueRemoved = source["queueRemoved"];
 	        this.historyChanged = source["historyChanged"];
+	        this.menu = source["menu"];
+	        this.linkWaiting = source["linkWaiting"];
+	    }
+	}
+	export class MenuCommands {
+	    settings: string;
+	    download: string;
+	    downloads: string;
+	    history: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MenuCommands(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.settings = source["settings"];
+	        this.download = source["download"];
+	        this.downloads = source["downloads"];
+	        this.history = source["history"];
 	    }
 	}
 	export class Settings {
