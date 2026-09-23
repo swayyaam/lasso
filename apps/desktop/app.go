@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -54,6 +55,10 @@ type App struct {
 
 	// instance is this copy's hold on the support folder; see instanceLock.
 	instance *instanceLock
+
+	// botChecks remembers YouTube refusing this connection, which the doctor
+	// reports. Fed by every resolve and every finished download.
+	botChecks doctor.BotChecks
 
 	// One updater, kept for the life of the process.
 	updMu sync.Mutex
@@ -175,6 +180,7 @@ func (a *App) startQueue(ctx context.Context, manager *binaries.Manager, concurr
 			runtime.EventsEmit(ctx, EventQueueItem, item)
 			a.record(ctx, item)
 			a.announce(item)
+			a.botChecks.Observe(item.Options.URL, item.ErrorKind, item.State == core.StateDone)
 		},
 		OnProgress: func(id string, p core.Progress) {
 			runtime.EventsEmit(ctx, EventQueueProgress, ProgressEvent{ID: id, Progress: p})
@@ -265,7 +271,14 @@ func (a *App) FetchMetadata(url string) (*core.Metadata, error) {
 	o := settings.ApplyTo(core.Options{URL: url, Pick: core.PickBest})
 	o.DenoPath = a.denoPath()
 	o.Playback = a.machinePlayback()
-	return core.FetchMetadata(a.ctx, runner, o)
+	metadata, err := core.FetchMetadata(a.ctx, runner, o)
+
+	var kind core.ErrorKind
+	if downloadErr := (*core.DownloadError)(nil); errors.As(err, &downloadErr) {
+		kind = downloadErr.Kind
+	}
+	a.botChecks.Observe(url, kind, err == nil)
+	return metadata, err
 }
 
 // Thumbnail returns a URL for a preview image, downloading and downscaling it
@@ -793,6 +806,7 @@ func (a *App) doctor() (*doctor.Doctor, error) {
 		CookieProbe:      a.probeCookies,
 		BrowserInstalled: browserInstalled,
 		Notifications:    notificationState,
+		BotCheckAt:       a.botChecks.Last(),
 	})
 }
 

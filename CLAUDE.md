@@ -568,6 +568,15 @@ for, and is deliberately narrow: a private video or a geo-block is the site's
 answer, not a local problem, and offering diagnostics for those would teach the
 user that the offer means nothing.
 
+The one outside problem the doctor reports is YouTube's bot check, because
+its fix is local. `doctor.BotChecks` remembers the refusal from any resolve or
+download and forgets it when YouTube next works; without one there is no
+YouTube line at all. The doctor never asks YouTube itself, since probing from
+an address YouTube distrusts is what makes it worse.
+
+YouTube's Proof-of-Origin token provider (bgutil) was measured and not bundled.
+The numbers are in `docs/v0.2.md` Phase 4. Read them before trying again.
+
 ## Commands
 
 ```

@@ -125,6 +125,23 @@ const (
 	BrowserArc     Browser = "arc"
 )
 
+// Name is the browser as a person would write it.
+func (b Browser) Name() string {
+	switch b {
+	case BrowserSafari:
+		return "Safari"
+	case BrowserChrome:
+		return "Chrome"
+	case BrowserFirefox:
+		return "Firefox"
+	case BrowserBrave:
+		return "Brave"
+	case BrowserArc:
+		return "Arc"
+	}
+	return string(b)
+}
+
 // Subtitles groups the subtitle options.
 type Subtitles struct {
 	Download      bool     `json:"download"`

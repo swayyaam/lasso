@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/swayyaam/lasso/packages/binaries"
 	"github.com/swayyaam/lasso/packages/core"
@@ -45,6 +46,7 @@ const (
 	CheckDiskSpace     = "disk-space"
 	CheckCookies       = "cookies"
 	CheckNotifications = "notifications"
+	CheckYouTube       = "youtube"
 )
 
 // Check is one diagnosis.
@@ -109,6 +111,9 @@ type Config struct {
 	// installed — unless something looks for the application itself, which is
 	// not protected.
 	BrowserInstalled func(browser core.Browser) bool
+	// BotCheckAt is when YouTube last refused this connection as a possible
+	// bot, zero when it has not; see BotChecks.
+	BotCheckAt time.Time
 }
 
 // NotificationState is whether finished-download notifications arrive as Lasso.
@@ -145,12 +150,16 @@ func New(cfg Config) (*Doctor, error) {
 // to produce at any time — including from a failed download, which is where it
 // is most useful.
 func (d *Doctor) Run(ctx context.Context) Report {
+	cookies := d.checkCookies(ctx)
 	checks := []Check{
 		d.checkBinaries(ctx),
 		d.checkDownloadFolder(),
 		d.checkDiskSpace(),
-		d.checkCookies(ctx),
+		cookies,
 		d.checkNotifications(),
+	}
+	if youtube, ok := d.checkBotCheck(cookies); ok {
+		checks = append(checks, youtube)
 	}
 
 	// Worst first: the thing stopping a download should not be below the thing
@@ -396,20 +405,20 @@ func (d *Doctor) checkCookies(ctx context.Context) Check {
 
 	if d.cfg.CookieProbe == nil {
 		check.Status = StatusOK
-		check.Summary = "Using cookies from " + string(d.cfg.Cookies) + "."
+		check.Summary = "Using cookies from " + d.cfg.Cookies.Name() + "."
 		return check
 	}
 
 	if err := d.cfg.CookieProbe(ctx, d.cfg.Cookies); err != nil {
 		check.Status = StatusFail
-		check.Summary = "Cannot read " + string(d.cfg.Cookies) + "'s cookies."
+		check.Summary = "Cannot read " + d.cfg.Cookies.Name() + "'s cookies."
 		check.Detail = err.Error()
 		check.Remedy = d.cookieRemedy(err)
 		return check
 	}
 
 	check.Status = StatusOK
-	check.Summary = "Using cookies from " + string(d.cfg.Cookies) + "."
+	check.Summary = "Using cookies from " + d.cfg.Cookies.Name() + "."
 	return check
 }
 
@@ -466,11 +475,11 @@ func (d *Doctor) cookieRemedy(err error) string {
 	}
 
 	if d.cfg.BrowserInstalled(d.cfg.Cookies) {
-		return string(d.cfg.Cookies) + " is installed, so this is a permissions problem rather than " +
+		return d.cfg.Cookies.Name() + " is installed, so this is a permissions problem rather than " +
 			"a missing browser: macOS reports a protected folder as absent to an app that may not " +
 			"read it. Give Lasso Full Disk Access in System Settings › Privacy & Security."
 	}
-	return string(d.cfg.Cookies) + " is not installed on this Mac. Choose a browser you actually " +
+	return d.cfg.Cookies.Name() + " is not installed on this Mac. Choose a browser you actually " +
 		"use in Settings, or turn cookies off."
 }
 

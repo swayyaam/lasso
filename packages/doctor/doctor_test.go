@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/swayyaam/lasso/packages/binaries"
 	"github.com/swayyaam/lasso/packages/core"
@@ -402,6 +403,119 @@ func TestNotificationsNeverFailTheReport(t *testing.T) {
 		})
 		if check := find(t, d.Run(context.Background()), CheckNotifications); check.Status == StatusFail {
 			t.Errorf("state %v reported as a failure", state)
+		}
+	}
+}
+
+func TestNoBotCheckMeansNoYouTubeLine(t *testing.T) {
+	// The doctor does not ask YouTube, so without a refusal to report it has
+	// nothing to say — and a standing "fine" would be a claim it cannot back.
+	d := newDoctor(t, nil)
+	for _, c := range d.Run(context.Background()).Checks {
+		if c.ID == CheckYouTube {
+			t.Fatalf("unexpected YouTube check: %+v", c)
+		}
+	}
+}
+
+func TestBotCheckWithoutCookiesNamesTheFix(t *testing.T) {
+	d := newDoctor(t, func(c *Config) {
+		c.Cookies = core.BrowserNone
+		c.BotCheckAt = time.Now().Add(-12 * time.Minute)
+	})
+
+	check := find(t, d.Run(context.Background()), CheckYouTube)
+	if check.Status != StatusFail {
+		t.Errorf("Status = %q, want %q", check.Status, StatusFail)
+	}
+	if !strings.Contains(check.Summary, "12 minutes ago") {
+		t.Errorf("Summary = %q, want it to say when", check.Summary)
+	}
+	if !strings.Contains(check.Remedy, "Settings") {
+		t.Errorf("Remedy = %q, want it to point at the cookie setting", check.Remedy)
+	}
+}
+
+func TestBotCheckWithBrokenCookiesPointsAtThem(t *testing.T) {
+	d := newDoctor(t, func(c *Config) {
+		c.Cookies = core.BrowserChrome
+		c.CookieProbe = func(context.Context, core.Browser) error { return errors.New("locked") }
+		c.BotCheckAt = time.Now()
+	})
+
+	check := find(t, d.Run(context.Background()), CheckYouTube)
+	if check.Status != StatusFail {
+		t.Errorf("Status = %q, want %q", check.Status, StatusFail)
+	}
+	if !strings.Contains(check.Remedy, "cookie problem above") {
+		t.Errorf("Remedy = %q, want it to send the user to the cookie check", check.Remedy)
+	}
+}
+
+func TestBotCheckDespiteCookiesIsTheNetwork(t *testing.T) {
+	// Cookies were sent and YouTube refused anyway. Nothing in Lasso is broken,
+	// so this warns rather than fails, and says whose block it is.
+	d := newDoctor(t, func(c *Config) {
+		c.Cookies = core.BrowserSafari
+		c.CookieProbe = func(context.Context, core.Browser) error { return nil }
+		c.BotCheckAt = time.Now().Add(-3 * time.Hour)
+	})
+
+	check := find(t, d.Run(context.Background()), CheckYouTube)
+	if check.Status != StatusWarn {
+		t.Errorf("Status = %q, want %q", check.Status, StatusWarn)
+	}
+	if !strings.Contains(check.Summary, "3 hours ago") || !strings.Contains(check.Summary, "Safari") {
+		t.Errorf("Summary = %q", check.Summary)
+	}
+	if !strings.Contains(check.Remedy, "connection") {
+		t.Errorf("Remedy = %q, want it to place the block on the connection", check.Remedy)
+	}
+}
+
+func TestBotChecksRememberUntilYouTubeWorks(t *testing.T) {
+	var b BotChecks
+	if !b.Last().IsZero() {
+		t.Fatal("a fresh memory should be empty")
+	}
+
+	b.Observe("https://www.youtube.com/watch?v=x", core.ErrBotCheck, false)
+	if b.Last().IsZero() {
+		t.Fatal("a bot check should be remembered")
+	}
+
+	// Success elsewhere proves nothing about YouTube.
+	b.Observe("https://vimeo.com/1", "", true)
+	if b.Last().IsZero() {
+		t.Fatal("a Vimeo download should not clear a YouTube refusal")
+	}
+	// Nor does a YouTube failure of another kind.
+	b.Observe("https://youtu.be/x", core.ErrPrivate, false)
+	if b.Last().IsZero() {
+		t.Fatal("an unrelated YouTube failure should not clear it")
+	}
+
+	b.Observe("https://music.youtube.com/watch?v=x", "", true)
+	if !b.Last().IsZero() {
+		t.Fatal("YouTube working again should clear it")
+	}
+}
+
+func TestIsYouTube(t *testing.T) {
+	cases := map[string]bool{
+		"https://www.youtube.com/watch?v=x": true,
+		"https://m.youtube.com/watch?v=x":   true,
+		"https://youtu.be/x":                true,
+		"youtube.com/shorts/x":              true,
+		"https://www.youtube-nocookie.com/": true,
+		"https://notyoutube.com/":           false,
+		"https://youtube.com.evil.example/": false,
+		"https://vimeo.com/1":               false,
+		"":                                  false,
+	}
+	for link, want := range cases {
+		if got := IsYouTube(link); got != want {
+			t.Errorf("IsYouTube(%q) = %v, want %v", link, got, want)
 		}
 	}
 }
