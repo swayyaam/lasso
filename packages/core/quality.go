@@ -43,6 +43,8 @@ type QualityOptions struct {
 	// BestPlayable says whether "Best" plays natively, so the interface can
 	// say when it would need another player.
 	BestPlayable bool `json:"bestPlayable"`
+	// AudioSizes is what each audio pick would produce; see AudioSizes.
+	AudioSizes map[QuickPick]AudioSize `json:"audioSizes"`
 	// BestLabel is the label for that resolution, e.g. "8K".
 	BestLabel string `json:"bestLabel"`
 	// Approximate is true when the tiers are a generic ladder rather than

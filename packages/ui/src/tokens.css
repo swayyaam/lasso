@@ -70,7 +70,11 @@
   --color-ink-strong: #222222;
   --color-ink-muted: #363636;
   --color-ink-subtle: #5a5a5a;
-  --color-ink-tertiary: #898989;
+  /* Darkened from the document's Mute #898989, which measures 3.5:1 on white
+     and under 3:1 on the surface fills — below WCAG AA's 4.5:1 for text this
+     size in every place it was used. #686868 is the lightest grey that passes
+     on the canvas and all four surfaces (5.57 down to 4.55), measured. */
+  --color-ink-tertiary: #686868;
   --color-ink-faint: #ababab;
 
   /* ---- Colour: chromatic accents --------------------------------------- */

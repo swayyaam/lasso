@@ -131,7 +131,11 @@ export function QualityPicks({
                 <span className="flex items-center gap-xxs">
                   <Dot tone={pick.tone} />
                   {pick.label}
-                  <Size bytes={quality?.audioBytes ?? 0} selected={value === pick.id} />
+                  <Size
+                    bytes={quality?.audioSizes?.[pick.id]?.bytes ?? 0}
+                    estimate={quality?.audioSizes?.[pick.id]?.estimate ?? false}
+                    selected={value === pick.id}
+                  />
                 </span>
               </Chip>
             ))}
@@ -157,13 +161,21 @@ export function QualityPicks({
  * Nothing is rendered when the source did not say, which is normal for
  * fragmented and live streams — a guess here would be read as a fact.
  */
-function Size({ bytes, selected }: { bytes: number; selected: boolean }) {
+/**
+ * Size shows what a pick will produce. A re-encoded file's size comes from the
+ * encoder's bitrate rather than a stream the site stated, so it is marked as
+ * an estimate instead of being passed off as exact.
+ */
+function Size({ bytes, selected, estimate = false }: { bytes: number; selected: boolean; estimate?: boolean }) {
   const text = formatBytes(bytes);
   if (!text) return null;
 
   return (
-    <span className={selected ? "text-caption opacity-70" : "text-caption text-ink-tertiary"}>
-      {text}
+    <span
+      className={selected ? "text-caption opacity-70" : "text-caption text-ink-tertiary"}
+      title={estimate ? "An estimate: this format is re-encoded, so its size depends on the audio" : undefined}
+    >
+      {estimate ? `≈ ${text}` : text}
     </span>
   );
 }

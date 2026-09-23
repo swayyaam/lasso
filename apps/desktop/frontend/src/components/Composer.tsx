@@ -38,6 +38,9 @@ export function Composer({
   const [metadata, setMetadata] = useState<core.Metadata | null>(null);
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState("");
+  // Which action failed decides the heading: a refused download is not a
+  // link that "did not work", and saying so sent people to check the link.
+  const [errorTitle, setErrorTitle] = useState("That link did not work");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [command, setCommand] = useState("");
   const [activePreset, setActivePreset] = useState<string | null>(null);
@@ -59,7 +62,10 @@ export function Composer({
       const result = await api.FetchMetadata(trimmed);
       if (token === resolveToken.current) setMetadata(result);
     } catch (e) {
-      if (token === resolveToken.current) setError(cleanError(e));
+      if (token === resolveToken.current) {
+        setErrorTitle("That link did not work");
+        setError(cleanError(e));
+      }
     } finally {
       if (token === resolveToken.current) setResolving(false);
     }
@@ -75,6 +81,7 @@ export function Composer({
       setQueued(true);
       setTimeout(() => setQueued(false), 1800);
     } catch (e) {
+      setErrorTitle("Not added to the queue");
       setError(cleanError(e));
     }
   }
@@ -84,6 +91,7 @@ export function Composer({
     try {
       setCommand(await api.ShowCommand({ ...options, url: url.trim() } as core.Options));
     } catch (e) {
+      setErrorTitle("Could not show the command");
       setError(cleanError(e));
     }
   }
@@ -164,7 +172,7 @@ export function Composer({
 
       {error && (
         <Banner
-          title="That link did not work"
+          title={errorTitle}
           tone="danger"
           action={
             needsFullDiskAccess(error) ? (

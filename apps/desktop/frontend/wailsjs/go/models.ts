@@ -79,6 +79,20 @@ export namespace binaries {
 
 export namespace core {
 	
+	export class AudioSize {
+	    bytes: number;
+	    estimate: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AudioSize(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.bytes = source["bytes"];
+	        this.estimate = source["estimate"];
+	    }
+	}
 	export class Enhancements {
 	    sponsorBlock: string;
 	    sponsorBlockCategories: string[];
@@ -455,6 +469,7 @@ export namespace core {
 	    hasAudio: boolean;
 	    bestHeight: number;
 	    bestPlayable: boolean;
+	    audioSizes: Record<string, AudioSize>;
 	    bestLabel: string;
 	    approximate: boolean;
 	    countedFormats: number;
@@ -474,6 +489,7 @@ export namespace core {
 	        this.hasAudio = source["hasAudio"];
 	        this.bestHeight = source["bestHeight"];
 	        this.bestPlayable = source["bestPlayable"];
+	        this.audioSizes = this.convertValues(source["audioSizes"], AudioSize, true);
 	        this.bestLabel = source["bestLabel"];
 	        this.approximate = source["approximate"];
 	        this.countedFormats = source["countedFormats"];

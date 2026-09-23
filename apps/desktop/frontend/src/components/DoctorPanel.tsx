@@ -81,14 +81,17 @@ function Verdict({ report, running }: { report: doctor.Report | null; running: b
   }
   if (!report) return <span />;
 
-  const Glyph = report.healthy ? Icon.Ok : Icon.Fail;
+  // The worst check sets the tone. "Healthy" only means nothing failed, so it
+  // said "1 warning worth looking at" beside a green tick.
+  const checks = report.checks ?? [];
+  const worst = checks.some((c) => c.status === "fail")
+    ? "fail"
+    : checks.some((c) => c.status === "warn")
+      ? "warn"
+      : "ok";
+  const { text, Glyph } = TONE[worst];
   return (
-    <p
-      className={cx(
-        "flex items-center gap-xs text-body-sm font-medium",
-        report.healthy ? "text-success-strong" : "text-danger-strong",
-      )}
-    >
+    <p className={cx("flex items-center gap-xs text-body-sm font-medium", text)}>
       <Glyph className="size-4" strokeWidth={1.75} aria-hidden />
       {report.summary}
     </p>

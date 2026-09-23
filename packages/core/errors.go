@@ -24,6 +24,14 @@ const (
 	ErrCancelled      ErrorKind = "cancelled"
 	ErrPostProcess    ErrorKind = "post-processing"
 	ErrCookieAccess   ErrorKind = "cookie-access"
+	// ErrBotCheck is YouTube doubting the network, not the video: it asks
+	// visitors from an address it distrusts to prove they are not a bot.
+	ErrBotCheck ErrorKind = "bot-check"
+	// ErrNotFound is a page that is not there. The site answered, which is
+	// exactly what makes "check your internet connection" the wrong advice.
+	ErrNotFound ErrorKind = "not-found"
+	// ErrRefused is a site answering 403.
+	ErrRefused ErrorKind = "refused"
 )
 
 // DownloadError is a yt-dlp failure translated into something a person can act
@@ -71,12 +79,19 @@ var classifiers = []struct {
 		},
 	},
 	{
+		// Before sign-in, whose "sign in to confirm" and "--cookies" it also
+		// contains. It was reported as "this video requires you to be signed
+		// in", which sent people to look for a private video that was public.
+		kind:     ErrBotCheck,
+		message:  "YouTube wants to confirm this network isn't a bot. Cookies from a browser where you're signed in to YouTube usually get past it; if they're on already, wait a while and try again.",
+		patterns: []string{"not a bot"},
+	},
+	{
 		kind:    ErrLoginRequired,
 		message: "This video requires you to be signed in. Turn on cookies from your browser in Settings.",
 		patterns: []string{
 			"sign in to confirm", "login required", "requires authentication",
 			"use --cookies", "cookies-from-browser", "members-only", "join this channel",
-			"not a bot",
 		},
 	},
 	{
@@ -90,6 +105,16 @@ var classifiers = []struct {
 			"made this video available in your country",
 			"not available from your location",
 		},
+	},
+	{
+		kind:     ErrUnavailable,
+		message:  "This live stream hasn't started yet.",
+		patterns: []string{"live event will begin", "premieres in", "waiting for scheduled stream"},
+	},
+	{
+		kind:     ErrUnavailable,
+		message:  "This live stream's recording isn't available.",
+		patterns: []string{"live stream recording is not available", "recording is not available"},
 	},
 	{
 		kind:    ErrUnavailable,
@@ -108,6 +133,21 @@ var classifiers = []struct {
 			"unsupported url", "is not a valid url", "no suitable extractor",
 			"unable to extract", "does not pass filter",
 		},
+	},
+	{
+		// Before network, whose "unable to download webpage" is the start of
+		// this very message. A 404 was reported as "check your internet
+		// connection" while another download ran at 4.5 MB/s beside it.
+		kind:    ErrNotFound,
+		message: "That page doesn't exist. The site answered, but there's nothing at that address, so check the link.",
+		patterns: []string{
+			"http error 404", "http error 410", "404: not found", "410: gone",
+		},
+	},
+	{
+		kind:     ErrRefused,
+		message:  "The site refused the request. On YouTube that's usually temporary, so try again in a few minutes; elsewhere, cookies from a browser where you're signed in often help.",
+		patterns: []string{"http error 403", "403: forbidden"},
 	},
 	{
 		kind:     ErrRateLimited,

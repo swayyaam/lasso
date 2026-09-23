@@ -225,6 +225,7 @@ func ParseMetadata(data []byte, playback Playback) (*Metadata, error) {
 		})
 	}
 	m.Quality = AnalyseFormats(m.Formats, playback)
+	m.Quality.AudioSizes = AudioSizes(m.Formats, m.Duration)
 	return m, nil
 }
 

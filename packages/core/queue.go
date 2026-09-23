@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -206,6 +207,16 @@ func (q *Queue) Add(o Options, title string) (Item, error) {
 	if q.closed {
 		q.mu.Unlock()
 		return Item{}, fmt.Errorf("the queue is shutting down")
+	}
+	// The same link at a different quality is a real thing to want, so the
+	// composer keeps the link after a download is queued. The same link at
+	// the same quality while the first is still going is a second press,
+	// and would only produce a second copy of the same file.
+	for _, existing := range q.items {
+		if !existing.State.IsTerminal() && reflect.DeepEqual(existing.Options, o) {
+			q.mu.Unlock()
+			return Item{}, fmt.Errorf("That's already in the queue at the same quality.")
+		}
 	}
 	q.nextID++
 	id := strconv.Itoa(q.nextID)

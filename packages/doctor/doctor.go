@@ -497,7 +497,9 @@ func humanBytes(bytes int64) string {
 // teach the user that the offer means nothing.
 func SuggestsDoctor(kind core.ErrorKind) bool {
 	switch kind {
-	case core.ErrCookieAccess, core.ErrDiskFull, core.ErrPostProcess, core.ErrUnknown:
+	// A bot check is the network, but its remedy is local: cookies from a
+	// browser that is signed in, which is what the doctor checks.
+	case core.ErrCookieAccess, core.ErrDiskFull, core.ErrPostProcess, core.ErrUnknown, core.ErrBotCheck:
 		return true
 	default:
 		return false

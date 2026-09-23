@@ -245,6 +245,12 @@ Decisions made on top of it, for this app:
   red are surface-fill colours; as small text on white they fail contrast. Each
   has a `-strong` variant for text and a tinted surface. These are shades of
   the documented stops, not a sixth accent.
+- **Text greys that pass WCAG AA.** The document's Mute `#898989` measures
+  3.5:1 on white and under 3:1 on the surface fills, below AA's 4.5:1 for text
+  this size. `ink-tertiary` is `#686868`, the lightest grey that passes on the
+  canvas and all four surfaces. `ink-faint` stays as documented because it is
+  only ever used for disabled controls, which AA exempts; do not use it for
+  text someone needs to read.
 - **Compressed density**: the document's weights, tracking and shape system
   exactly; its marketing sizes taken at the small end. 16 px card padding,
   `body-sm` 14 px as the workhorse, `caption` 12.8 px at the signature 550

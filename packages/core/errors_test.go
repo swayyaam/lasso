@@ -74,8 +74,48 @@ func TestCookieAccessDoesNotClaimTheSignInPrompt(t *testing.T) {
 		`Use --cookies-from-browser or --cookies for the authentication.`
 
 	got := ClassifyError(output, errors.New("exit status 1"))
-	if got.Kind != ErrLoginRequired {
-		t.Errorf("Kind = %q, want %q", got.Kind, ErrLoginRequired)
+	if got.Kind != ErrBotCheck {
+		t.Errorf("Kind = %q, want %q", got.Kind, ErrBotCheck)
+	}
+}
+
+// These use yt-dlp's verbatim output from real runs, as CLAUDE.md asks: the
+// wordings that matter are the ones real runs produce.
+func TestRealWordingsFromThisSession(t *testing.T) {
+	cases := []struct {
+		output string
+		kind   ErrorKind
+		says   string
+	}{
+		{
+			"ERROR: [youtube] jNQXAC9IVRw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies",
+			ErrBotCheck, "isn't a bot",
+		},
+		{
+			"ERROR: [generic] not-a-video: Unable to download webpage: HTTP Error 404: Not Found (caused by <HTTPError 404: Not Found>)",
+			ErrNotFound, "doesn't exist",
+		},
+		{
+			"ERROR: [youtube] jfKfPfyJRdk: This live stream recording is not available.",
+			ErrUnavailable, "recording",
+		},
+		{
+			"ERROR: [vimeo] 76979871: The web client only works when logged-in. Use --cookies, --cookies-from-browser, --username and --password, --netrc-cmd, or --netrc (vimeo) to provide account credentials. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies",
+			ErrLoginRequired, "signed in",
+		},
+	}
+	for _, tc := range cases {
+		got := ClassifyError(tc.output, errors.New("exit status 1"))
+		if got.Kind != tc.kind || !strings.Contains(got.Message, tc.says) {
+			t.Errorf("Kind %q Message %q\nwant kind %q saying %q, for:\n  %s", got.Kind, got.Message, tc.kind, tc.says, tc.output)
+		}
+	}
+}
+
+func TestA404IsNeverBlamedOnTheConnection(t *testing.T) {
+	got := ClassifyError("ERROR: [generic] x: Unable to download webpage: HTTP Error 404: Not Found", errors.New("exit status 1"))
+	if strings.Contains(strings.ToLower(got.Message), "internet") {
+		t.Errorf("Message = %q; the site answered, so the connection is fine", got.Message)
 	}
 }
 

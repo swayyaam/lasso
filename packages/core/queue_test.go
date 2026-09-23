@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strconv"
@@ -127,7 +128,7 @@ func succeedingRunner() *funcRunner {
 func TestQueueRunsItemToCompletion(t *testing.T) {
 	h := newQueueHarness(t, succeedingRunner(), 1)
 
-	item, err := h.q.Add(baseOptions(), "Known Title")
+	item, err := h.q.Add(uniqueOptions(), "Known Title")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -154,7 +155,7 @@ func TestQueueSkipsFetchingWhenTitleKnown(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(baseOptions(), "Already Known")
+	item, _ := h.q.Add(uniqueOptions(), "Already Known")
 	h.waitFor(t, item.ID, StateDone)
 
 	if n := metadataCalls.Load(); n != 0 {
@@ -165,7 +166,7 @@ func TestQueueSkipsFetchingWhenTitleKnown(t *testing.T) {
 func TestQueueResolvesMissingTitle(t *testing.T) {
 	h := newQueueHarness(t, succeedingRunner(), 1)
 
-	item, _ := h.q.Add(baseOptions(), "")
+	item, _ := h.q.Add(uniqueOptions(), "")
 	h.waitFor(t, item.ID, StateDone)
 
 	final, _ := h.q.Get(item.ID)
@@ -203,7 +204,7 @@ func TestQueueRespectsConcurrencyLimit(t *testing.T) {
 	h := newQueueHarness(t, runner, 2)
 	var ids []string
 	for i := 0; i < 6; i++ {
-		item, _ := h.q.Add(baseOptions(), "t")
+		item, _ := h.q.Add(uniqueOptions(), "t")
 		ids = append(ids, item.ID)
 	}
 
@@ -259,11 +260,11 @@ func TestQueueCancelsQueuedItem(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	first, _ := h.q.Add(baseOptions(), "running")
+	first, _ := h.q.Add(uniqueOptions(), "running")
 	h.waitFor(t, first.ID, StateDownloading)
 
 	// This one is still waiting its turn.
-	waiting, _ := h.q.Add(baseOptions(), "waiting")
+	waiting, _ := h.q.Add(uniqueOptions(), "waiting")
 	if err := h.q.Cancel(waiting.ID); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
@@ -279,7 +280,7 @@ func TestQueueCancelsRunningItem(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(baseOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), "t")
 
 	select {
 	case <-started:
@@ -312,7 +313,7 @@ func TestQueueClassifiesFailure(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(baseOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), "t")
 	h.waitFor(t, item.ID, StateFailed)
 
 	final, _ := h.q.Get(item.ID)
@@ -342,7 +343,7 @@ func TestQueueRetriesFailedItem(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(baseOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), "t")
 	h.waitFor(t, item.ID, StateFailed)
 
 	if err := h.q.Retry(item.ID); err != nil {
@@ -371,7 +372,7 @@ func TestQueueRetryRejectsWrongStates(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	running, _ := h.q.Add(baseOptions(), "t")
+	running, _ := h.q.Add(uniqueOptions(), "t")
 	h.waitFor(t, running.ID, StateDownloading)
 
 	if err := h.q.Retry(running.ID); err == nil {
@@ -384,7 +385,7 @@ func TestQueueRetryRejectsWrongStates(t *testing.T) {
 
 func TestQueueRetryRejectsFinishedItem(t *testing.T) {
 	h := newQueueHarness(t, succeedingRunner(), 1)
-	item, _ := h.q.Add(baseOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), "t")
 	h.waitFor(t, item.ID, StateDone)
 
 	if err := h.q.Retry(item.ID); err == nil {
@@ -410,7 +411,7 @@ func TestQueuePreservesOrder(t *testing.T) {
 
 	var added []string
 	for i := 0; i < 5; i++ {
-		item, _ := h.q.Add(baseOptions(), "t")
+		item, _ := h.q.Add(uniqueOptions(), "t")
 		added = append(added, item.ID)
 	}
 
@@ -439,7 +440,7 @@ func TestQueueCloseCancelsInFlight(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	if _, err := h.q.Add(baseOptions(), "t"); err != nil {
+	if _, err := h.q.Add(uniqueOptions(), "t"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -453,7 +454,7 @@ func TestQueueCloseCancelsInFlight(t *testing.T) {
 	if !stopped.Load() {
 		t.Error("Close returned while a download was still running")
 	}
-	if _, err := h.q.Add(baseOptions(), "t"); err == nil {
+	if _, err := h.q.Add(uniqueOptions(), "t"); err == nil {
 		t.Error("Add succeeded after Close")
 	}
 }
@@ -494,7 +495,7 @@ func TestQueueWithRealProcessCancellation(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, wrapped, 1)
-	item, _ := h.q.Add(baseOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), "t")
 	h.waitFor(t, item.ID, StateDownloading)
 
 	if err := h.q.Cancel(item.ID); err != nil {
@@ -705,7 +706,7 @@ func TestRequestsWithoutSubtitlesAreNotRetried(t *testing.T) {
 	}}
 
 	h := newSubtitleHarness(t, runner)
-	item, _ := h.q.Add(baseOptions(), "t") // no subtitles requested
+	item, _ := h.q.Add(uniqueOptions(), "t") // no subtitles requested
 	h.waitFor(t, item.ID, StateFailed)
 
 	if got := attempts.Load(); got != 1 {
@@ -1181,4 +1182,48 @@ func waitUntil(t *testing.T, cond func() bool, what string) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Errorf("timed out waiting for %s", what)
+}
+
+func TestTheSameDownloadIsNotQueuedTwiceWhileRunning(t *testing.T) {
+	block := make(chan struct{})
+	runner := &funcRunner{run: func(ctx context.Context, args []string, stdout, _ func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		select {
+		case <-block:
+		case <-ctx.Done():
+		}
+		return nil
+	}}
+	h := newQueueHarnessWith(t, runner, 1, nil)
+	defer close(block)
+
+	o := Options{URL: "https://example.com/v", Pick: PickBest}
+	if _, err := h.q.Add(o, "Clip"); err != nil {
+		t.Fatalf("first Add: %v", err)
+	}
+	if _, err := h.q.Add(o, "Clip"); err == nil {
+		t.Error("an identical download was queued while the first was still going")
+	}
+
+	// A different quality of the same link is a real thing to want.
+	o720 := o
+	o720.Pick = Pick720p
+	if _, err := h.q.Add(o720, "Clip"); err != nil {
+		t.Errorf("the same link at another quality was refused: %v", err)
+	}
+}
+
+// uniqueOptions is baseOptions with a URL no other call returns.
+//
+// The queue refuses a second identical download while the first is running,
+// so tests that queue several items to exercise concurrency, cancellation or
+// ordering each need their own link — which is also what they stand for.
+var uniqueCounter atomic.Int64
+
+func uniqueOptions() Options {
+	o := baseOptions()
+	o.URL = fmt.Sprintf("https://example.com/watch?v=%d", uniqueCounter.Add(1))
+	return o
 }
