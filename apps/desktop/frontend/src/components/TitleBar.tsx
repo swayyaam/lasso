@@ -5,7 +5,9 @@ import { Button, Icon, Spinner } from "@lasso/ui";
  *
  * The window is frameless with inset traffic lights, so this strip doubles as
  * the drag region — a stock macOS title bar would show as a grey band against
- * the canvas. The left padding clears the traffic lights.
+ * the canvas. The left padding clears the traffic lights: the inset buttons
+ * end 80px in, and 96px leaves the wordmark the gap it would have beside any
+ * other control. At 80px it touched the green button.
  *
  * It carries the two places to go that are not the task at hand, History and
  * Settings, and — only while the downloads are off screen — how many are still
@@ -27,7 +29,7 @@ export function TitleBar({
   onShowDownloads: () => void;
 }) {
   return (
-    <header className="drag-region flex h-14 shrink-0 items-center gap-xs border-b border-hairline pr-md pl-20">
+    <header className="drag-region flex h-14 shrink-0 items-center gap-xs border-b border-hairline pr-md pl-24">
       <Wordmark />
 
       <div className="flex-1" />
