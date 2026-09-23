@@ -132,6 +132,20 @@ func (m *Manager) UpdateYtDlp(ctx context.Context, releases *ghrelease.Client) (
 	if err != nil {
 		return result, err
 	}
+	signature, err := releases.Get(ctx, base+sumsSigAsset, sumsMaxAge)
+	if errors.Is(err, ghrelease.ErrNotFound) {
+		return result, fmt.Errorf("yt-dlp %s publishes no signature for its checksums, so it cannot be trusted as yt-dlp's", tag)
+	}
+	if err != nil {
+		return result, err
+	}
+	if err := verifySums(m.signingKey, m.signingFingerprint, sums, signature); err != nil {
+		// Not "try again": this is either tampering or a new signing key, and
+		// either way the answer is a Lasso that knows about it.
+		return result, fmt.Errorf("yt-dlp %s is not signed by yt-dlp's release key, so it was not installed. If yt-dlp has changed its key, updating Lasso will bring the new one: %w", tag, err)
+	}
+	fmt.Fprintf(log, "Signature verified: yt-dlp's release key %s\n", m.signingFingerprint[len(m.signingFingerprint)-16:])
+
 	want, err := digestFor(sums, ytDlpAsset)
 	if err != nil {
 		return result, err

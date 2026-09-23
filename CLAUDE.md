@@ -182,6 +182,17 @@ against the release's published SHA2-256SUMS, stages it, proves it runs, and
 only then swaps the folder. A failed or interrupted update leaves the working
 copy in place.
 
+The checksum list is trusted only with its signature. `SHA2-256SUMS.sig` must
+verify against yt-dlp's release key, embedded as `ytdlp-signing-key.asc` and
+pinned by fingerprint (`AC0C…3B5A 7581`), before the archive is even fetched.
+The list and the archive come from the same release, so a checksum alone
+proves only that the download was not damaged: whoever could replace one
+could replace the other. The key file and the fingerprint must agree, so
+changing one alone fails every update. If yt-dlp rotates its key, updates
+stop with a message saying a Lasso update brings the new one. That is the
+intended failure: replace both, and refresh the real signed pair in
+`testdata/`, which the tests verify offline.
+
 It learns the newest version from the redirect GitHub sends for
 `/releases/latest` — `ghrelease.Client.LatestTag` reads the `Location` header
 and never the page — and builds every download address from that tag. When the

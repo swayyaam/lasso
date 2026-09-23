@@ -6,13 +6,57 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
 )
+
+// testSigner is a signing key made for the tests, standing in for yt-dlp's.
+// Made once: generating an RSA key per test would dominate the run.
+var testSigner = sync.OnceValue(func() *openpgp.Entity {
+	entity, err := openpgp.NewEntity("Lasso test release key", "", "test@example.com", nil)
+	if err != nil {
+		panic(err)
+	}
+	return entity
+})
+
+// armoredPublic is the test key as the Manager is given yt-dlp's.
+func armoredPublic(t *testing.T, e *openpgp.Entity) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w, err := armor.Encode(&buf, openpgp.PublicKeyType, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Serialize(w); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	return buf.Bytes()
+}
+
+// sign makes a detached binary signature, as yt-dlp publishes beside its sums.
+func sign(t *testing.T, e *openpgp.Entity, message []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := openpgp.DetachSign(&buf, e, bytes.NewReader(message), nil); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func fingerprintOf(e *openpgp.Entity) string {
+	return fmt.Sprintf("%X", e.PrimaryKey.Fingerprint)
+}
 
 // buildReleaseZip produces an archive shaped like yt-dlp's onedir release: a
 // launcher beside an _internal payload.
@@ -53,6 +97,10 @@ func digestOf(b []byte) string {
 type releaseServer struct {
 	*httptest.Server
 	hits map[string]int
+	// signature, when set, is served in place of a good one; unsigned serves
+	// none at all.
+	signature []byte
+	unsigned  bool
 }
 
 func newReleaseServer(t *testing.T, version string, archive []byte, digest string) *releaseServer {
@@ -73,9 +121,23 @@ func newReleaseServer(t *testing.T, version string, archive []byte, digest strin
 		rs.hits["zip"]++
 		w.Write(archive)
 	})
+	sums := []byte("0000  some-other-file\n" + digest + "  " + ytDlpAsset + "\n")
 	mux.HandleFunc("/releases/download/"+version+"/"+sumsAsset, func(w http.ResponseWriter, _ *http.Request) {
 		rs.hits["sums"]++
-		w.Write([]byte("0000  some-other-file\n" + digest + "  " + ytDlpAsset + "\n"))
+		w.Write(sums)
+	})
+	signature := sign(t, testSigner(), sums)
+	mux.HandleFunc("/releases/download/"+version+"/"+sumsSigAsset, func(w http.ResponseWriter, _ *http.Request) {
+		rs.hits["sig"]++
+		if rs.signature != nil {
+			w.Write(rs.signature)
+			return
+		}
+		if rs.unsigned {
+			http.NotFound(w, nil)
+			return
+		}
+		w.Write(signature)
 	})
 
 	rs.Server = httptest.NewServer(mux)
@@ -91,6 +153,8 @@ func updatableManager(t *testing.T, server *releaseServer) *Manager {
 		t.Fatalf("Install: %v", err)
 	}
 	m.releasesURL = server.URL + "/releases"
+	m.signingKey = armoredPublic(t, testSigner())
+	m.signingFingerprint = fingerprintOf(testSigner())
 	return m
 }
 
@@ -234,8 +298,14 @@ func TestUpdateReportsMissingAsset(t *testing.T) {
 	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/releases/tag/2026.12.01", http.StatusFound)
 	})
+	sums := []byte(strings.Repeat("a", 64) + "  " + ytDlpAsset + "\n")
 	mux.HandleFunc("/releases/download/2026.12.01/"+sumsAsset, func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(strings.Repeat("a", 64) + "  " + ytDlpAsset + "\n"))
+		w.Write(sums)
+	})
+	// Signed properly, so the failure is the missing archive and nothing else.
+	signature := sign(t, testSigner(), sums)
+	mux.HandleFunc("/releases/download/2026.12.01/"+sumsSigAsset, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write(signature)
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -245,6 +315,8 @@ func TestUpdateReportsMissingAsset(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.releasesURL = server.URL + "/releases"
+	m.signingKey = armoredPublic(t, testSigner())
+	m.signingFingerprint = fingerprintOf(testSigner())
 
 	_, err := m.UpdateYtDlp(context.Background(), nil)
 	if err == nil || !strings.Contains(err.Error(), ytDlpAsset) {
@@ -311,5 +383,72 @@ func TestSwapDirRollsBackOnFailure(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(target, "marker"))
 	if err != nil || string(got) != "original" {
 		t.Errorf("the original was not restored: %q, %v", got, err)
+	}
+}
+
+func TestRealYtDlpReleaseVerifiesAgainstThePinnedKey(t *testing.T) {
+	// yt-dlp 2026.08.19's own checksum list and signature, as published. This
+	// is what proves the embedded key and the pinned fingerprint are the ones
+	// yt-dlp signs with — offline, on every run.
+	sums, err := os.ReadFile("testdata/yt-dlp-2026.08.19-SHA2-256SUMS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig, err := os.ReadFile("testdata/yt-dlp-2026.08.19-SHA2-256SUMS.sig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifySums(ytDlpSigningKey, ytDlpKeyFingerprint, sums, sig); err != nil {
+		t.Fatalf("verifySums: %v", err)
+	}
+
+	// One byte different is a different list.
+	tampered := bytes.Replace(sums, []byte("07e54b08"), []byte("07e54b09"), 1)
+	if err := verifySums(ytDlpSigningKey, ytDlpKeyFingerprint, tampered, sig); err == nil {
+		t.Error("a changed checksum list verified")
+	}
+
+	// The key file and the fingerprint must agree; a swapped key is refused
+	// before any signature is looked at.
+	if err := verifySums(armoredPublic(t, testSigner()), ytDlpKeyFingerprint, sums, sig); err == nil {
+		t.Error("a key other than the pinned one was trusted")
+	}
+}
+
+func TestUpdateRefusesSumsSignedByAnotherKey(t *testing.T) {
+	// Someone able to replace a release's files can replace the checksum list
+	// beside them — and sign it, but not with yt-dlp's key.
+	archive := buildReleaseZip(t, "2099.01.01")
+	server := newReleaseServer(t, "2099.01.01", archive, digestOf(archive))
+	impostor, err := openpgp.NewEntity("Not yt-dlp", "", "x@example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.signature = sign(t, impostor, []byte("0000  some-other-file\n"+digestOf(archive)+"  "+ytDlpAsset+"\n"))
+
+	m := updatableManager(t, server)
+	before := m.Verify(context.Background())
+
+	_, err = m.UpdateYtDlp(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "not signed by yt-dlp's release key") {
+		t.Fatalf("UpdateYtDlp = %v, want it refused as unsigned", err)
+	}
+	if server.hits["zip"] != 0 {
+		t.Error("the archive was downloaded before its checksums were trusted")
+	}
+	if after := m.Verify(context.Background()); after[0].Version != before[0].Version {
+		t.Errorf("version changed from %s to %s on a refused update", before[0].Version, after[0].Version)
+	}
+}
+
+func TestUpdateRefusesAReleaseWithNoSignature(t *testing.T) {
+	archive := buildReleaseZip(t, "2099.01.01")
+	server := newReleaseServer(t, "2099.01.01", archive, digestOf(archive))
+	server.unsigned = true
+
+	m := updatableManager(t, server)
+	_, err := m.UpdateYtDlp(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "no signature") {
+		t.Fatalf("UpdateYtDlp = %v, want it refused for want of a signature", err)
 	}
 }

@@ -18,6 +18,12 @@ type Manager struct {
 	// exercised end to end against a local server laid out like GitHub,
 	// without reaching the network or waiting on a real release.
 	releasesURL string
+
+	// signingKey and signingFingerprint are the key a yt-dlp update's
+	// checksums must be signed with. Fields for the same reason: a test signs
+	// its own releases with a key it made.
+	signingKey         []byte
+	signingFingerprint string
 }
 
 // New builds a Manager from the given paths.
@@ -30,9 +36,11 @@ func New(paths Paths) (*Manager, error) {
 		return nil, fmt.Errorf("no bin directory configured")
 	}
 	return &Manager{
-		paths:       paths,
-		manifest:    manifest,
-		releasesURL: ytDlpReleases,
+		paths:              paths,
+		manifest:           manifest,
+		releasesURL:        ytDlpReleases,
+		signingKey:         ytDlpSigningKey,
+		signingFingerprint: ytDlpKeyFingerprint,
 	}, nil
 }
 
