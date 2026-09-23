@@ -16,8 +16,12 @@ import (
 func BuildArgs(o Options) []string {
 	var args []string
 
-	// First, so a user's own ~/.config/yt-dlp/config cannot change the result.
-	args = append(args, "--ignore-config")
+	// First, so nothing outside Lasso changes the result: --ignore-config
+	// skips the user's own ~/.config/yt-dlp/config, and --no-plugin-dirs skips
+	// yt-dlp's default plugin folders, which --ignore-config leaves live. A
+	// plugin installed for command-line use would otherwise run inside every
+	// Lasso download.
+	args = append(args, "--ignore-config", "--no-plugin-dirs")
 
 	// Stated rather than assumed. Resuming a paused download is exactly this
 	// flag continuing a .part file, and yt-dlp's default being the same today
@@ -412,6 +416,7 @@ func shellQuote(s string) string {
 func CookieProbeArgs(o Options) []string {
 	args := []string{
 		"--ignore-config",
+		"--no-plugin-dirs",
 		"--simulate",
 		"--no-warnings",
 		// One item is enough to reach the point where cookies have been used,

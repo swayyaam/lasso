@@ -181,7 +181,7 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
             <Button
               size="sm"
               variant="tertiary"
-              onClick={() => void act(() => api.OpenFile(item.filePath))}
+              onClick={() => void act(() => api.OpenFile(item.id))}
               icon={<Icon.OpenFile className="size-3.5" strokeWidth={1.75} aria-hidden />}
             >
               Open
@@ -191,7 +191,7 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
                 size="icon"
                 variant="tertiary"
                 aria-label="Show in Finder"
-                onClick={() => void act(() => api.RevealInFinder(item.filePath))}
+                onClick={() => void act(() => api.RevealInFinder(item.id))}
               >
                 <Icon.RevealInFinder className="size-3.5" strokeWidth={1.75} aria-hidden />
               </Button>

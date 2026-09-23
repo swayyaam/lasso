@@ -292,13 +292,25 @@ func (a *App) ShowCommand(o core.Options) (string, error) {
 		return "", fmt.Errorf("Lasso is still starting up")
 	}
 
-	o = settings.Get().ApplyTo(o)
+	o = settings.Get().ApplyTo(fromInterface(o))
 	o.FFmpegLocation = manager.FFmpegLocation()
 	o.DenoPath = manager.Path(binaries.Deno)
 	if err := o.Validate(); err != nil {
 		return "", err
 	}
 	return core.ShowCommand(manager.Path(binaries.YtDlp), o), nil
+}
+
+// fromInterface strips what a request from the interface does not get to
+// decide.
+//
+// The download folder is Settings' job. The interface never sets one — it
+// always sends an empty folder — and honouring one it did send would let
+// anything that ever ran script in the page choose where files land. The
+// binary paths are overwritten by each caller for the same reason.
+func fromInterface(o core.Options) core.Options {
+	o.Output.Folder = ""
+	return o
 }
 
 // Enqueue adds a download to the queue.
@@ -311,7 +323,7 @@ func (a *App) Enqueue(o core.Options, title string) (core.Item, error) {
 		return core.Item{}, fmt.Errorf("Lasso cannot download yet: check Settings for details")
 	}
 
-	o = settings.Get().ApplyTo(o)
+	o = settings.Get().ApplyTo(fromInterface(o))
 	o.FFmpegLocation = manager.FFmpegLocation()
 	o.DenoPath = manager.Path(binaries.Deno)
 	o.ArcProfileDir = arcProfileDir()
@@ -455,7 +467,8 @@ func (a *App) ClearHistory() error {
 }
 
 // DownloadAgain puts a past download back on the queue with the options it
-// originally ran with.
+// originally ran with, into today's download folder — the one it used may no
+// longer exist, and Settings is where the folder is decided.
 func (a *App) DownloadAgain(id string) (core.Item, error) {
 	store, err := a.historyStore()
 	if err != nil {
@@ -569,17 +582,59 @@ func (a *App) ChooseFolder() (string, error) {
 	})
 }
 
-// RevealInFinder opens the enclosing folder of a finished download.
-func (a *App) RevealInFinder(path string) error {
-	if path == "" {
-		return fmt.Errorf("that download has no file yet")
-	}
-	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("that file is no longer there")
+// RevealInFinder shows a finished download in Finder. It takes the
+// download's ID, not a path; see fileOf.
+func (a *App) RevealInFinder(id string) error {
+	path, err := a.fileOf(id)
+	if err != nil {
+		return err
 	}
 	// Uses the system file manager, not a shell, so a filename cannot be
 	// interpreted as anything but a path.
 	return openInFinder(path)
+}
+
+// fileOf finds the file a download produced, from the download's ID.
+//
+// The interface names downloads, never paths. A bound method that opened
+// whatever path it was handed would let anything that ever ran script in the
+// page open any file or application on the Mac; resolving the ID here means
+// only files Lasso itself downloaded can be opened or shown.
+func (a *App) fileOf(id string) (string, error) {
+	path, found := "", false
+
+	a.mu.RLock()
+	queue := a.queue
+	a.mu.RUnlock()
+	if queue != nil {
+		for _, item := range queue.Items() {
+			if item.ID == id {
+				path, found = item.FilePath, true
+				break
+			}
+		}
+	}
+	if !found {
+		if store, err := a.historyStore(); err == nil {
+			for _, entry := range store.All() {
+				if entry.ID == id {
+					path, found = entry.FilePath, true
+					break
+				}
+			}
+		}
+	}
+
+	switch {
+	case !found:
+		return "", fmt.Errorf("that download is no longer in Lasso")
+	case path == "":
+		return "", fmt.Errorf("that download has no file yet")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("that file is no longer there")
+	}
+	return path, nil
 }
 
 // OpenFullDiskAccessSettings opens the System Settings pane that lets Lasso
@@ -593,13 +648,11 @@ func (a *App) OpenFullDiskAccessSettings() error {
 //
 // The counterpart to RevealInFinder: showing the file is what you want when
 // you are about to move it, and opening it is what you want the rest of the
-// time.
-func (a *App) OpenFile(path string) error {
-	if path == "" {
-		return fmt.Errorf("that download has no file yet")
-	}
-	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("that file is no longer there")
+// time. Like it, it takes the download's ID rather than a path.
+func (a *App) OpenFile(id string) error {
+	path, err := a.fileOf(id)
+	if err != nil {
+		return err
 	}
 	return openFile(path)
 }

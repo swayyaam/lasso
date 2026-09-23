@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -42,6 +44,14 @@ const (
 
 	// maxThumbnailBytes bounds what will be downloaded before decoding.
 	maxThumbnailBytes = 10 << 20
+
+	// maxThumbnailPixels bounds what will be decoded, which the byte limit does
+	// not. A compressed image can declare dimensions whose pixels need
+	// gigabytes: a PNG of zeros decodes to around 850 times its size, measured,
+	// and the ratio grows with the image. 24 megapixels is 6000×4000 — far past
+	// any real preview, which tops out around 4K — and caps the decode at
+	// roughly 100 MB even in the widest pixel format the decoders produce.
+	maxThumbnailPixels = 24_000_000
 
 	thumbnailTimeout = 20 * time.Second
 	thumbnailQuality = 82
@@ -119,10 +129,55 @@ func newRestrictedClient() *http.Client {
 	}
 }
 
+// nonPublic lists every range a thumbnail must not be fetched from.
+//
+// Spelled out rather than left to net.IP's helpers, which miss ranges that
+// matter here — CGNAT above all, where Tailscale puts every peer, so a site
+// could otherwise have Lasso fetch from a machine on the user's tailnet — and
+// the IPv6 prefixes that carry an IPv4 address inside them, which would
+// otherwise smuggle a private address past a check that only looks at IPv4.
+var nonPublic = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),       // "this network"
+	netip.MustParsePrefix("10.0.0.0/8"),      // private
+	netip.MustParsePrefix("100.64.0.0/10"),   // CGNAT; Tailscale
+	netip.MustParsePrefix("127.0.0.0/8"),     // loopback
+	netip.MustParsePrefix("169.254.0.0/16"),  // link-local; cloud metadata
+	netip.MustParsePrefix("172.16.0.0/12"),   // private
+	netip.MustParsePrefix("192.0.0.0/24"),    // protocol assignments
+	netip.MustParsePrefix("192.0.2.0/24"),    // documentation
+	netip.MustParsePrefix("192.88.99.0/24"),  // 6to4 relay
+	netip.MustParsePrefix("192.168.0.0/16"),  // private
+	netip.MustParsePrefix("198.18.0.0/15"),   // benchmarking
+	netip.MustParsePrefix("198.51.100.0/24"), // documentation
+	netip.MustParsePrefix("203.0.113.0/24"),  // documentation
+	netip.MustParsePrefix("224.0.0.0/4"),     // multicast
+	netip.MustParsePrefix("240.0.0.0/4"),     // reserved, and broadcast
+	netip.MustParsePrefix("::/128"),          // unspecified
+	netip.MustParsePrefix("::1/128"),         // loopback
+	netip.MustParsePrefix("64:ff9b::/96"),    // NAT64: wraps an IPv4 address
+	netip.MustParsePrefix("64:ff9b:1::/48"),  // local NAT64
+	netip.MustParsePrefix("100::/64"),        // discard
+	netip.MustParsePrefix("2001::/32"),       // Teredo: wraps an IPv4 address
+	netip.MustParsePrefix("2001:db8::/32"),   // documentation
+	netip.MustParsePrefix("2002::/16"),       // 6to4: wraps an IPv4 address
+	netip.MustParsePrefix("fc00::/7"),        // unique local
+	netip.MustParsePrefix("fe80::/10"),       // link-local
+	netip.MustParsePrefix("ff00::/8"),        // multicast
+}
+
 func isPublicIP(ip net.IP) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
-		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() ||
-		ip.IsInterfaceLocalMulticast())
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	// ::ffff:127.0.0.1 is 127.0.0.1; judge it as what it is.
+	addr = addr.Unmap()
+	for _, p := range nonPublic {
+		if p.Contains(addr) {
+			return false
+		}
+	}
+	return true
 }
 
 // Get returns the path of a cached thumbnail scaled to width, fetching it first
@@ -213,7 +268,28 @@ func (c *ThumbnailCache) fetch(ctx context.Context, rawURL string, width int, pa
 	}
 
 	// Bound the read so an enormous or endless response cannot exhaust memory.
-	src, _, err := image.Decode(io.LimitReader(resp.Body, maxThumbnailBytes))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxThumbnailBytes+1))
+	if err != nil {
+		return fmt.Errorf("could not load the preview image: %w", err)
+	}
+	if len(raw) > maxThumbnailBytes {
+		return fmt.Errorf("could not load the preview image: it is larger than any preview should be")
+	}
+
+	// Then bound the decode. The header states the dimensions, and reading it
+	// allocates nothing, so an image that would need gigabytes is refused
+	// before a single pixel is. The site being downloaded from chooses this
+	// URL — through yt-dlp's generic extractor, any page's og:image — so
+	// without this a pasted link could take the whole app down.
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil {
+		return fmt.Errorf("could not read the preview image: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > maxThumbnailPixels {
+		return fmt.Errorf("could not read the preview image: %d×%d is larger than any preview should be", cfg.Width, cfg.Height)
+	}
+
+	src, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return fmt.Errorf("could not read the preview image: %w", err)
 	}

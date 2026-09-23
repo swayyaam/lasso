@@ -101,7 +101,7 @@ function HistoryRow({ entry }: { entry: history.Entry }) {
               size="icon"
               variant="tertiary"
               aria-label="Show in Finder"
-              onClick={() => void run(() => api.RevealInFinder(entry.filePath))}
+              onClick={() => void run(() => api.RevealInFinder(entry.id))}
             >
               <Icon.RevealInFinder className="size-3.5" strokeWidth={1.75} aria-hidden />
             </Button>

@@ -3,11 +3,14 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/swayyaam/lasso/packages/binaries"
 	"github.com/swayyaam/lasso/packages/core"
+	"github.com/swayyaam/lasso/packages/history"
 	"github.com/swayyaam/lasso/packages/presets"
 )
 
@@ -99,16 +102,51 @@ func TestBinaryStatusReportsStartupFailure(t *testing.T) {
 	}
 }
 
-func TestRevealInFinderRejectsMissingPaths(t *testing.T) {
+func TestOpenAndRevealTakeDownloadsNotPaths(t *testing.T) {
+	// The whole point: a path handed over from the interface — here, the kind
+	// something malicious in the page would try — resolves to nothing.
 	app := NewApp()
-
-	if err := app.RevealInFinder(""); err == nil {
-		t.Error("RevealInFinder accepted an empty path")
+	store, err := history.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := app.RevealInFinder("/nope/not/here.mp4"); err == nil {
-		t.Error("RevealInFinder accepted a path that does not exist")
-	} else if !strings.Contains(err.Error(), "no longer there") {
-		t.Errorf("error = %q, want plain language", err)
+	app.history = store
+
+	for _, sneaky := range []string{"/System/Applications/Calculator.app", "/etc/hosts", "", "../../etc/hosts"} {
+		if err := app.OpenFile(sneaky); err == nil {
+			t.Errorf("OpenFile(%q) went ahead; it should only open a download Lasso knows", sneaky)
+		}
+		if err := app.RevealInFinder(sneaky); err == nil {
+			t.Errorf("RevealInFinder(%q) went ahead", sneaky)
+		}
+	}
+
+	// A real download resolves by its ID.
+	file := filepath.Join(t.TempDir(), "clip.mp4")
+	os.WriteFile(file, []byte("x"), 0o644)
+	store.Add(history.Entry{ID: "abc123", Title: "clip", FilePath: file, State: core.StateDone})
+	if got, err := app.fileOf("abc123"); err != nil || got != file {
+		t.Errorf("fileOf(abc123) = %q, %v; want the entry's file", got, err)
+	}
+
+	// And one whose file has gone says so plainly.
+	os.Remove(file)
+	if _, err := app.fileOf("abc123"); err == nil || !strings.Contains(err.Error(), "no longer there") {
+		t.Errorf("err = %v, want plain language about the missing file", err)
+	}
+}
+
+func TestTheInterfaceCannotChooseTheDownloadFolder(t *testing.T) {
+	o := fromInterface(core.Options{Output: core.Output{Folder: "/Users/someone/Library/LaunchAgents", Template: "%(title)s.%(ext)s"}})
+	if o.Output.Folder != "" {
+		t.Errorf("folder = %q, want it left to Settings", o.Output.Folder)
+	}
+	if o.Output.Template == "" {
+		t.Error("the filename template, which the interface may set, was dropped")
+	}
+	got := Settings{DownloadFolder: "/Users/someone/Movies"}.ApplyTo(o)
+	if got.Output.Folder != "/Users/someone/Movies" {
+		t.Errorf("folder = %q, want the Settings folder", got.Output.Folder)
 	}
 }
 

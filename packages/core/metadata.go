@@ -264,7 +264,7 @@ func BestThumbnail(thumbnails []Thumbnail, width int) (Thumbnail, bool) {
 // video, and for a single video it changes nothing — formats and thumbnails
 // still come back in full.
 func MetadataArgs(o Options) []string {
-	args := []string{"--ignore-config", "-J", "--flat-playlist", "--no-warnings"}
+	args := []string{"--ignore-config", "--no-plugin-dirs", "-J", "--flat-playlist", "--no-warnings"}
 
 	// Resolving a YouTube link needs the JavaScript runtime just as
 	// downloading does; without it yt-dlp returns a reduced format list.

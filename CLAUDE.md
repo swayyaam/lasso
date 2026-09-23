@@ -51,6 +51,11 @@ adapts into a Wails event.
 
 - Invoke yt-dlp with `exec.CommandContext` and an argument slice. **Never build a
   shell string, never use `sh -c`.** URLs and filename templates are untrusted.
+- Every invocation starts `--ignore-config --no-plugin-dirs`. The first skips
+  the user's config files; the second skips yt-dlp's default plugin folders,
+  which the first leaves live — a plugin installed for command-line use would
+  otherwise run inside every Lasso download. A plugin Lasso ships comes back
+  with an explicit `--plugin-dirs` *after* them.
 - The arg builder is a pure function: `Options -> []string`. Unit test it
   thoroughly — every advanced option, every preset. Coverage here should stay high.
 - Parse progress from `--newline` plus a custom `--progress-template` that emits
@@ -100,6 +105,11 @@ packages.
   `core.Item.AddedAt` is Unix milliseconds for this reason.
 - **Event names live in `events.go`** and reach the frontend through
   `App.Events()`. Never hardcode an event string in TypeScript.
+- **The interface names downloads, never paths.** `OpenFile` and
+  `RevealInFinder` take a queue or history ID and resolve the file themselves,
+  so nothing that ran script in the page could open an arbitrary file or app.
+  Likewise the download folder is Settings' decision: `fromInterface` drops any
+  folder a request carries before `ApplyTo` fills in the real one.
 - **Thumbnails are served by the app's own asset handler** at `/thumbs/<hash>.jpg`,
   not from a file:// path, which the webview cannot load from the asset scheme.
   The handler matches a strict sha256 filename pattern; that is what prevents a
@@ -137,6 +147,24 @@ only place that fetches remote images — the webview never talks to a CDN
 directly. Thumbnail URLs come from yt-dlp metadata, which the site being
 downloaded from ultimately controls, so the cache requires https and refuses to
 connect to loopback or private addresses. Do not relax either check.
+
+The address check is an explicit list of ranges (`nonPublic`), not net.IP's
+helpers, which miss CGNAT — where Tailscale puts every peer — and the IPv6
+prefixes that carry an IPv4 address inside them. It runs in the dialer's
+`Control` hook, after DNS and before connecting, so it covers every redirect.
+
+Images are bounded twice: 10 MB read, and `maxThumbnailPixels` decoded. The
+second matters more — a compressed image can declare dimensions needing
+gigabytes, and yt-dlp's generic extractor makes any page's `og:image` a
+thumbnail — so dimensions come from `image.DecodeConfig`, which allocates
+nothing, before anything is decoded.
+
+The built app carries a Content-Security-Policy (`vite.config.ts`) that makes
+this enforced rather than conventional: scripts, styles, images and
+connections come from the app's own origin only. It is build-only, because
+Vite's hot reload needs a websocket it would refuse. Wails adds two
+same-origin scripts and no inline script or `eval`; if an upgrade changes that,
+the app will render blank, which is the thing to check first.
 
 ## Updating yt-dlp
 
