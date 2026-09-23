@@ -144,6 +144,9 @@ func TestTheInterfaceCannotChooseTheDownloadFolder(t *testing.T) {
 	if o.Output.Template == "" {
 		t.Error("the filename template, which the interface may set, was dropped")
 	}
+	if fromInterface(core.Options{Playback: core.Playback{AV1: true}}).Playback.AV1 {
+		t.Error("the interface was allowed to say what this Mac plays")
+	}
 	got := Settings{DownloadFolder: "/Users/someone/Movies"}.ApplyTo(o)
 	if got.Output.Folder != "/Users/someone/Movies" {
 		t.Errorf("folder = %q, want the Settings folder", got.Output.Folder)
@@ -202,4 +205,13 @@ func TestNotifyIsSafeOutsideAnAppBundle(t *testing.T) {
 	// holds — if it regresses, this test does not fail, it crashes the run.
 	notify("A download finished", "Lasso")
 	notify("", "")
+}
+
+func TestThisMacsPlaybackIsDetected(t *testing.T) {
+	// No assertion about the answer — it depends on the chip — only that
+	// asking VideoToolbox works and reports the same thing twice.
+	if detectPlayback() != detectPlayback() {
+		t.Error("detectPlayback is not stable")
+	}
+	t.Logf("this Mac decodes AV1 in hardware: %v", detectPlayback().AV1)
 }

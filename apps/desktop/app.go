@@ -42,6 +42,10 @@ type App struct {
 	// every call can report it rather than panicking on a nil dependency.
 	startupErr error
 
+	// playback is what this Mac plays natively, asked of VideoToolbox once at
+	// startup. It decides the codec and container "Best" prefers.
+	playback core.Playback
+
 	// releases is the process's one GitHub client, shared by Lasso's own
 	// updater and the yt-dlp updater. It keeps its cache and any refusal from
 	// GitHub on disk, so a relaunch neither repeats a recent check nor forgets
@@ -103,6 +107,7 @@ func (a *App) startup(ctx context.Context) {
 
 	a.mu.Lock()
 	a.releases = newReleaseClient(support)
+	a.playback = detectPlayback()
 	a.mu.Unlock()
 
 	settingsStore, err := NewSettingsStore(support)
@@ -159,6 +164,7 @@ func (a *App) startQueue(ctx context.Context, manager *binaries.Manager, concurr
 		// because yt-dlp cuts them with the audio copied. This is what gives
 		// each one its own title afterwards.
 		Tagger:      &core.FFmpegTagger{Path: manager.Path(binaries.FFmpeg)},
+		Remuxer:     &core.FFmpegRemuxer{Path: manager.Path(binaries.FFmpeg)},
 		Concurrency: concurrency,
 		OnState: func(item core.Item) {
 			runtime.EventsEmit(ctx, EventQueueItem, item)
@@ -253,6 +259,7 @@ func (a *App) FetchMetadata(url string) (*core.Metadata, error) {
 
 	o := settings.ApplyTo(core.Options{URL: url, Pick: core.PickBest})
 	o.DenoPath = a.denoPath()
+	o.Playback = a.machinePlayback()
 	return core.FetchMetadata(a.ctx, runner, o)
 }
 
@@ -295,6 +302,7 @@ func (a *App) ShowCommand(o core.Options) (string, error) {
 	o = settings.Get().ApplyTo(fromInterface(o))
 	o.FFmpegLocation = manager.FFmpegLocation()
 	o.DenoPath = manager.Path(binaries.Deno)
+	o.Playback = a.machinePlayback()
 	if err := o.Validate(); err != nil {
 		return "", err
 	}
@@ -310,7 +318,16 @@ func (a *App) ShowCommand(o core.Options) (string, error) {
 // binary paths are overwritten by each caller for the same reason.
 func fromInterface(o core.Options) core.Options {
 	o.Output.Folder = ""
+	// What the Mac plays is a fact about the machine, asked of VideoToolbox.
+	o.Playback = core.Playback{}
 	return o
+}
+
+// machinePlayback is what this Mac plays, as asked at startup.
+func (a *App) machinePlayback() core.Playback {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.playback
 }
 
 // Enqueue adds a download to the queue.
@@ -327,6 +344,7 @@ func (a *App) Enqueue(o core.Options, title string) (core.Item, error) {
 	o.FFmpegLocation = manager.FFmpegLocation()
 	o.DenoPath = manager.Path(binaries.Deno)
 	o.ArcProfileDir = arcProfileDir()
+	o.Playback = a.machinePlayback()
 
 	// Checked before the download starts rather than discovered halfway
 	// through it, which wastes the transfer and leaves a part file behind.

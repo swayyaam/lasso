@@ -3,8 +3,10 @@ package core
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -84,6 +86,10 @@ type QueueConfig struct {
 	// SubtitleRetryDelay is how long to wait before retrying a download whose
 	// subtitles failed. Zero uses DefaultSubtitleRetryDelay.
 	SubtitleRetryDelay time.Duration
+	// Remuxer moves AVI and FLV downloads into MP4, so macOS opens them. nil
+	// leaves every file as it came.
+	Remuxer Remuxer
+
 	// Tagger rewrites the tags on tracks split out of a chaptered recording.
 	// Without one, splitting still works but every track keeps the whole
 	// recording's title, so the feature is off when this is nil.
@@ -105,6 +111,7 @@ const DefaultSubtitleRetryDelay = 3 * time.Second
 type Queue struct {
 	runner   Runner
 	tagger   Tagger
+	remuxer  Remuxer
 	emitter  *ProgressEmitter
 	onState  func(Item)
 	onRemove func(ids []string)
@@ -154,6 +161,7 @@ func NewQueue(cfg QueueConfig) (*Queue, error) {
 	q := &Queue{
 		runner:      cfg.Runner,
 		tagger:      cfg.Tagger,
+		remuxer:     cfg.Remuxer,
 		onState:     cfg.OnState,
 		onRemove:    cfg.OnRemove,
 		limit:       concurrency,
@@ -575,7 +583,13 @@ func (q *Queue) run(ctx context.Context, id string) {
 			err, result = q.attempt(ctx, id, item.Options.WithoutSubtitles())
 			if err == nil {
 				q.retagChapters(ctx, id, item, result)
-				q.finishWithNotice(id, result.FilePath, "Downloaded without subtitles", reason)
+				path, remuxNotice, remuxDetail := q.remux(ctx, result.FilePath)
+				notice, detail := "Downloaded without subtitles", reason
+				if remuxNotice != "" {
+					notice += ". " + remuxNotice
+					detail = joinLines([]string{reason, remuxDetail})
+				}
+				q.finishWithNotice(id, path, notice, detail)
 				return
 			}
 		}
@@ -587,7 +601,29 @@ func (q *Queue) run(ctx context.Context, id string) {
 	}
 
 	q.retagChapters(ctx, id, item, result)
-	q.finish(id, result.FilePath)
+	path, notice, detail := q.remux(ctx, result.FilePath)
+	if notice != "" {
+		q.finishWithNotice(id, path, notice, detail)
+		return
+	}
+	q.finish(id, path)
+}
+
+// remux moves an AVI or FLV into MP4 so macOS opens it, returning the path to
+// finish with and, when it could not, a notice saying why.
+//
+// Like tagging, it never fails the download. The original plays in IINA or
+// VLC, and losing a finished file over a container would be a bad trade.
+func (q *Queue) remux(ctx context.Context, path string) (string, string, string) {
+	if q.remuxer == nil || path == "" || !NeedsRemux(path) || ctx.Err() != nil {
+		return path, "", ""
+	}
+	out, err := q.remuxer.Remux(ctx, path)
+	if err != nil {
+		kind := strings.ToUpper(strings.TrimPrefix(filepath.Ext(path), "."))
+		return path, fmt.Sprintf("Kept as %s, which needs IINA or VLC to play", kind), err.Error()
+	}
+	return out, "", ""
 }
 
 // retagChapters gives each split-out track its own title, number and album.

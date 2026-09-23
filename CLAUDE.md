@@ -284,6 +284,45 @@ action picking a different glyph in two places. Names describe the action
 `strokeWidth={1.75}`: lucide's default 2 px stroke reads heavier than the
 system's 400/500 type weights beside it.
 
+## What "Best" means
+
+**Best is the best this Mac plays natively** — in QuickTime, Quick Look,
+Photos and iMovie, which all decode through AVFoundation — not the best that
+exists. A file that will not open on double-click is not the best of anything
+to the person who downloaded it. Measured on real files, not assumed:
+
+| streams | as downloaded | plays |
+|---|---|---|
+| MPEG-4 Part 2 + AC-3 | AVI | no |
+| the same, remuxed | MP4 | yes |
+| VP9 + Opus | MKV or MP4 | no |
+| H.264 or HEVC + AAC | MP4 | yes |
+| AV1 + AAC | MP4 | only with hardware AV1 decode (M3 and later) |
+
+So `core.Playback` records what the machine decodes — `apps/desktop` asks
+VideoToolbox once at startup, never infers it from the chip name — and when
+Lasso is choosing (container and codec both Auto), `formatArgs` asks for a
+codec that plays joined to AAC, merges into `mp4/mkv`, and `AnalyseFormats`
+marks each tier `Playable` and makes "Best" the top playable tier. On YouTube
+that is 1080p H.264 on an M1 and 4K AV1 on an M3 or later.
+
+- **A resolution picked by name is honoured first.** 4K on a Mac without AV1
+  still downloads 4K, in VP9; the tier says it is not playable here so the
+  interface can say it needs IINA or VLC.
+- **Named choices turn it off**: a container, a codec, or HDR on a Mac
+  without AV1 (YouTube's HDR is VP9 or AV1 only, so insisting on playable
+  would quietly hand back SDR).
+- **AAC is preferred in the selector, not through `-S`.** Anything prepended
+  to `-S` outranks yt-dlp's language preference, which would trade a video's
+  original-language track for a dubbed one to get a codec.
+- **AVI and FLV are remuxed after the download** by `core.Remuxer`, not by
+  yt-dlp's `--remux-video`, which fails the whole download when the streams
+  do not fit MP4 (DivX 3 does not). A failed remux keeps the original with a
+  notice, never fails the download, and never overwrites an existing file.
+- **An unstated codec is unknown, not absent.** archive.org names no codecs;
+  treating that as "no video, no audio" is what made its quality picker
+  vanish. `vcodec: "none"` still means none.
+
 ## Music
 
 Two options turn a video download into a music one, and both are off by

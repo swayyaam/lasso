@@ -63,7 +63,7 @@ func TestBuildArgsIsPure(t *testing.T) {
 	}
 }
 
-func TestQuickPickFormatSelectors(t *testing.T) {
+func TestQuickPickFormatSelectorsWithANamedContainer(t *testing.T) {
 	cases := []struct {
 		pick QuickPick
 		want string
@@ -81,8 +81,11 @@ func TestQuickPickFormatSelectors(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(string(tc.pick), func(t *testing.T) {
+			// A container the user named leaves codec choice to yt-dlp's own
+			// ordering; "Auto" is what prefers what the Mac plays, tested below.
 			o := baseOptions()
 			o.Pick = tc.pick
+			o.Container = ContainerMKV
 
 			got, ok := argValue(BuildArgs(o), "-f")
 			if !ok {
@@ -161,7 +164,8 @@ func TestContainerSelection(t *testing.T) {
 		wantMerge string
 		wantSort  string
 	}{
-		{ContainerAuto, "", ""},
+		// Auto merges into MP4 when the streams allow — what QuickTime opens.
+		{ContainerAuto, "mp4/mkv", ""},
 		{ContainerMP4, "mp4", "ext:mp4:m4a"},
 		{ContainerWebM, "webm", "ext:webm"},
 		// MKV holds anything, so it needs no stream-selection hint.
@@ -735,5 +739,93 @@ func TestOriginalAudioNeverReEncodes(t *testing.T) {
 func TestOriginalAudioIsAudioOnly(t *testing.T) {
 	if !PickAudioOriginal.IsAudioOnly() {
 		t.Error("the original-audio pick is not treated as audio-only")
+	}
+}
+
+// ---- playing on this Mac ----------------------------------------------
+
+func TestAutoPicksPreferWhatThisMacPlays(t *testing.T) {
+	// Measured on real files: H.264 and HEVC play everywhere, VP9 nowhere,
+	// AV1 only where VideoToolbox decodes it in hardware (M3 and later).
+	plays := "[vcodec~='^(avc|h26[45]|hev|hvc|mp4v)']"
+	playsAV1 := "[vcodec~='^(avc|h26[45]|hev|hvc|mp4v|av01)']"
+
+	cases := []struct {
+		name     string
+		pick     QuickPick
+		playback Playback
+		want     string
+	}{
+		{"best, no AV1", PickBest, Playback{},
+			"bv*" + plays + "+ba[acodec^=mp4a]/bv*" + plays + "+ba/b" + plays + "/bv*+ba/b"},
+		{"best, AV1 in hardware", PickBest, Playback{AV1: true},
+			"bv*" + playsAV1 + "+ba[acodec^=mp4a]/bv*" + playsAV1 + "+ba/b" + playsAV1 + "/bv*+ba/b"},
+		// A named rung is honoured first: playable at that rung, else
+		// whatever the rung comes in, else the usual fallbacks.
+		{"1080p", Pick1080p, Playback{},
+			"bv*[height<=1080][height>=1026]" + plays + "+ba[acodec^=mp4a]" +
+				"/bv*[height<=1080][height>=1026]" + plays + "+ba" +
+				"/b[height<=1080][height>=1026]" + plays +
+				"/bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			o := baseOptions()
+			o.Pick = tc.pick
+			o.Playback = tc.playback
+			args := BuildArgs(o)
+			if got, _ := argValue(args, "-f"); got != tc.want {
+				t.Errorf("-f =\n  %q\nwant\n  %q", got, tc.want)
+			}
+			if got, _ := argValue(args, "--merge-output-format"); got != "mp4/mkv" {
+				t.Errorf("--merge-output-format = %q, want mp4/mkv", got)
+			}
+		})
+	}
+}
+
+func TestExplicitChoicesTurnThePreferenceOff(t *testing.T) {
+	plain := "bv*+ba/b"
+	cases := []struct {
+		name string
+		edit func(*Options)
+	}{
+		{"a named codec", func(o *Options) { o.VideoCodec = VideoCodecVP9 }},
+		{"a named container", func(o *Options) { o.Container = ContainerWebM }},
+		// YouTube's HDR is VP9 or AV1 only; insisting on what QuickTime plays
+		// would quietly hand back SDR to someone who asked for HDR.
+		{"HDR without AV1", func(o *Options) { o.PreferHDR = true }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			o := baseOptions()
+			tc.edit(&o)
+			if got, _ := argValue(BuildArgs(o), "-f"); got != plain {
+				t.Errorf("-f = %q, want %q", got, plain)
+			}
+		})
+	}
+
+	// On a Mac that plays AV1, HDR and playability are compatible.
+	o := baseOptions()
+	o.PreferHDR = true
+	o.Playback = Playback{AV1: true}
+	if got, _ := argValue(BuildArgs(o), "-f"); !strings.Contains(got, "av01") {
+		t.Errorf("-f = %q, want HDR on an AV1 Mac to still prefer what plays", got)
+	}
+}
+
+func TestAudioPicksAreUntouchedByPlayback(t *testing.T) {
+	for _, playback := range []Playback{{}, {AV1: true}} {
+		o := baseOptions()
+		o.Pick = PickAudioM4A
+		o.Playback = playback
+		args := BuildArgs(o)
+		if got, _ := argValue(args, "-f"); got != "ba[ext=m4a]/ba/b" {
+			t.Errorf("-f = %q, want the audio selector unchanged", got)
+		}
+		if _, ok := argValue(args, "--merge-output-format"); ok {
+			t.Error("an audio download was given a video merge format")
+		}
 	}
 }

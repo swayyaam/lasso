@@ -93,7 +93,7 @@ func TestAnalyseFormatsBuckets(t *testing.T) {
 				videoFormat("1", 2026, 1036, 24, ""),
 			},
 			wantTiers: []int{1080},
-			wantBest:  1036,
+			wantBest:  1080,
 			wantLabel: "1080p",
 			wantVideo: true,
 		},
@@ -121,7 +121,7 @@ func TestAnalyseFormatsBuckets(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := AnalyseFormats(tc.formats)
+			got := AnalyseFormats(tc.formats, Playback{})
 
 			if !slices.Equal(tierHeights(got), tc.wantTiers) {
 				t.Errorf("tiers = %v, want %v", tierHeights(got), tc.wantTiers)
@@ -151,7 +151,7 @@ func TestStoryboardsAreNotCounted(t *testing.T) {
 		{ID: "sb2", Ext: "jpg", Note: "storyboard", VCodec: "none", ACodec: "none"},
 	}
 
-	got := AnalyseFormats(formats)
+	got := AnalyseFormats(formats, Playback{})
 	if got.CountedFormats != 2 {
 		t.Errorf("CountedFormats = %d, want 2 real formats", got.CountedFormats)
 	}
@@ -163,7 +163,7 @@ func TestTierBadges(t *testing.T) {
 		videoFormat("2", 1920, 1080, 30, ""),
 	}
 
-	got := AnalyseFormats(formats)
+	got := AnalyseFormats(formats, Playback{})
 	byHeight := map[int]ResolutionTier{}
 	for _, tier := range got.Tiers {
 		byHeight[tier.Height] = tier
@@ -186,7 +186,7 @@ func TestTierLabels(t *testing.T) {
 		videoFormat("1", 7680, 4320, 30, ""),
 		videoFormat("2", 3840, 2160, 30, ""),
 		videoFormat("3", 2560, 1440, 30, ""),
-	})
+	}, Playback{})
 
 	want := map[int][2]string{
 		4320: {"8K", "4320p"},
@@ -207,7 +207,7 @@ func TestTiersAreLargestFirst(t *testing.T) {
 		videoFormat("1", 640, 360, 30, ""),
 		videoFormat("2", 3840, 2160, 30, ""),
 		videoFormat("3", 1280, 720, 30, ""),
-	})
+	}, Playback{})
 
 	heights := tierHeights(got)
 	for i := 1; i < len(heights); i++ {
@@ -239,12 +239,12 @@ func TestGenericQualityOptionsForPlaylists(t *testing.T) {
 }
 
 func TestRealFixtureAnalysis(t *testing.T) {
-	m, err := ParseMetadata(readFixture(t, "single.json"))
+	m, err := ParseMetadata(readFixture(t, "single.json"), Playback{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got := AnalyseFormats(m.Formats)
+	got := AnalyseFormats(m.Formats, Playback{})
 	if !got.HasVideo {
 		t.Error("the fixture has video formats")
 	}
@@ -320,7 +320,7 @@ func TestTierToleranceBoundaries(t *testing.T) {
 // TestSourcesBelowTheLadderAreStillNamed covers old uploads: "Me at the zoo"
 // is a real 240p video, which offers no tier but must not be left unlabelled.
 func TestSourcesBelowTheLadderAreStillNamed(t *testing.T) {
-	got := AnalyseFormats([]Format{videoFormat("1", 320, 240, 30, "")})
+	got := AnalyseFormats([]Format{videoFormat("1", 320, 240, 30, "")}, Playback{})
 
 	if len(got.Tiers) != 0 {
 		t.Errorf("tiers = %v, want none below the lowest rung", tierHeights(got))
@@ -397,7 +397,7 @@ func TestDetectsAWithheldFormatList(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := AnalyseFormats(c.formats).Limited; got != c.want {
+			if got := AnalyseFormats(c.formats, Playback{}).Limited; got != c.want {
 				t.Errorf("Limited = %v, want %v", got, c.want)
 			}
 		})
@@ -407,7 +407,7 @@ func TestDetectsAWithheldFormatList(t *testing.T) {
 func TestWithheldListStillOffersWhatItHas(t *testing.T) {
 	// Flagging the list must not empty it: 360p is still downloadable, and a
 	// user who wants it anyway should not be blocked.
-	got := AnalyseFormats([]Format{muxedFormat("18", 640, 360)})
+	got := AnalyseFormats([]Format{muxedFormat("18", 640, 360)}, Playback{})
 
 	if !got.Limited {
 		t.Fatal("expected the list to be flagged")
@@ -460,7 +460,7 @@ func TestHDRSurfacesOnTheTier(t *testing.T) {
 		hdrFormat("401", 3840, 2160, 60, "HDR10"),
 		videoFormat("137", 1920, 1080, 30, ""),
 		audioFormat("140"),
-	})
+	}, Playback{})
 
 	var found bool
 	for _, tier := range got.Tiers {
@@ -496,7 +496,7 @@ func TestTierSizeAddsAudioToAVideoOnlyStream(t *testing.T) {
 	audio := audioFormat("140")
 	audio.Filesize = 5_000_000
 
-	got := AnalyseFormats([]Format{video, audio})
+	got := AnalyseFormats([]Format{video, audio}, Playback{})
 	for _, tier := range got.Tiers {
 		if tier.Height == 1080 && tier.Bytes != 105_000_000 {
 			t.Errorf("Bytes = %d, want video plus audio", tier.Bytes)
@@ -516,7 +516,7 @@ func TestMuxedTierSizeDoesNotDoubleCountAudio(t *testing.T) {
 	audio := audioFormat("140")
 	audio.Filesize = 5_000_000
 
-	got := AnalyseFormats([]Format{muxed, audio})
+	got := AnalyseFormats([]Format{muxed, audio}, Playback{})
 	for _, tier := range got.Tiers {
 		if tier.Height == 360 && tier.Bytes != 20_000_000 {
 			t.Errorf("Bytes = %d, want the muxed stream's own size", tier.Bytes)
@@ -527,7 +527,7 @@ func TestMuxedTierSizeDoesNotDoubleCountAudio(t *testing.T) {
 func TestUnknownSizeStaysUnknown(t *testing.T) {
 	// Fragmented and live streams state no size. A number that is quietly
 	// wrong is worse than no number.
-	got := AnalyseFormats([]Format{videoFormat("1", 1920, 1080, 30, ""), audioFormat("140")})
+	got := AnalyseFormats([]Format{videoFormat("1", 1920, 1080, 30, ""), audioFormat("140")}, Playback{})
 	for _, tier := range got.Tiers {
 		if tier.Bytes != 0 {
 			t.Errorf("Bytes = %d, want 0 when nothing stated a size", tier.Bytes)
@@ -544,7 +544,7 @@ func TestLosslessAudioIsAboutTheCodecNotTheTarget(t *testing.T) {
 	if lossy.IsLosslessAudio() {
 		t.Error("opus reported as lossless")
 	}
-	if AnalyseFormats([]Format{lossy}).LosslessAudio {
+	if AnalyseFormats([]Format{lossy}, Playback{}).LosslessAudio {
 		t.Error("a source serving only opus was reported as lossless")
 	}
 
@@ -553,7 +553,7 @@ func TestLosslessAudioIsAboutTheCodecNotTheTarget(t *testing.T) {
 	if !lossless.IsLosslessAudio() {
 		t.Error("flac not reported as lossless")
 	}
-	if !AnalyseFormats([]Format{lossless}).LosslessAudio {
+	if !AnalyseFormats([]Format{lossless}, Playback{}).LosslessAudio {
 		t.Error("a source serving flac was not reported as lossless")
 	}
 

@@ -125,13 +125,52 @@ func formatArgs(o Options) []string {
 
 	if height := o.Pick.maxHeight(); height > 0 {
 		h := strconv.Itoa(height)
+		capped := "[height<=" + h + "]"
 		// Fall back to the best available if nothing meets the cap, so a
 		// 720p-max video still downloads when 1080p was requested.
-		selector := fmt.Sprintf("bv*[height<=%s]+ba/b[height<=%s]/bv*+ba/b", h, h)
-		return []string{"-f", selector}
+		fallback := fmt.Sprintf("bv*%s+ba/b%s/bv*+ba/b", capped, capped)
+		if o.wantsPlayable() {
+			// A resolution asked for by name is honoured first: at that rung,
+			// an encode this Mac plays if there is one, and otherwise
+			// whatever the rung comes in. Someone who picked 4K on a Mac that
+			// cannot play VP9 still gets 4K; the interface says what it needs.
+			rung := capped + "[height>=" + strconv.Itoa(int(float64(height)*tierTolerance)) + "]"
+			return []string{"-f", playableFirst(rung, o.Playback) + "/" + fallback}
+		}
+		return []string{"-f", fallback}
 	}
 
+	if o.wantsPlayable() {
+		// "Best" is the best this Mac plays, not the best that exists. A
+		// file QuickTime cannot open is not the best of anything to someone
+		// who double-clicks it; the larger encode stays one named pick away.
+		return []string{"-f", playableFirst("", o.Playback) + "/bv*+ba/b"}
+	}
 	return []string{"-f", "bv*+ba/b"}
+}
+
+// playableFirst prefers, within filter, video this Mac plays joined to AAC
+// audio, then that video with any audio, then a single file that plays.
+//
+// AAC is asked for in the selector rather than through -S, because anything
+// prepended to -S outranks yt-dlp's language preference — and that would
+// trade a video's original-language track for a dubbed one to get a codec.
+func playableFirst(filter string, p Playback) string {
+	v := filter + p.selector()
+	return "bv*" + v + "+ba[acodec^=mp4a]/bv*" + v + "+ba/b" + v
+}
+
+// wantsPlayable reports whether Lasso is choosing the codec and container,
+// and so should choose ones that play on this Mac.
+//
+// A named container or codec is the user's decision and is left alone. So is
+// asking for HDR on a Mac without AV1: YouTube's HDR is VP9 or AV1 only, so
+// insisting on something QuickTime plays would quietly hand back SDR.
+func (o Options) wantsPlayable() bool {
+	if o.Pick.IsAudioOnly() || o.Container != ContainerAuto || o.VideoCodec != VideoCodecAuto {
+		return false
+	}
+	return !o.PreferHDR || o.Playback.AV1
 }
 
 // audioSelector prefers a source stream that already matches the target format,
@@ -209,6 +248,13 @@ func sortArgs(o Options) []string {
 }
 
 func containerArgs(o Options) []string {
+	if o.wantsPlayable() {
+		// MP4 when the streams allow it — what QuickTime, Quick Look and
+		// Photos open — and MKV when they do not, since it holds anything.
+		// Left to itself yt-dlp prefers WebM and MKV, neither of which
+		// QuickTime opens at all.
+		return []string{"--merge-output-format", "mp4/mkv"}
+	}
 	if o.Container == ContainerAuto || o.Pick.IsAudioOnly() {
 		return nil
 	}

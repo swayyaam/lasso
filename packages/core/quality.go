@@ -24,6 +24,9 @@ type ResolutionTier struct {
 	// here, plus the best audio when that stream carries none. Zero when the
 	// source does not say, which is common for fragmented and live streams.
 	Bytes int64 `json:"bytes"`
+	// Playable says whether this Mac plays the tier's encode natively — in
+	// QuickTime, Quick Look and Photos — rather than needing IINA or VLC.
+	Playable bool `json:"playable"`
 }
 
 // QualityOptions describes what a resolved link can actually be downloaded as.
@@ -34,8 +37,12 @@ type QualityOptions struct {
 	// HasVideo and HasAudio say which sections to show at all.
 	HasVideo bool `json:"hasVideo"`
 	HasAudio bool `json:"hasAudio"`
-	// BestHeight is the real top resolution, so "Best" can name it.
+	// BestHeight is what "Best" downloads: the top resolution this Mac plays
+	// natively, or the top resolution outright when none does.
 	BestHeight int `json:"bestHeight"`
+	// BestPlayable says whether "Best" plays natively, so the interface can
+	// say when it would need another player.
+	BestPlayable bool `json:"bestPlayable"`
 	// BestLabel is the label for that resolution, e.g. "8K".
 	BestLabel string `json:"bestLabel"`
 	// Approximate is true when the tiers are a generic ladder rather than
@@ -163,24 +170,32 @@ func (f Format) HDRName() string {
 	return ""
 }
 
+// tierState accumulates what the formats at one rung have in common.
+type tierState struct {
+	highFrameRate bool
+	hdr           bool
+	hdrFormat     string
+	// bestVideo is the largest video stream at this rung, which is the one
+	// yt-dlp's default ordering picks. muxed says whether it already
+	// carries audio, and so whether an audio stream has to be added.
+	bestVideo int64
+	muxed     bool
+	// The same for the encodes this Mac plays, which the download
+	// prefers at a rung when there are any — see formatArgs — and which
+	// the size estimate therefore has to describe.
+	plays         bool
+	bestPlayable  int64
+	playableMuxed bool
+}
+
 // AnalyseFormats works out which quality options a resolved link supports.
 //
 // Only formats that carry video and a usable height contribute a tier, so
 // storyboards, audio streams and sizeless entries cannot invent a resolution
 // the video does not have.
-func AnalyseFormats(formats []Format) QualityOptions {
+func AnalyseFormats(formats []Format, playback Playback) QualityOptions {
 	options := QualityOptions{}
 
-	type tierState struct {
-		highFrameRate bool
-		hdr           bool
-		hdrFormat     string
-		// bestVideo is the largest video stream at this rung, which is the one
-		// yt-dlp's default ordering picks. muxed says whether it already
-		// carries audio, and so whether an audio stream has to be added.
-		bestVideo int64
-		muxed     bool
-	}
 	seen := map[int]*tierState{}
 
 	// The best audio stream, added to any tier whose video has none.
@@ -189,6 +204,9 @@ func AnalyseFormats(formats []Format) QualityOptions {
 	// A site serving a link properly offers separate video and audio streams to
 	// combine. Their total absence is the signal that something was withheld.
 	adaptive := false
+
+	// tallest is the real top resolution, whether or not it plays here.
+	tallest := 0
 
 	for _, f := range formats {
 		if f.IsStoryboard() {
@@ -219,8 +237,8 @@ func AnalyseFormats(formats []Format) QualityOptions {
 		if !f.HasAudio() {
 			adaptive = true
 		}
-		if short > options.BestHeight {
-			options.BestHeight = short
+		if short > tallest {
+			tallest = short
 		}
 
 		height, ok := tierFor(short)
@@ -245,6 +263,13 @@ func AnalyseFormats(formats []Format) QualityOptions {
 			state.bestVideo = size
 			state.muxed = f.HasAudio()
 		}
+		if playback.Plays(f.VCodec) {
+			state.plays = true
+			if size := f.Size(); size > state.bestPlayable {
+				state.bestPlayable = size
+				state.playableMuxed = f.HasAudio()
+			}
+		}
 	}
 
 	for _, rung := range tierLadder {
@@ -259,7 +284,8 @@ func AnalyseFormats(formats []Format) QualityOptions {
 			HasHighFrameRate: state.highFrameRate,
 			HasHDR:           state.hdr,
 			HDRFormat:        state.hdrFormat,
-			Bytes:            estimate(state.bestVideo, state.muxed, bestAudio),
+			Bytes:            state.estimate(bestAudio),
+			Playable:         state.plays,
 		})
 	}
 
@@ -267,14 +293,36 @@ func AnalyseFormats(formats []Format) QualityOptions {
 		return options.Tiers[i].Height > options.Tiers[j].Height
 	})
 
-	options.BestLabel = labelFor(options.BestHeight)
-	options.Limited = looksLimited(options.HasVideo, options.BestHeight, adaptive)
+	options.Limited = looksLimited(options.HasVideo, tallest, adaptive)
 	options.AudioBytes = bestAudio
+
+	// "Best" is the top rung this Mac plays, falling back to the top rung
+	// outright when none does — the same choice formatArgs makes.
+	options.BestHeight = tallest
+	options.BestLabel = labelFor(tallest)
 	if len(options.Tiers) > 0 {
-		// "Best" downloads the top rung, so it costs what the top rung costs.
-		options.BestBytes = options.Tiers[0].Bytes
+		best := options.Tiers[0]
+		for _, tier := range options.Tiers {
+			if tier.Playable {
+				best = tier
+				break
+			}
+		}
+		options.BestHeight = best.Height
+		options.BestLabel = best.Label
+		options.BestBytes = best.Bytes
+		options.BestPlayable = best.Playable
 	}
 	return options
+}
+
+// estimate sizes what the download will choose at this rung: an encode this
+// Mac plays when there is one, otherwise the largest.
+func (t *tierState) estimate(audio int64) int64 {
+	if t.plays {
+		return estimate(t.bestPlayable, t.playableMuxed, audio)
+	}
+	return estimate(t.bestVideo, t.muxed, audio)
 }
 
 // estimate adds the audio stream to a video stream that has none.

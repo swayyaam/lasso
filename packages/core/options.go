@@ -209,6 +209,10 @@ type Options struct {
 	// "arc" browser, so Arc is requested as Chromium with an explicit profile.
 	ArcProfileDir string `json:"arcProfileDir"`
 
+	// Playback is what this Mac plays natively, which decides the codec and
+	// container "Best" prefers. The backend fills it in; see Playback.
+	Playback Playback `json:"playback"`
+
 	// DenoPath is the bundled deno, which yt-dlp needs as a JavaScript runtime
 	// for YouTube's challenges. Lasso puts it on the subprocess PATH, but the
 	// command shown to the user has to say where it is explicitly or a paste

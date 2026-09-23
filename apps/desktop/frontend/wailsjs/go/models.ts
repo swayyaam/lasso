@@ -225,6 +225,18 @@ export namespace core {
 	        this.filename = source["filename"];
 	    }
 	}
+	export class Playback {
+	    av1: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Playback(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.av1 = source["av1"];
+	    }
+	}
 	export class Output {
 	    folder: string;
 	    template: string;
@@ -316,6 +328,7 @@ export namespace core {
 	    output: Output;
 	    ffmpegLocation: string;
 	    arcProfileDir: string;
+	    playback: Playback;
 	    denoPath: string;
 	
 	    static createFrom(source: any = {}) {
@@ -338,6 +351,7 @@ export namespace core {
 	        this.output = this.convertValues(source["output"], Output);
 	        this.ffmpegLocation = source["ffmpegLocation"];
 	        this.arcProfileDir = source["arcProfileDir"];
+	        this.playback = this.convertValues(source["playback"], Playback);
 	        this.denoPath = source["denoPath"];
 	    }
 	
@@ -417,6 +431,7 @@ export namespace core {
 	    hasHDR: boolean;
 	    hdrFormat: string;
 	    bytes: number;
+	    playable: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ResolutionTier(source);
@@ -431,6 +446,7 @@ export namespace core {
 	        this.hasHDR = source["hasHDR"];
 	        this.hdrFormat = source["hdrFormat"];
 	        this.bytes = source["bytes"];
+	        this.playable = source["playable"];
 	    }
 	}
 	export class QualityOptions {
@@ -438,6 +454,7 @@ export namespace core {
 	    hasVideo: boolean;
 	    hasAudio: boolean;
 	    bestHeight: number;
+	    bestPlayable: boolean;
 	    bestLabel: string;
 	    approximate: boolean;
 	    countedFormats: number;
@@ -456,6 +473,7 @@ export namespace core {
 	        this.hasVideo = source["hasVideo"];
 	        this.hasAudio = source["hasAudio"];
 	        this.bestHeight = source["bestHeight"];
+	        this.bestPlayable = source["bestPlayable"];
 	        this.bestLabel = source["bestLabel"];
 	        this.approximate = source["approximate"];
 	        this.countedFormats = source["countedFormats"];
@@ -531,6 +549,7 @@ export namespace core {
 		    return a;
 		}
 	}
+	
 	
 	
 	

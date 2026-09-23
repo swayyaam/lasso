@@ -43,12 +43,12 @@ func newQueueHarness(t *testing.T, runner Runner, concurrency int) *queueHarness
 
 // newQueueHarnessWith is newQueueHarness plus a tagger, for the tests that care
 // about what happens to split-out tracks.
-func newQueueHarnessWith(t *testing.T, runner Runner, concurrency int, tagger Tagger) *queueHarness {
+func newQueueHarnessWith(t *testing.T, runner Runner, concurrency int, tagger Tagger, extra ...func(*QueueConfig)) *queueHarness {
 	t.Helper()
 	h := &queueHarness{states: map[string][]State{}}
 	h.cond = sync.NewCond(&h.mu)
 
-	q, err := NewQueue(QueueConfig{
+	cfg := QueueConfig{
 		Runner:      runner,
 		Tagger:      tagger,
 		Concurrency: concurrency,
@@ -60,7 +60,11 @@ func newQueueHarnessWith(t *testing.T, runner Runner, concurrency int, tagger Ta
 			h.cond.Broadcast()
 			h.mu.Unlock()
 		},
-	})
+	}
+	for _, edit := range extra {
+		edit(&cfg)
+	}
+	q, err := NewQueue(cfg)
 	if err != nil {
 		t.Fatalf("NewQueue: %v", err)
 	}

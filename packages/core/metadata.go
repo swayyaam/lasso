@@ -46,10 +46,28 @@ type Format struct {
 }
 
 // HasVideo reports whether the format carries a video track.
-func (f Format) HasVideo() bool { return f.VCodec != "" && f.VCodec != "none" }
+//
+// yt-dlp says "none" when it knows there is no video, and says nothing at all
+// when it does not know — which is how archive.org lists every format. Treating
+// "not stated" as "none" made the whole quality picker vanish for those links,
+// so a format with dimensions counts as video whatever its codec is called.
+func (f Format) HasVideo() bool {
+	switch f.VCodec {
+	case "none":
+		return false
+	case "":
+		return f.Width > 0 || f.Height > 0
+	default:
+		return true
+	}
+}
 
 // HasAudio reports whether the format carries an audio track.
-func (f Format) HasAudio() bool { return f.ACodec != "" && f.ACodec != "none" }
+//
+// An unstated codec counts as audio. Extractors that know a stream is silent
+// say "none" — every video-only DASH stream does — so a whole file from a site
+// that names no codecs is, in practice, a file with sound.
+func (f Format) HasAudio() bool { return f.ACodec != "none" }
 
 // Size is the best known size in bytes, exact if available and estimated
 // otherwise, or zero when unknown.
@@ -150,7 +168,7 @@ type rawEntry struct {
 }
 
 // ParseMetadata converts a yt-dlp -J document into Metadata.
-func ParseMetadata(data []byte) (*Metadata, error) {
+func ParseMetadata(data []byte, playback Playback) (*Metadata, error) {
 	var raw rawMetadata
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("could not read the video details: %w", err)
@@ -206,7 +224,7 @@ func ParseMetadata(data []byte) (*Metadata, error) {
 			DynamicRange:   f.DynamicRange,
 		})
 	}
-	m.Quality = AnalyseFormats(m.Formats)
+	m.Quality = AnalyseFormats(m.Formats, playback)
 	return m, nil
 }
 
@@ -307,7 +325,7 @@ func FetchMetadata(ctx context.Context, runner Runner, o Options) (*Metadata, er
 	if out.Len() == 0 {
 		return nil, ClassifyError(strings.Join(errLines, "\n"), fmt.Errorf("yt-dlp returned nothing"))
 	}
-	return ParseMetadata([]byte(out.String()))
+	return ParseMetadata([]byte(out.String()), o.Playback)
 }
 
 func firstNonEmpty(values ...string) string {

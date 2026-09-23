@@ -18,7 +18,7 @@ func readFixture(t *testing.T, name string) []byte {
 }
 
 func TestParseSingleVideo(t *testing.T) {
-	m, err := ParseMetadata(readFixture(t, "single.json"))
+	m, err := ParseMetadata(readFixture(t, "single.json"), Playback{})
 	if err != nil {
 		t.Fatalf("ParseMetadata: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestParseSingleVideo(t *testing.T) {
 }
 
 func TestParseFormatTracks(t *testing.T) {
-	m, err := ParseMetadata(readFixture(t, "single.json"))
+	m, err := ParseMetadata(readFixture(t, "single.json"), Playback{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestParseFormatTracks(t *testing.T) {
 }
 
 func TestParsePlaylist(t *testing.T) {
-	m, err := ParseMetadata(readFixture(t, "playlist.json"))
+	m, err := ParseMetadata(readFixture(t, "playlist.json"), Playback{})
 	if err != nil {
 		t.Fatalf("ParseMetadata: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestParseMetadataRejectsGarbage(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := ParseMetadata([]byte(tc.input)); err == nil {
+			if _, err := ParseMetadata([]byte(tc.input), Playback{}); err == nil {
 				t.Error("ParseMetadata accepted invalid input")
 			}
 		})
@@ -124,7 +124,7 @@ func TestParseMetadataToleratesNulls(t *testing.T) {
 	input := `{"_type":"video","id":"x","title":"T","duration":null,
 	           "formats":[{"format_id":"1","ext":"mp4","fps":null,"filesize":null,"tbr":null}]}`
 
-	m, err := ParseMetadata([]byte(input))
+	m, err := ParseMetadata([]byte(input), Playback{})
 	if err != nil {
 		t.Fatalf("ParseMetadata: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestBestThumbnailHandlesMissingDimensions(t *testing.T) {
 }
 
 func TestBestThumbnailOnRealFixture(t *testing.T) {
-	m, err := ParseMetadata(readFixture(t, "single.json"))
+	m, err := ParseMetadata(readFixture(t, "single.json"), Playback{})
 	if err != nil {
 		t.Fatal(err)
 	}
