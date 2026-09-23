@@ -34,9 +34,16 @@ export {
   ExternalLink as OpenFile,
   Copy,
 
+  // What a download is
+  Video,
+  Music as Audio,
+  ListVideo as Playlist,
+
   // Navigation and panes
   ListVideo as Queue,
   History,
+  ArrowLeft as Back,
+  Search as Find,
   Settings,
   SlidersHorizontal as Advanced,
   Terminal as Command,

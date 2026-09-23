@@ -2,6 +2,7 @@ package core
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -827,5 +828,76 @@ func TestAudioPicksAreUntouchedByPlayback(t *testing.T) {
 		if _, ok := argValue(args, "--merge-output-format"); ok {
 			t.Error("an audio download was given a video merge format")
 		}
+	}
+}
+
+// TestEveryOfferedRungIsAPickThatCaps ties the quality list to the arg
+// builder. The interface offers each tier as "<height>p"; the arg builder
+// used to know only four of them, so 8K, 480p and 360p were offered and then
+// downloaded as Best — a 38 MB pick arriving as 712 MB of 4K.
+func TestEveryOfferedRungIsAPickThatCaps(t *testing.T) {
+	for _, tier := range GenericQualityOptions().Tiers {
+		pick := QuickPick(strconv.Itoa(tier.Height) + "p")
+		o := baseOptions()
+		o.Pick = pick
+		if err := o.Validate(); err != nil {
+			t.Errorf("%s: Validate = %v, want an offered rung to be accepted", pick, err)
+			continue
+		}
+
+		args := BuildArgs(o)
+		format, _ := argValue(args, "-f")
+		if !strings.Contains(format, "[height<="+strconv.Itoa(tier.Height)+"]") {
+			t.Errorf("%s: -f = %q, want it capped at %d", pick, format, tier.Height)
+		}
+		sort, _ := argValue(args, "-S")
+		if !strings.Contains(sort, "res:"+strconv.Itoa(tier.Height)) {
+			t.Errorf("%s: -S = %q, want res:%d", pick, sort, tier.Height)
+		}
+	}
+}
+
+func TestUnknownPicksAreRefused(t *testing.T) {
+	// Anything else used to download as Best without a word.
+	for _, pick := range []QuickPick{"999p", "4k", "audio-wav", "p", "1080"} {
+		o := baseOptions()
+		o.Pick = pick
+		if err := o.Validate(); err == nil {
+			t.Errorf("%q: Validate accepted a quality Lasso does not offer", pick)
+		}
+	}
+	for _, pick := range []QuickPick{"", PickBest, PickAudioOriginal, PickAudioFLAC, Pick360p, Pick4320p} {
+		o := baseOptions()
+		o.Pick = pick
+		if err := o.Validate(); err != nil {
+			t.Errorf("%q: Validate = %v", pick, err)
+		}
+	}
+}
+
+func TestCappedPicksNameTheirRung(t *testing.T) {
+	// yt-dlp skips a file that already exists. Without the rung in the name,
+	// a 480p copy of a video already saved in 4K "finished" by pointing at
+	// the 4K file.
+	cases := map[QuickPick]string{
+		Pick480p:          "%(title)s [%(id)s] 480p.%(ext)s",
+		Pick2160p:         "%(title)s [%(id)s] 4K.%(ext)s",
+		PickBest:          DefaultTemplate,
+		PickAudioOriginal: DefaultTemplate,
+	}
+	for pick, want := range cases {
+		o := baseOptions()
+		o.Pick = pick
+		if got, _ := argValue(BuildArgs(o), "-o"); got != want {
+			t.Errorf("%s: -o = %q, want %q", pick, got, want)
+		}
+	}
+
+	// A template the user wrote is theirs, rung or not.
+	o := baseOptions()
+	o.Pick = Pick480p
+	o.Output.Template = "%(title)s.%(ext)s"
+	if got, _ := argValue(BuildArgs(o), "-o"); got != "%(title)s.%(ext)s" {
+		t.Errorf("-o = %q, want the user's own template untouched", got)
 	}
 }

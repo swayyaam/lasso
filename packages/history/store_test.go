@@ -240,3 +240,31 @@ func TestAllMarshalsAsAList(t *testing.T) {
 		t.Errorf("an empty history marshals as %s, want []", raw)
 	}
 }
+
+func TestFromItemKeepsWhatTheRowShows(t *testing.T) {
+	item := core.Item{
+		ID: "1", Title: "Clip", State: core.StateDone,
+		Uploader: "Someone", Duration: 61, Thumbnail: "https://i.example.com/t.jpg",
+		Resolution: "1080p", Bytes: 4096,
+		Progress: core.Progress{Downloaded: 1000},
+	}
+	entry, ok := FromItem(item)
+	if !ok {
+		t.Fatal("a finished item should make an entry")
+	}
+	if entry.Uploader != "Someone" || entry.Duration != 61 || entry.Thumbnail != item.Thumbnail || entry.Resolution != "1080p" {
+		t.Errorf("entry lost the item's source: %+v", entry)
+	}
+	if entry.Bytes != 4096 {
+		t.Errorf("Bytes = %d, want the file's size over the transfer's", entry.Bytes)
+	}
+	if src := entry.Source(); src.Title != "Clip" || src.Thumbnail != item.Thumbnail {
+		t.Errorf("Source = %+v, want it to round-trip for Download again", src)
+	}
+
+	// An item finished before sizes were measured still reports something.
+	item.Bytes = 0
+	if entry, _ := FromItem(item); entry.Bytes != 1000 {
+		t.Errorf("Bytes = %d, want the transfer size as a fallback", entry.Bytes)
+	}
+}

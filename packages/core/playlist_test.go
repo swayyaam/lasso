@@ -63,7 +63,7 @@ func TestEachVideoGetsItsOwnDownload(t *testing.T) {
 	if o.Pick != Pick1080p {
 		t.Error("the quality chosen for the playlist was not carried to its videos")
 	}
-	if o.Output.Template != "Popular Music Videos/"+DefaultTemplate {
+	if o.Output.Template != "Popular Music Videos/"+Pick1080p.defaultTemplate() {
 		t.Errorf("template = %q, want the videos gathered in a folder named after the playlist", o.Output.Template)
 	}
 }
@@ -103,8 +103,8 @@ func TestAnEntryWithoutAUsableLinkIsRefused(t *testing.T) {
 func TestPlaylistVideosShareAGroupAndAreSaved(t *testing.T) {
 	h := newQueueHarnessWith(t, blockingRunner(), 1, nil)
 	group := NewGroupID()
-	a, _ := h.q.AddToGroup(uniqueOptions(), "One", group, "Mix")
-	b, _ := h.q.AddToGroup(uniqueOptions(), "Two", group, "Mix")
+	a, _ := h.q.AddToGroup(uniqueOptions(), Source{Title: "One"}, group, "Mix")
+	b, _ := h.q.AddToGroup(uniqueOptions(), Source{Title: "Two"}, group, "Mix")
 	if a.Group != group || b.Group != group || a.GroupTitle != "Mix" {
 		t.Errorf("group fields = %q/%q, %q; want both in %q", a.Group, a.GroupTitle, b.Group, group)
 	}

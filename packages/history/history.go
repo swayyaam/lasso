@@ -34,8 +34,16 @@ type Entry struct {
 	ErrorKind core.ErrorKind `json:"errorKind"`
 	// Notice is a caveat about a download that otherwise succeeded.
 	Notice string `json:"notice"`
-	// Bytes is the transfer size, when it was known.
+	// Bytes is the file's size on disk, or the transfer size for an entry
+	// recorded before Lasso measured the file.
 	Bytes int64 `json:"bytes"`
+	// Uploader, Duration and Thumbnail are what the link resolved to; see
+	// core.Source. Empty on entries older than 0.2.
+	Uploader  string  `json:"uploader"`
+	Duration  float64 `json:"duration"`
+	Thumbnail string  `json:"thumbnail"`
+	// Resolution labels the finished file, e.g. "1080p", empty for audio.
+	Resolution string `json:"resolution"`
 	// FinishedAt is Unix milliseconds, matching core.Item.AddedAt — Wails
 	// cannot model a time.Time and would emit an untyped value for it.
 	FinishedAt int64 `json:"finishedAt"`
@@ -59,9 +67,27 @@ func FromItem(item core.Item) (Entry, bool) {
 		Message:    item.Message,
 		ErrorKind:  item.ErrorKind,
 		Notice:     item.Notice,
-		Bytes:      item.Progress.Downloaded,
+		Bytes:      bytesOf(item),
+		Uploader:   item.Uploader,
+		Duration:   item.Duration,
+		Thumbnail:  item.Thumbnail,
+		Resolution: item.Resolution,
 		FinishedAt: time.Now().UnixMilli(),
 	}, true
+}
+
+// bytesOf prefers the file's measured size to the transfer's: merging,
+// remuxing and extracting audio all change it after the last progress line.
+func bytesOf(item core.Item) int64 {
+	if item.Bytes > 0 {
+		return item.Bytes
+	}
+	return item.Progress.Downloaded
+}
+
+// Source is what the entry was a download of, for running it again.
+func (e Entry) Source() core.Source {
+	return core.Source{Title: e.Title, Uploader: e.Uploader, Duration: e.Duration, Thumbnail: e.Thumbnail}
 }
 
 // Succeeded reports whether the entry produced a file.

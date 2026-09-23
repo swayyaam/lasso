@@ -7,18 +7,28 @@ import { cx } from "../cx";
  * for fragmented and live streams; that renders as an indeterminate sweep
  * rather than a bar stuck at zero.
  *
- * The fill carries the category colour for what is happening — blue while
- * bytes are moving, purple while ffmpeg is working on a file that has already
- * arrived. Those are genuinely different waits: the first has an end you can
- * predict from the speed, and the second does not, so it is worth being able
- * to tell them apart from across the room.
+ * The fill is a category colour. The app's own screens use the colour of what
+ * is being saved — purple for video, green for audio — so a row reads the same
+ * as the choice that started it. The older blue and purple pair, bytes moving
+ * against ffmpeg working, remains for anything without a kind.
  */
 export function ProgressBar({
   percent,
   tone = "downloading",
+  size = "sm",
+  label,
 }: {
   percent: number;
-  tone?: "downloading" | "processing" | "paused" | "danger";
+  /**
+   * video and audio are the category colours, so a bar says what is being
+   * saved as well as how far along it is — the same purple and green as the
+   * choice that started it.
+   */
+  tone?: "downloading" | "processing" | "paused" | "danger" | "video" | "audio";
+  /** md is for the one download a screen is focused on. */
+  size?: "sm" | "md";
+  /** Names the bar for assistive technology, usually the download's title. */
+  label?: string;
 }) {
   const indeterminate = percent < 0;
 
@@ -28,14 +38,17 @@ export function ProgressBar({
     // A paused bar is a fact, not an activity, so it drops to ink.
     paused: "bg-ink-tertiary",
     danger: "bg-danger",
+    video: "bg-accent-purple",
+    audio: "bg-accent-green",
   };
 
   return (
     <div
       // shrink-0 matters: the bar lives in a fixed-height row, and without it
       // flexbox collapses a 4px track to nothing the moment content grows.
-      className="h-1 w-full shrink-0 overflow-hidden rounded-pill bg-surface-3"
+      className={cx("w-full shrink-0 overflow-hidden rounded-pill bg-surface-3", size === "md" ? "h-1.5" : "h-1")}
       role="progressbar"
+      aria-label={label}
       aria-valuenow={indeterminate ? undefined : Math.round(percent)}
       aria-valuemin={0}
       aria-valuemax={100}

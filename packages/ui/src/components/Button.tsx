@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { cx } from "../cx";
 
 type Variant = "primary" | "secondary" | "tertiary" | "danger";
-type Size = "sm" | "md" | "icon";
+type Size = "sm" | "md" | "lg" | "icon";
 
 /**
  * Button implements the button styles in DESIGN-webflow.md.
@@ -83,11 +83,14 @@ export function Button({
     // adjacent labels sit ~32px apart with nothing between them to explain the
     // gap — which is what made the queue row's Pause and Cancel look unrelated
     // to each other and to the row.
-    sm: "h-7 px-xs gap-xxs",
-    md: "h-9 px-md gap-xs",
+    sm: "h-7 px-xs gap-xxs text-button",
+    md: "h-9 px-md gap-xs text-button",
+    // The document's button-md: 16px labels. Kept for the one action a
+    // screen exists to take, so it is the largest thing you can press.
+    lg: "h-12 px-lg gap-xs text-subhead",
     // Square, for a glyph with no label. The accessible name has to come from
     // aria-label or a tooltip.
-    icon: "size-7 gap-0",
+    icon: "size-7 gap-0 text-button",
   };
 
   return (
@@ -96,7 +99,7 @@ export function Button({
       disabled={disabled || busy}
       className={cx(
         "no-drag inline-flex shrink-0 items-center justify-center rounded-sm",
-        "text-button whitespace-nowrap",
+        "whitespace-nowrap",
         "transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-standard",
         // Disabled resolves to documented colours rather than an opacity fade,
         // so a disabled primary does not read as a dimmer primary.

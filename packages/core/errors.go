@@ -142,6 +142,8 @@ var classifiers = []struct {
 		message: "That page doesn't exist. The site answered, but there's nothing at that address, so check the link.",
 		patterns: []string{
 			"http error 404", "http error 410", "404: not found", "410: gone",
+			// YouTube answering for a playlist ID that is not there.
+			"the playlist does not exist",
 		},
 	},
 	{
@@ -211,8 +213,10 @@ func ClassifyError(output string, err error) *DownloadError {
 	}
 
 	return &DownloadError{
-		Kind:    ErrUnknown,
-		Message: "The download failed. Open details to see what yt-dlp reported.",
+		Kind: ErrUnknown,
+		// Not "the download failed": this is also what a link that would not
+		// resolve says, before any download was asked for.
+		Message: "yt-dlp could not do that. Open details to see what it reported.",
 		Raw:     raw,
 		Err:     err,
 	}

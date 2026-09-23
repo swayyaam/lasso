@@ -393,12 +393,17 @@ export namespace core {
 	    title: string;
 	    state: string;
 	    progress: Progress;
+	    uploader: string;
+	    duration: number;
+	    thumbnail: string;
 	    addedAt: number;
 	    message: string;
 	    detail: string;
 	    errorKind: string;
 	    notice: string;
 	    filePath: string;
+	    resolution: string;
+	    bytes: number;
 	    group: string;
 	    groupTitle: string;
 	
@@ -413,12 +418,17 @@ export namespace core {
 	        this.title = source["title"];
 	        this.state = source["state"];
 	        this.progress = this.convertValues(source["progress"], Progress);
+	        this.uploader = source["uploader"];
+	        this.duration = source["duration"];
+	        this.thumbnail = source["thumbnail"];
 	        this.addedAt = source["addedAt"];
 	        this.message = source["message"];
 	        this.detail = source["detail"];
 	        this.errorKind = source["errorKind"];
 	        this.notice = source["notice"];
 	        this.filePath = source["filePath"];
+	        this.resolution = source["resolution"];
+	        this.bytes = source["bytes"];
 	        this.group = source["group"];
 	        this.groupTitle = source["groupTitle"];
 	    }
@@ -582,6 +592,24 @@ export namespace core {
 	
 	
 	
+	export class Source {
+	    title: string;
+	    uploader: string;
+	    duration: number;
+	    thumbnail: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Source(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.title = source["title"];
+	        this.uploader = source["uploader"];
+	        this.duration = source["duration"];
+	        this.thumbnail = source["thumbnail"];
+	    }
+	}
 	
 
 }
@@ -664,6 +692,10 @@ export namespace history {
 	    errorKind: string;
 	    notice: string;
 	    bytes: number;
+	    uploader: string;
+	    duration: number;
+	    thumbnail: string;
+	    resolution: string;
 	    finishedAt: number;
 	
 	    static createFrom(source: any = {}) {
@@ -682,6 +714,10 @@ export namespace history {
 	        this.errorKind = source["errorKind"];
 	        this.notice = source["notice"];
 	        this.bytes = source["bytes"];
+	        this.uploader = source["uploader"];
+	        this.duration = source["duration"];
+	        this.thumbnail = source["thumbnail"];
+	        this.resolution = source["resolution"];
 	        this.finishedAt = source["finishedAt"];
 	    }
 	

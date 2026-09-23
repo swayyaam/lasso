@@ -5,18 +5,25 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 // QuickPick is the one-click quality choice on the main screen.
 type QuickPick string
 
+// A resolution pick is a rung of tierLadder followed by "p", so every rung the
+// quality list can offer is a pick the arg builder can cap at. These name the
+// common ones; maxHeight reads any rung.
 const (
 	PickBest  QuickPick = "best"
+	Pick4320p QuickPick = "4320p"
 	Pick2160p QuickPick = "2160p"
 	Pick1440p QuickPick = "1440p"
 	Pick1080p QuickPick = "1080p"
 	Pick720p  QuickPick = "720p"
+	Pick480p  QuickPick = "480p"
+	Pick360p  QuickPick = "360p"
 	// PickAudioOriginal keeps the site's own audio stream, changing only the
 	// container it sits in. It is the highest-quality audio any site can give
 	// you: every other audio pick re-encodes, and re-encoding a lossy stream
@@ -30,18 +37,28 @@ const (
 
 // maxHeight is the vertical resolution cap a pick implies, or 0 for no cap.
 func (p QuickPick) maxHeight() int {
-	switch p {
-	case Pick2160p:
-		return 2160
-	case Pick1440p:
-		return 1440
-	case Pick1080p:
-		return 1080
-	case Pick720p:
-		return 720
-	default:
+	digits, ok := strings.CutSuffix(string(p), "p")
+	if !ok {
 		return 0
 	}
+	height, err := strconv.Atoi(digits)
+	if err != nil {
+		return 0
+	}
+	// Read off the ladder rather than a list of its own: the two used to be
+	// separate, and 8K, 480p and 360p were offered but downloaded as Best.
+	for _, rung := range tierLadder {
+		if rung.height == height {
+			return height
+		}
+	}
+	return 0
+}
+
+// Known reports whether the pick is one Lasso offers. An unknown one is
+// refused rather than downloaded as Best, which is what it used to become.
+func (p QuickPick) Known() bool {
+	return p == "" || p == PickBest || p.IsAudioOnly() || p.maxHeight() > 0
 }
 
 // audioFormat is the target format for an audio-only pick, or "" for video.
@@ -199,6 +216,20 @@ type Output struct {
 // DefaultTemplate is the filename template used when none is set.
 const DefaultTemplate = "%(title)s [%(id)s].%(ext)s"
 
+// defaultTemplate is DefaultTemplate for a pick.
+//
+// A resolution pick carries its rung in the name, "Title [id] 480p.mp4".
+// yt-dlp skips a download whose file already exists, and without the rung a
+// 480p copy of something already saved in 4K had the same name — so it
+// finished at once, pointing at the 4K file. The label is Lasso's own rather
+// than yt-dlp's height field, which is the long side of a vertical video.
+func (p QuickPick) defaultTemplate() string {
+	if height := p.maxHeight(); height > 0 {
+		return "%(title)s [%(id)s] " + ResolutionLabel(height) + ".%(ext)s"
+	}
+	return DefaultTemplate
+}
+
 // Options is the complete description of one download request. It is the sole
 // input to BuildArgs, which is a pure function of it.
 type Options struct {
@@ -268,6 +299,10 @@ func (o Options) Validate() error {
 				return fmt.Errorf("the filename template cannot contain ..")
 			}
 		}
+	}
+
+	if !o.Pick.Known() {
+		return fmt.Errorf("%q is not a quality Lasso offers", string(o.Pick))
 	}
 
 	if o.Network.RateLimit != "" && !rateLimitPattern.MatchString(o.Network.RateLimit) {

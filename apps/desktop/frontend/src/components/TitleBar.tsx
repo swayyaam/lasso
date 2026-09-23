@@ -1,4 +1,4 @@
-import { Button, Icon } from "@lasso/ui";
+import { Button, Icon, Spinner } from "@lasso/ui";
 
 /**
  * TitleBar is the app's own header, standing in for the system title bar.
@@ -6,22 +6,51 @@ import { Button, Icon } from "@lasso/ui";
  * The window is frameless with inset traffic lights, so this strip doubles as
  * the drag region — a stock macOS title bar would show as a grey band against
  * the canvas. The left padding clears the traffic lights.
+ *
+ * It carries the two places to go that are not the task at hand, History and
+ * Settings, and — only while the downloads are off screen — how many are still
+ * running, as the way back to them.
  */
 export function TitleBar({
   onOpenSettings,
-  ytDlpVersion,
+  onOpenHistory,
+  activity,
+  busy,
+  onShowDownloads,
 }: {
   onOpenSettings: () => void;
-  ytDlpVersion?: string;
+  onOpenHistory?: () => void;
+  /** "2 downloading" or "1 paused", shown while the downloads are off screen. */
+  activity: string;
+  /** Whether anything is moving, which is what the spinner claims. */
+  busy: boolean;
+  onShowDownloads: () => void;
 }) {
   return (
-    <header className="drag-region flex h-14 shrink-0 items-center gap-sm border-b border-hairline pl-20 pr-md">
+    <header className="drag-region flex h-14 shrink-0 items-center gap-xs border-b border-hairline pr-md pl-20">
       <Wordmark />
 
       <div className="flex-1" />
 
-      {ytDlpVersion && (
-        <span className="text-caption text-ink-tertiary tabular-nums">yt-dlp {ytDlpVersion}</span>
+      {activity && (
+        <Button
+          variant="tertiary"
+          size="sm"
+          onClick={onShowDownloads}
+          icon={busy ? <Spinner /> : <Icon.Pause className="size-3.5" strokeWidth={1.75} aria-hidden />}
+        >
+          {activity}
+        </Button>
+      )}
+      {onOpenHistory && (
+        <Button
+          variant="tertiary"
+          size="sm"
+          onClick={onOpenHistory}
+          icon={<Icon.History className="size-3.5" strokeWidth={1.75} aria-hidden />}
+        >
+          History
+        </Button>
       )}
       <Button
         variant="tertiary"
@@ -35,10 +64,7 @@ export function TitleBar({
   );
 }
 
-/**
- * Wordmark is one of the few places design.md permits the lavender accent.
- * The glyph is a lasso loop drawn from a circle and a trailing stroke.
- */
+/** Wordmark is the lasso loop, drawn from an ellipse and a trailing stroke. */
 function Wordmark() {
   return (
     <div className="flex items-center gap-xs">
@@ -52,7 +78,7 @@ function Wordmark() {
           className="text-primary"
         />
       </svg>
-      <span className="text-body-sm font-medium tracking-tight text-ink">Lasso</span>
+      <span className="text-body-sm font-semibold text-ink">Lasso</span>
     </div>
   );
 }

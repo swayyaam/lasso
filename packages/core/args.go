@@ -80,7 +80,7 @@ const progressTemplate = `download:{"stage":"downloading",` +
 //
 // after_move runs once per finished file, after every post-processor and after
 // the final move into place, so %(filepath)s is the file on disk.
-const completedTemplate = `after_move:{"stage":"complete","path":%(filepath)j}`
+const completedTemplate = `after_move:{"stage":"complete","path":%(filepath)j,"width":%(width|0)j,"height":%(height|0)j}`
 
 // ExecArgs is BuildArgs plus the flags that make progress machine-readable.
 //
@@ -418,7 +418,7 @@ func outputArgs(o Options) []string {
 	}
 	template := o.Output.Template
 	if template == "" {
-		template = DefaultTemplate
+		template = o.Pick.defaultTemplate()
 	}
 	return append(args, "-o", template)
 }

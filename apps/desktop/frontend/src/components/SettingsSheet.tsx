@@ -1,12 +1,20 @@
 import { useEffect, useState } from "react";
-import { Banner, Button, Card, Chip, Details, Dropdown, Eyebrow, Icon, LoadingState, MonoBlock, cx } from "@lasso/ui";
-import { api, binaries, main } from "../bindings";
+import { Banner, Button, Card, Chip, Details, Dropdown, Eyebrow, Icon, Input, LoadingState, MonoBlock, cx } from "@lasso/ui";
+import { api, binaries, main, presets as presetModels } from "../bindings";
+import { cleanError } from "../hooks/useLink";
 import { BROWSERS } from "./AdvancedDrawer";
 import { useDoctor } from "./DoctorPanel";
 import { UpdatePanel } from "./UpdatePanel";
 
+type Tab = "preferences" | "about";
+
 /**
  * SettingsSheet covers the canvas rather than opening a second window.
+ *
+ * Two tabs, because they are two different visits: Preferences is how Lasso
+ * should behave, and About & diagnostics is what it is running and whether
+ * that is healthy. Helper versions used to sit among the preferences, where
+ * they were the first thing read and the last thing needed.
  *
  * Every row is a label and its explanation on the left, the control on the
  * right, at a fixed panel width. Controls are given explicit widths so that a
@@ -15,16 +23,21 @@ import { UpdatePanel } from "./UpdatePanel";
 export function SettingsSheet({
   settings,
   status,
+  presets,
+  onPresetsChanged,
   onSave,
   onClose,
   saveError,
 }: {
   settings: main.Settings | null;
   status: binaries.Status | null;
+  presets: presetModels.Preset[] | null;
+  onPresetsChanged: () => void;
   onSave: (next: main.Settings) => Promise<boolean>;
   onClose: () => void;
   saveError: string;
 }) {
+  const [tab, setTab] = useState<Tab>("preferences");
   const [draft, setDraft] = useState<main.Settings | null>(settings);
   const [updating, setUpdating] = useState(false);
   const [updateResult, setUpdateResult] = useState<binaries.UpdateResult | null>(null);
@@ -107,8 +120,8 @@ export function SettingsSheet({
     >
       <div className="h-fit w-full max-w-sheet">
         <Card className="flex flex-col">
-          <div className="flex items-center justify-between pb-md">
-            <h2 className="text-card-title text-ink">Settings</h2>
+          <div className="flex items-center justify-between pb-sm">
+            <h2 className="text-heading text-ink">Settings</h2>
             <Button
               variant={dirty ? "primary" : "tertiary"}
               size="sm"
@@ -116,6 +129,15 @@ export function SettingsSheet({
             >
               Done
             </Button>
+          </div>
+
+          <div className="mb-sm flex gap-md border-b border-hairline" role="tablist">
+            <TabButton selected={tab === "preferences"} onClick={() => setTab("preferences")}>
+              Preferences
+            </TabButton>
+            <TabButton selected={tab === "about"} onClick={() => setTab("about")}>
+              About &amp; diagnostics
+            </TabButton>
           </div>
 
           {confirmDiscard && (
@@ -136,7 +158,7 @@ export function SettingsSheet({
             </div>
           )}
 
-          {!draft ? (
+          {tab === "preferences" && (!draft ? (
             <LoadingState label="Loading settings…" />
           ) : (
             <>
@@ -207,28 +229,22 @@ export function SettingsSheet({
                 </div>
               )}
 
+              <SavedChoices presets={presets} onChanged={onPresetsChanged} />
             </>
-          )}
+          ))}
 
-          <div className="mt-md flex flex-col gap-sm border-t border-hairline pt-md">
+          {tab === "about" && (
+          <>
+          <div className="flex flex-col gap-sm pt-xs">
             <Eyebrow>Lasso</Eyebrow>
             <UpdatePanel />
           </div>
 
           <div className="mt-md flex flex-col gap-sm border-t border-hairline pt-md">
-            <Eyebrow>Helper programs</Eyebrow>
-
-            {Object.entries(status?.versions ?? {}).map(([name, version]) => (
-              <div key={name} className="flex items-center justify-between gap-sm">
-                <span className="text-body-sm whitespace-nowrap text-ink-muted">{name}</span>
-                <span className="truncate text-caption text-ink-tertiary tabular-nums" title={String(version)}>
-                  {shortVersion(String(version))}
-                </span>
-              </div>
-            ))}
+            <Eyebrow>Diagnostics</Eyebrow>
 
             <Row
-              label="Diagnostics"
+              label="Check Lasso's setup"
               hint="Checks the helper programs, the download folder, free space and cookies — and repairs what it can."
               control={
                 <Button
@@ -274,7 +290,22 @@ export function SettingsSheet({
                 <MonoBlock text={updateResult.output} maxHeight="10rem" />
               </Details>
             )}
+
+            <Details summary="Helper program versions">
+              <div className="flex flex-col gap-xxs">
+                {Object.entries(status?.versions ?? {}).map(([name, version]) => (
+                  <div key={name} className="flex items-center justify-between gap-sm">
+                    <span className="text-body-sm whitespace-nowrap text-ink-muted">{name}</span>
+                    <span className="truncate text-caption text-ink-tertiary tabular-nums" title={String(version)}>
+                      {shortVersion(String(version))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Details>
           </div>
+          </>
+          )}
         </Card>
       </div>
     </div>
@@ -371,4 +402,124 @@ function shortVersion(version: string): string {
   const match = version.match(/\b\d+\.\d+(?:\.\d+)?\b/);
   if (match) return match[0];
   return version.split(" ")[0];
+}
+
+/** TabButton is a text tab with the primary underline, like the old pane tabs. */
+function TabButton({
+  selected,
+  onClick,
+  children,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={onClick}
+      className={cx(
+        "no-drag -mb-px h-9 border-b-2 text-body-sm font-medium",
+        "transition-[color,border-color] duration-150 ease-standard",
+        selected ? "border-primary text-ink" : "border-transparent text-ink-subtle hover:text-ink",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * SavedChoices is where saved choices are renamed and deleted. They are made
+ * on the Choose screen, with "Save these…", where the choices are; managing
+ * them is occasional enough to live here. Changes apply at once rather than
+ * waiting for Done — there is nothing to review about a deletion.
+ */
+function SavedChoices({
+  presets,
+  onChanged,
+}: {
+  presets: presetModels.Preset[] | null;
+  onChanged: () => void;
+}) {
+  const own = (presets ?? []).filter((p) => !p.builtIn);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+
+  async function act(action: () => Promise<unknown>) {
+    setError("");
+    try {
+      await action();
+      onChanged();
+    } catch (e) {
+      setError(cleanError(e));
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-xs pt-sm">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-body-sm text-ink">Saved choices</span>
+        <span className="text-caption text-ink-tertiary">
+          {own.length === 0
+            ? "None of your own yet. On the Choose screen, “Save these…” keeps the current choices under a name."
+            : "Yours, as they appear under Saved choices. The built-in ones cannot be changed."}
+        </span>
+      </div>
+
+      {own.map((preset) =>
+        renaming === preset.id ? (
+          <div key={preset.id} className="flex items-center gap-xs">
+            <Input
+              autoFocus
+              value={name}
+              aria-label={`New name for ${preset.name}`}
+              className="flex-1"
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && name.trim()) void act(() => api.RenamePreset(preset.id, name.trim())).then(() => setRenaming(null));
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setRenaming(null);
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!name.trim()}
+              onClick={() => void act(() => api.RenamePreset(preset.id, name.trim())).then(() => setRenaming(null))}
+            >
+              Rename
+            </Button>
+            <Button size="sm" variant="tertiary" onClick={() => setRenaming(null)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <div key={preset.id} className="flex items-center gap-xs">
+            <span className="min-w-0 flex-1 truncate text-body-sm text-ink-muted">{preset.name}</span>
+            <Button
+              size="sm"
+              variant="tertiary"
+              onClick={() => {
+                setName(preset.name);
+                setRenaming(preset.id);
+              }}
+            >
+              Rename
+            </Button>
+            <Button size="sm" variant="tertiary" onClick={() => void act(() => api.DeletePreset(preset.id))}>
+              Delete
+            </Button>
+          </div>
+        ),
+      )}
+
+      {error && <p className="text-caption text-danger-strong">{error}</p>}
+    </div>
+  );
 }

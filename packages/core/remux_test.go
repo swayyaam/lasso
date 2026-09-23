@@ -45,7 +45,7 @@ func TestAnAVIFinishesAsAnMP4(t *testing.T) {
 	remuxer := &recordingRemuxer{}
 	h := newQueueHarnessWith(t, finishingAs("/m/Big Buck Bunny.avi"), 1, nil, withRemuxer(remuxer))
 
-	item, _ := h.q.Add(Options{URL: "https://archive.org/details/BigBuckBunny_124", Pick: PickBest}, "Big Buck Bunny")
+	item, _ := h.q.Add(Options{URL: "https://archive.org/details/BigBuckBunny_124", Pick: PickBest}, Source{Title: "Big Buck Bunny"})
 	h.waitFor(t, item.ID, StateDone)
 
 	done, _ := h.q.Get(item.ID)
@@ -61,7 +61,7 @@ func TestARemuxThatFailsKeepsTheDownload(t *testing.T) {
 	remuxer := &recordingRemuxer{err: errors.New("Could not find tag for codec msmpeg4v3")}
 	h := newQueueHarnessWith(t, finishingAs("/m/Old Film.avi"), 1, nil, withRemuxer(remuxer))
 
-	item, _ := h.q.Add(Options{URL: "https://example.com/film", Pick: PickBest}, "Old Film")
+	item, _ := h.q.Add(Options{URL: "https://example.com/film", Pick: PickBest}, Source{Title: "Old Film"})
 	h.waitFor(t, item.ID, StateDone)
 
 	done, _ := h.q.Get(item.ID)
@@ -77,7 +77,7 @@ func TestFilesThatAlreadyPlayAreLeftAlone(t *testing.T) {
 	remuxer := &recordingRemuxer{}
 	h := newQueueHarnessWith(t, finishingAs("/m/Clip.mp4"), 1, nil, withRemuxer(remuxer))
 
-	item, _ := h.q.Add(Options{URL: "https://example.com/clip", Pick: PickBest}, "Clip")
+	item, _ := h.q.Add(Options{URL: "https://example.com/clip", Pick: PickBest}, Source{Title: "Clip"})
 	h.waitFor(t, item.ID, StateDone)
 	if len(remuxer.calls) != 0 {
 		t.Errorf("remuxed %v; an MP4 needs nothing", remuxer.calls)

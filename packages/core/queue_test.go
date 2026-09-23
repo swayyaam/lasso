@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -128,7 +129,7 @@ func succeedingRunner() *funcRunner {
 func TestQueueRunsItemToCompletion(t *testing.T) {
 	h := newQueueHarness(t, succeedingRunner(), 1)
 
-	item, err := h.q.Add(uniqueOptions(), "Known Title")
+	item, err := h.q.Add(uniqueOptions(), Source{Title: "Known Title"})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestQueueSkipsFetchingWhenTitleKnown(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(uniqueOptions(), "Already Known")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "Already Known"})
 	h.waitFor(t, item.ID, StateDone)
 
 	if n := metadataCalls.Load(); n != 0 {
@@ -166,7 +167,7 @@ func TestQueueSkipsFetchingWhenTitleKnown(t *testing.T) {
 func TestQueueResolvesMissingTitle(t *testing.T) {
 	h := newQueueHarness(t, succeedingRunner(), 1)
 
-	item, _ := h.q.Add(uniqueOptions(), "")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: ""})
 	h.waitFor(t, item.ID, StateDone)
 
 	final, _ := h.q.Get(item.ID)
@@ -204,7 +205,7 @@ func TestQueueRespectsConcurrencyLimit(t *testing.T) {
 	h := newQueueHarness(t, runner, 2)
 	var ids []string
 	for i := 0; i < 6; i++ {
-		item, _ := h.q.Add(uniqueOptions(), "t")
+		item, _ := h.q.Add(uniqueOptions(), Source{Title: "t"})
 		ids = append(ids, item.ID)
 	}
 
@@ -260,11 +261,11 @@ func TestQueueCancelsQueuedItem(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	first, _ := h.q.Add(uniqueOptions(), "running")
+	first, _ := h.q.Add(uniqueOptions(), Source{Title: "running"})
 	h.waitFor(t, first.ID, StateDownloading)
 
 	// This one is still waiting its turn.
-	waiting, _ := h.q.Add(uniqueOptions(), "waiting")
+	waiting, _ := h.q.Add(uniqueOptions(), Source{Title: "waiting"})
 	if err := h.q.Cancel(waiting.ID); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
@@ -280,7 +281,7 @@ func TestQueueCancelsRunningItem(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(uniqueOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "t"})
 
 	select {
 	case <-started:
@@ -313,7 +314,7 @@ func TestQueueClassifiesFailure(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(uniqueOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "t"})
 	h.waitFor(t, item.ID, StateFailed)
 
 	final, _ := h.q.Get(item.ID)
@@ -343,7 +344,7 @@ func TestQueueRetriesFailedItem(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(uniqueOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "t"})
 	h.waitFor(t, item.ID, StateFailed)
 
 	if err := h.q.Retry(item.ID); err != nil {
@@ -372,7 +373,7 @@ func TestQueueRetryRejectsWrongStates(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	running, _ := h.q.Add(uniqueOptions(), "t")
+	running, _ := h.q.Add(uniqueOptions(), Source{Title: "t"})
 	h.waitFor(t, running.ID, StateDownloading)
 
 	if err := h.q.Retry(running.ID); err == nil {
@@ -385,7 +386,7 @@ func TestQueueRetryRejectsWrongStates(t *testing.T) {
 
 func TestQueueRetryRejectsFinishedItem(t *testing.T) {
 	h := newQueueHarness(t, succeedingRunner(), 1)
-	item, _ := h.q.Add(uniqueOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "t"})
 	h.waitFor(t, item.ID, StateDone)
 
 	if err := h.q.Retry(item.ID); err == nil {
@@ -398,7 +399,7 @@ func TestQueueAddValidatesOptions(t *testing.T) {
 
 	bad := baseOptions()
 	bad.URL = "file:///etc/passwd"
-	if _, err := h.q.Add(bad, "t"); err == nil {
+	if _, err := h.q.Add(bad, Source{Title: "t"}); err == nil {
 		t.Error("Add accepted an invalid URL")
 	}
 	if len(h.q.Items()) != 0 {
@@ -411,7 +412,7 @@ func TestQueuePreservesOrder(t *testing.T) {
 
 	var added []string
 	for i := 0; i < 5; i++ {
-		item, _ := h.q.Add(uniqueOptions(), "t")
+		item, _ := h.q.Add(uniqueOptions(), Source{Title: "t"})
 		added = append(added, item.ID)
 	}
 
@@ -440,7 +441,7 @@ func TestQueueCloseCancelsInFlight(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	if _, err := h.q.Add(uniqueOptions(), "t"); err != nil {
+	if _, err := h.q.Add(uniqueOptions(), Source{Title: "t"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -454,7 +455,7 @@ func TestQueueCloseCancelsInFlight(t *testing.T) {
 	if !stopped.Load() {
 		t.Error("Close returned while a download was still running")
 	}
-	if _, err := h.q.Add(uniqueOptions(), "t"); err == nil {
+	if _, err := h.q.Add(uniqueOptions(), Source{Title: "t"}); err == nil {
 		t.Error("Add succeeded after Close")
 	}
 }
@@ -495,7 +496,7 @@ func TestQueueWithRealProcessCancellation(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, wrapped, 1)
-	item, _ := h.q.Add(uniqueOptions(), "t")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "t"})
 	h.waitFor(t, item.ID, StateDownloading)
 
 	if err := h.q.Cancel(item.ID); err != nil {
@@ -570,7 +571,7 @@ func TestSubtitleFailureDoesNotFailTheDownload(t *testing.T) {
 	var attempts, withSubs atomic.Int32
 	h := newSubtitleHarness(t, subtitleFailingRunner(&attempts, &withSubs))
 
-	item, err := h.q.Add(subtitleOptions(), "t")
+	item, err := h.q.Add(subtitleOptions(), Source{Title: "t"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +602,7 @@ func TestSubtitlesAreRetriedOnceBeforeBeingDropped(t *testing.T) {
 	var attempts, withSubs atomic.Int32
 	h := newSubtitleHarness(t, subtitleFailingRunner(&attempts, &withSubs))
 
-	item, _ := h.q.Add(subtitleOptions(), "t")
+	item, _ := h.q.Add(subtitleOptions(), Source{Title: "t"})
 	h.waitFor(t, item.ID, StateDone)
 
 	if got := withSubs.Load(); got != 2 {
@@ -629,7 +630,7 @@ func TestSubtitleRetrySucceedsOnSecondAttempt(t *testing.T) {
 	}}
 
 	h := newSubtitleHarness(t, runner)
-	item, _ := h.q.Add(subtitleOptions(), "t")
+	item, _ := h.q.Add(subtitleOptions(), Source{Title: "t"})
 	h.waitFor(t, item.ID, StateDone)
 
 	final, _ := h.q.Get(item.ID)
@@ -655,7 +656,7 @@ func TestNonSubtitleFailureStillFails(t *testing.T) {
 	}}
 
 	h := newSubtitleHarness(t, runner)
-	item, _ := h.q.Add(subtitleOptions(), "t")
+	item, _ := h.q.Add(subtitleOptions(), Source{Title: "t"})
 	h.waitFor(t, item.ID, StateFailed)
 
 	final, _ := h.q.Get(item.ID)
@@ -683,7 +684,7 @@ func TestSubtitleSalvageStillFailsWhenTheVideoIsBroken(t *testing.T) {
 	}}
 
 	h := newSubtitleHarness(t, runner)
-	item, _ := h.q.Add(subtitleOptions(), "t")
+	item, _ := h.q.Add(subtitleOptions(), Source{Title: "t"})
 	h.waitFor(t, item.ID, StateFailed)
 
 	final, _ := h.q.Get(item.ID)
@@ -706,7 +707,7 @@ func TestRequestsWithoutSubtitlesAreNotRetried(t *testing.T) {
 	}}
 
 	h := newSubtitleHarness(t, runner)
-	item, _ := h.q.Add(uniqueOptions(), "t") // no subtitles requested
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "t"}) // no subtitles requested
 	h.waitFor(t, item.ID, StateFailed)
 
 	if got := attempts.Load(); got != 1 {
@@ -718,7 +719,7 @@ func TestRetryClearsTheSubtitleNotice(t *testing.T) {
 	var attempts, withSubs atomic.Int32
 	h := newSubtitleHarness(t, subtitleFailingRunner(&attempts, &withSubs))
 
-	item, _ := h.q.Add(subtitleOptions(), "t")
+	item, _ := h.q.Add(subtitleOptions(), Source{Title: "t"})
 	h.waitFor(t, item.ID, StateDone)
 
 	if final, _ := h.q.Get(item.ID); final.Notice == "" {
@@ -803,7 +804,7 @@ func TestFinishedItemCarriesThePostProcessedFile(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, err := h.q.Add(Options{URL: "https://example.com/v", Pick: PickAudioMP3}, "Song")
+	item, err := h.q.Add(Options{URL: "https://example.com/v", Pick: PickAudioMP3}, Source{Title: "Song"})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -831,7 +832,7 @@ func TestRetryClearsTheFinishedFile(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
 	h.waitFor(t, item.ID, StateDone)
 
 	// A finished item cannot be retried, so cancel-then-retry is not available
@@ -868,7 +869,7 @@ func TestRemoveOnlyTakesFinishedItems(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
 	h.waitFor(t, item.ID, StateDownloading)
 
 	if err := h.q.Remove(item.ID); err == nil {
@@ -906,11 +907,11 @@ func TestClearFinishedLeavesWorkAlone(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	running, _ := h.q.Add(Options{URL: "https://example.com/1", Pick: PickBest}, "Running")
+	running, _ := h.q.Add(Options{URL: "https://example.com/1", Pick: PickBest}, Source{Title: "Running"})
 	h.waitFor(t, running.ID, StateDownloading)
 
-	queued, _ := h.q.Add(Options{URL: "https://example.com/2", Pick: PickBest}, "Queued")
-	cancelled, _ := h.q.Add(Options{URL: "https://example.com/3", Pick: PickBest}, "Cancelled")
+	queued, _ := h.q.Add(Options{URL: "https://example.com/2", Pick: PickBest}, Source{Title: "Queued"})
+	cancelled, _ := h.q.Add(Options{URL: "https://example.com/3", Pick: PickBest}, Source{Title: "Cancelled"})
 	if err := h.q.Cancel(cancelled.ID); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
@@ -947,7 +948,7 @@ func TestRemovalIsAnnounced(t *testing.T) {
 	}
 	defer q.Close()
 
-	item, _ := q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	item, _ := q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
 	q.mu.Lock()
 	q.items[item.ID].State = StateDone
 	q.mu.Unlock()
@@ -974,7 +975,7 @@ func TestRemovingKeepsTheRestInOrder(t *testing.T) {
 
 	var ids []string
 	for i := range 3 {
-		item, _ := q.Add(Options{URL: "https://example.com/" + strconv.Itoa(i), Pick: PickBest}, "Clip")
+		item, _ := q.Add(Options{URL: "https://example.com/" + strconv.Itoa(i), Pick: PickBest}, Source{Title: "Clip"})
 		ids = append(ids, item.ID)
 	}
 
@@ -1017,7 +1018,7 @@ func TestPauseIsNotCancel(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
 	h.waitFor(t, item.ID, StateDownloading)
 
 	if err := h.q.Pause(item.ID); err != nil {
@@ -1070,7 +1071,7 @@ func TestPausedItemIsNotDispatched(t *testing.T) {
 	}
 	defer q.Close()
 
-	item, _ := q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	item, _ := q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
 	if err := q.Pause(item.ID); err != nil {
 		t.Fatalf("Pause: %v", err)
 	}
@@ -1106,7 +1107,7 @@ func TestPauseRefusesAFinishedDownload(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
 	h.waitFor(t, item.ID, StateDone)
 
 	if err := h.q.Pause(item.ID); err == nil {
@@ -1127,7 +1128,7 @@ func TestPausedItemCanBeRemoved(t *testing.T) {
 	}
 	defer q.Close()
 
-	item, _ := q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	item, _ := q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
 	if err := q.Pause(item.ID); err != nil {
 		t.Fatalf("Pause: %v", err)
 	}
@@ -1148,7 +1149,7 @@ func TestPauseMarkDoesNotOutliveTheDownload(t *testing.T) {
 	}}
 
 	h := newQueueHarness(t, runner, 1)
-	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
 	h.waitFor(t, item.ID, StateDone)
 
 	// Stand in for the race: the mark is set, but the run has already ended.
@@ -1200,17 +1201,17 @@ func TestTheSameDownloadIsNotQueuedTwiceWhileRunning(t *testing.T) {
 	defer close(block)
 
 	o := Options{URL: "https://example.com/v", Pick: PickBest}
-	if _, err := h.q.Add(o, "Clip"); err != nil {
+	if _, err := h.q.Add(o, Source{Title: "Clip"}); err != nil {
 		t.Fatalf("first Add: %v", err)
 	}
-	if _, err := h.q.Add(o, "Clip"); err == nil {
+	if _, err := h.q.Add(o, Source{Title: "Clip"}); err == nil {
 		t.Error("an identical download was queued while the first was still going")
 	}
 
 	// A different quality of the same link is a real thing to want.
 	o720 := o
 	o720.Pick = Pick720p
-	if _, err := h.q.Add(o720, "Clip"); err != nil {
+	if _, err := h.q.Add(o720, Source{Title: "Clip"}); err != nil {
 		t.Errorf("the same link at another quality was refused: %v", err)
 	}
 }
@@ -1233,4 +1234,96 @@ func (h *queueHarness) statesOf(id string) []State {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]State(nil), h.states[id]...)
+}
+
+func TestFinishedItemRecordsWhatCameOut(t *testing.T) {
+	// The pick is what was asked for. What the row and history describe is
+	// the file: the resolution yt-dlp settled on and the size on disk, which
+	// merging and remuxing change after the last progress line.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Clip.mp4")
+	if err := os.WriteFile(path, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, _ func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		stdout(`{"stage":"downloading","downloaded":1000,"total":1000,"estimate":0,"speed":0,"eta":0,"fragment":0,"fragments":0}`)
+		stdout(`{"stage":"complete","path":"` + path + `","width":1920,"height":1080}`)
+		return nil
+	}}
+
+	h := newQueueHarness(t, runner, 1)
+	src := Source{Title: "Clip", Uploader: "Someone", Duration: 61, Thumbnail: "https://i.example.com/t.jpg"}
+	item, err := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, src)
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if item.Uploader != "Someone" || item.Duration != 61 || item.Thumbnail != src.Thumbnail {
+		t.Errorf("queued item lost its source: %+v", item)
+	}
+	h.waitFor(t, item.ID, StateDone)
+
+	done, _ := h.q.Get(item.ID)
+	if done.Resolution != "1080p" {
+		t.Errorf("Resolution = %q, want 1080p", done.Resolution)
+	}
+	if done.Bytes != 4096 {
+		t.Errorf("Bytes = %d, want the file's 4096 rather than the transfer's 1000", done.Bytes)
+	}
+
+	// A retry must not carry the old result into a run that has not finished.
+	h.q.mu.Lock()
+	h.q.items[item.ID].State = StateFailed
+	h.q.mu.Unlock()
+	h.q.Retry(item.ID)
+	h.q.mu.Lock()
+	again := *h.q.items[item.ID]
+	h.q.mu.Unlock()
+	if again.State != StateDone && (again.Resolution != "" || again.Bytes != 0) {
+		t.Errorf("a retried item kept its old result: %q, %d bytes", again.Resolution, again.Bytes)
+	}
+}
+
+func TestSourceOfPicksAThumbnailWideEnough(t *testing.T) {
+	m := Metadata{
+		Title: "Clip", Uploader: "Someone", Duration: 5,
+		Thumbnails: []Thumbnail{
+			{URL: "https://i.example.com/small.jpg", Width: 120},
+			{URL: "https://i.example.com/medium.jpg", Width: 480},
+			{URL: "https://i.example.com/huge.jpg", Width: 1920},
+		},
+	}
+	src := SourceOf(m)
+	if src.Thumbnail != "https://i.example.com/medium.jpg" {
+		t.Errorf("Thumbnail = %q, want the smallest image at least %dpx wide", src.Thumbnail, sourceThumbnailWidth)
+	}
+	if src.Title != "Clip" || src.Uploader != "Someone" || src.Duration != 5 {
+		t.Errorf("SourceOf = %+v", src)
+	}
+
+	entry := Entry{Title: "One", Uploader: "Chan", Duration: 9, Thumbnails: m.Thumbnails}
+	if got := entry.Source(); got.Thumbnail != src.Thumbnail || got.Title != "One" || got.Uploader != "Chan" {
+		t.Errorf("Entry.Source = %+v", got)
+	}
+}
+
+func TestAFileAlreadyThereSaysSo(t *testing.T) {
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, _ func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		stdout(`[download] /tmp/Clip.mp4 has already been downloaded`)
+		stdout(`{"stage":"complete","path":"/tmp/Clip.mp4","width":0,"height":0}`)
+		return nil
+	}}
+	h := newQueueHarness(t, runner, 1)
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
+	h.waitFor(t, item.ID, StateDone)
+
+	done, _ := h.q.Get(item.ID)
+	if !strings.Contains(done.Notice, "already had this file") {
+		t.Errorf("Notice = %q, want it to say nothing was downloaded", done.Notice)
+	}
 }

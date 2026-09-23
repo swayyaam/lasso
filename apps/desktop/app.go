@@ -349,7 +349,7 @@ func (a *App) machinePlayback() core.Playback {
 }
 
 // Enqueue adds a download to the queue.
-func (a *App) Enqueue(o core.Options, title string) (core.Item, error) {
+func (a *App) Enqueue(o core.Options, src core.Source) (core.Item, error) {
 	a.mu.RLock()
 	queue, manager, settings := a.queue, a.manager, a.settings
 	a.mu.RUnlock()
@@ -370,7 +370,7 @@ func (a *App) Enqueue(o core.Options, title string) (core.Item, error) {
 		return core.Item{}, err
 	}
 
-	return queue.Add(o, title)
+	return queue.Add(o, src)
 }
 
 // EnqueuePlaylist adds each chosen video of a playlist as its own download,
@@ -416,7 +416,7 @@ func (a *App) EnqueuePlaylist(o core.Options, title string, entries []core.Entry
 			unusable++
 			continue
 		}
-		if _, err := queue.AddToGroup(opts, e.Title, group, title); err == nil {
+		if _, err := queue.AddToGroup(opts, e.Source(), group, title); err == nil {
 			added++
 		}
 	}
@@ -571,7 +571,7 @@ func (a *App) DownloadAgain(id string) (core.Item, error) {
 
 	for _, entry := range store.All() {
 		if entry.ID == id {
-			return a.Enqueue(entry.Options, entry.Title)
+			return a.Enqueue(entry.Options, entry.Source())
 		}
 	}
 	return core.Item{}, fmt.Errorf("that download is no longer in your history")

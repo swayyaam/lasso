@@ -48,24 +48,29 @@ export const BROWSERS: DropdownOption[] = [
   { value: "safari", label: "Safari", hint: "Needs Full Disk Access" },
 ];
 
-type Section = "format" | "subtitles" | "enhancements" | "music" | "playlist" | "network" | "output";
+type Section = "format" | "subtitles" | "enhancements" | "music" | "network" | "output";
 
 /**
  * AdvancedDrawer is the progressive-disclosure half of the app: everything
  * yt-dlp can do is reachable here, but nothing is in the way until asked for.
  *
- * Only one group is open at a time. The drawer is dense enough that two open
- * groups push the download button off screen, and the collapsed summary means
- * a closed group still says what it is set to.
+ * Only one group is open at a time, and the collapsed summary means a closed
+ * group still says what it is set to.
+ *
+ * Which videos of a playlist to take is not here: the Choose screen lists them
+ * to tick, and a range here as well would quietly narrow that selection.
  */
 export function AdvancedDrawer({
   options,
   onChange,
   onRequestClose,
+  bare = false,
 }: {
   options: core.Options;
   onChange: (next: core.Options) => void;
   onRequestClose: () => void;
+  /** Drops the card chrome, for a drawer that already sits inside a sheet. */
+  bare?: boolean;
 }) {
   const [open, setOpen] = useState<Section | null>("format");
   const toggle = (section: Section) => setOpen((current) => (current === section ? null : section));
@@ -76,7 +81,7 @@ export function AdvancedDrawer({
   return (
     <Card
       padded={false}
-      className="px-md"
+      className={bare ? "border-0 px-md" : "px-md"}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
@@ -244,45 +249,6 @@ export function AdvancedDrawer({
       </Disclosure>
 
       <Disclosure
-        title="Playlist"
-        open={open === "playlist"}
-        onToggle={() => toggle("playlist")}
-        summary={playlistSummary(options.playlist)}
-      >
-        <div className="grid grid-cols-2 gap-sm">
-          <Field label="From item">
-            <Input
-              type="number"
-              min={1}
-              value={options.playlist?.start || ""}
-              placeholder="1"
-              onChange={(e) =>
-                patch({ playlist: { ...options.playlist, start: Number(e.target.value) || 0 } } as Partial<core.Options>)
-              }
-            />
-          </Field>
-          <Field label="To item">
-            <Input
-              type="number"
-              min={1}
-              value={options.playlist?.end || ""}
-              placeholder="last"
-              onChange={(e) =>
-                patch({ playlist: { ...options.playlist, end: Number(e.target.value) || 0 } } as Partial<core.Options>)
-              }
-            />
-          </Field>
-        </div>
-        <Checkbox
-          label="Reverse order"
-          checked={options.playlist?.reverse ?? false}
-          onChange={(e) =>
-            patch({ playlist: { ...options.playlist, reverse: e.target.checked } } as Partial<core.Options>)
-          }
-        />
-      </Disclosure>
-
-      <Disclosure
         title="Network"
         open={open === "network"}
         onToggle={() => toggle("network")}
@@ -353,11 +319,4 @@ function TemplatePreview({ template }: { template: string }) {
 function summarise(parts: Array<string | undefined | false>): string {
   const kept = parts.filter(Boolean) as string[];
   return kept.length > 0 ? kept.join(" · ") : "Default";
-}
-
-function playlistSummary(playlist: core.Playlist | undefined): string {
-  if (!playlist) return "All items";
-  const { start, end, reverse } = playlist;
-  const range = start && end ? `items ${start}–${end}` : start ? `from item ${start}` : end ? `up to item ${end}` : "All items";
-  return reverse ? `${range}, reversed` : range;
 }

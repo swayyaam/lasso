@@ -369,6 +369,23 @@ func GenericQualityOptions() QualityOptions {
 	return options
 }
 
+// ResolutionLabel names a finished file's resolution the way the quality
+// picker named it before the download: "1080p", "4K". Below the ladder it is
+// the plain number, so a 144p file is not rounded up into a rung it is not.
+func ResolutionLabel(short int) string {
+	if short <= 0 {
+		return ""
+	}
+	if height, ok := tierFor(short); ok {
+		for _, rung := range tierLadder {
+			if rung.height == height {
+				return rung.label
+			}
+		}
+	}
+	return strconv.Itoa(short) + "p"
+}
+
 // tierFor maps a measured short side onto a rung, allowing an encode that lands
 // slightly under it to still qualify.
 func tierFor(short int) (int, bool) {

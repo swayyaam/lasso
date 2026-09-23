@@ -96,6 +96,10 @@ func TestRealWordingsFromThisSession(t *testing.T) {
 			ErrNotFound, "doesn't exist",
 		},
 		{
+			"ERROR: [youtube:tab] PLbpi6ZahtOH6Ar_3GPy3workTXSrMhb1U: YouTube said: The playlist does not exist.",
+			ErrNotFound, "doesn't exist",
+		},
+		{
 			"ERROR: [youtube] jfKfPfyJRdk: This live stream recording is not available.",
 			ErrUnavailable, "recording",
 		},

@@ -165,7 +165,7 @@ func TestEveryTrackGetsItsOwnTitle(t *testing.T) {
 	tagger := &recordingTagger{}
 	h := newQueueHarnessWith(t, chapterRunner(), 1, tagger)
 
-	item, _ := h.q.Add(musicOptions(), "Various Artists - Greatest Hits")
+	item, _ := h.q.Add(musicOptions(), Source{Title: "Various Artists - Greatest Hits"})
 	h.waitFor(t, item.ID, StateDone)
 
 	if len(tagger.calls) != 3 {
@@ -195,7 +195,7 @@ func TestTaggingFailureDoesNotFailTheDownload(t *testing.T) {
 	tagger := &recordingTagger{err: errors.New("ffmpeg: permission denied")}
 	h := newQueueHarnessWith(t, chapterRunner(), 1, tagger)
 
-	item, _ := h.q.Add(musicOptions(), "Various Artists - Greatest Hits")
+	item, _ := h.q.Add(musicOptions(), Source{Title: "Various Artists - Greatest Hits"})
 	h.waitFor(t, item.ID, StateDone)
 
 	done, _ := h.q.Get(item.ID)
@@ -215,7 +215,7 @@ func TestNoTaggerMeansNoRetagging(t *testing.T) {
 	// tags. It must not fail the download.
 	h := newQueueHarnessWith(t, chapterRunner(), 1, nil)
 
-	item, _ := h.q.Add(musicOptions(), "Album")
+	item, _ := h.q.Add(musicOptions(), Source{Title: "Album"})
 	h.waitFor(t, item.ID, StateDone)
 
 	if done, _ := h.q.Get(item.ID); done.State != StateDone {
@@ -237,7 +237,7 @@ func TestOrdinaryDownloadsAreNotTagged(t *testing.T) {
 	}}
 
 	h := newQueueHarnessWith(t, runner, 1, tagger)
-	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, "Clip")
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
 	h.waitFor(t, item.ID, StateDone)
 
 	if len(tagger.calls) != 0 {

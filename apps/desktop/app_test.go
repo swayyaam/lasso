@@ -75,7 +75,7 @@ func TestCallsBeforeStartupFailSafely(t *testing.T) {
 		"UpdatePreset": app.UpdatePreset("x", core.Options{}),
 		"DeletePreset": app.DeletePreset("x"),
 		"ShowCommand":  errOfString(app.ShowCommand(core.Options{})),
-		"Enqueue":      errOfItem(app.Enqueue(core.Options{}, "")),
+		"Enqueue":      errOfItem(app.Enqueue(core.Options{}, core.Source{})),
 		"Thumbnail":    errOfString(app.Thumbnail("https://example.com/x.jpg", 100)),
 		"UpdateYtDlp":  errOfUpdate(app.UpdateYtDlp()),
 		"ChooseFolder": errOfString(app.ChooseFolder()),

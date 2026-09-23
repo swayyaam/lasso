@@ -25,7 +25,7 @@ export function Dropdown({
   value,
   onChange,
   options,
-  placeholder = "Select",
+  placeholder = "Choose…",
   disabled,
   ariaLabel,
   className,
@@ -51,7 +51,11 @@ export function Dropdown({
           className,
         )}
       >
-        <RadixSelect.Value placeholder={placeholder} />
+        {/* Radix shows the placeholder whenever the value is "", which is
+            exactly the value an "Automatic" or "None" option has — so those
+            read as "Select" rather than as themselves. The matching option's
+            own label stands in for the placeholder instead. */}
+        <RadixSelect.Value placeholder={options.find((o) => o.value === value)?.label ?? placeholder} />
         <RadixSelect.Icon asChild>
           <ChevronDown className="size-4 shrink-0 text-ink-tertiary" aria-hidden />
         </RadixSelect.Icon>

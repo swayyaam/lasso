@@ -251,12 +251,23 @@ Decisions made on top of it, for this app:
   canvas and all four surfaces. `ink-faint` stays as documented because it is
   only ever used for disabled controls, which AA exempts; do not use it for
   text someone needs to read.
-- **Compressed density**: the document's weights, tracking and shape system
-  exactly; its marketing sizes taken at the small end. 16 px card padding,
-  `body-sm` 14 px as the workhorse, `caption` 12.8 px at the signature 550
-  weight for labels.
-- **Two-pane window**: composer left, queue and history right; stacks below
-  ~900 px.
+- **Density with a display rung**: the document's weights, tracking and shape
+  system exactly. Rows stay compact: 16 px card padding, `body-sm` 14 px as
+  the workhorse, `caption` 12.8 px at the signature 550 weight for labels.
+  But every screen leads with a heading from the display end, `text-display`
+  (display-md, 32 px) or `text-heading` (display-sm, 24 px). 0.1 took only
+  the small end and the largest type in the app was 20 px, which is how it
+  lost the system's boldness.
+- **One column, three moments**: the window shows Ready (paste, plus recent
+  downloads), Choose (a resolved link and the decision), or Downloading (the
+  queue, with a field for the next link). It chooses between them from state:
+  a link on screen means Choose, a non-empty queue means Downloading. History
+  is a place of its own. Content sits in a `max-w-page` column. The two-pane
+  composer-and-queue layout it replaced put the decision and the waiting side
+  by side at half width each.
+- **The category colours carry the kind**: purple is video and green is
+  audio, on the Choose cards, the thumbnail badges and the progress bars
+  alike. They stay surfaces: the button that acts is always near-black.
 
 Two rules from the document are easy to break and worth restating. The five
 chromatic accents (purple / pink / blue / orange / green) are **surface fills,

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -40,6 +41,33 @@ const DefaultConcurrency = 2
 // start rate-limiting and everything gets slower.
 const MaxConcurrency = 8
 
+// Source is what a download is of, as a resolve found it.
+//
+// It travels with the item and on into history, so both can show a picture,
+// a channel and a length without resolving the link a second time.
+type Source struct {
+	Title    string  `json:"title"`
+	Uploader string  `json:"uploader"`
+	Duration float64 `json:"duration"`
+	// Thumbnail is a remote image URL. It is only ever fetched through
+	// ThumbnailCache, which is what keeps the webview off the network.
+	Thumbnail string `json:"thumbnail"`
+}
+
+// SourceOf picks out what a queued item needs to remember from a resolve.
+func SourceOf(m Metadata) Source {
+	src := Source{Title: m.Title, Uploader: m.Uploader, Duration: m.Duration}
+	if t, ok := BestThumbnail(m.Thumbnails, sourceThumbnailWidth); ok {
+		src.Thumbnail = t.URL
+	}
+	return src
+}
+
+// sourceThumbnailWidth is the widest the interface shows a queued item's
+// picture, at 2x: large enough for the downloading card, and the cache
+// downscales for everything smaller.
+const sourceThumbnailWidth = 320
+
 // Item is one entry in the download queue.
 type Item struct {
 	ID       string   `json:"id"`
@@ -47,6 +75,11 @@ type Item struct {
 	Title    string   `json:"title"`
 	State    State    `json:"state"`
 	Progress Progress `json:"progress"`
+
+	// Uploader, Duration and Thumbnail are the rest of the Source.
+	Uploader  string  `json:"uploader"`
+	Duration  float64 `json:"duration"`
+	Thumbnail string  `json:"thumbnail"`
 	// AddedAt is Unix milliseconds rather than a time.Time: the frontend gets
 	// a real number from the generated bindings instead of an untyped value.
 	AddedAt int64 `json:"addedAt"`
@@ -67,6 +100,11 @@ type Item struct {
 	// Progress.Filename: that names the file being written, which any
 	// post-processor replaces and deletes.
 	FilePath string `json:"filePath"`
+	// Resolution labels the finished file, e.g. "1080p", empty for audio. The
+	// pick is what was asked for; this is what came out.
+	Resolution string `json:"resolution"`
+	// Bytes is the finished file's size on disk.
+	Bytes int64 `json:"bytes"`
 
 	// Group ties together the videos of one playlist, so the interface can
 	// show them as one and act on them together. Empty for a single video.
@@ -217,15 +255,15 @@ func (q *Queue) Start(ctx context.Context) {
 //
 // Title may be empty, in which case the queue resolves it before downloading,
 // which is what the fetching state covers.
-func (q *Queue) Add(o Options, title string) (Item, error) {
-	return q.AddToGroup(o, title, "", "")
+func (q *Queue) Add(o Options, src Source) (Item, error) {
+	return q.AddToGroup(o, src, "", "")
 }
 
 // NewGroupID names a playlist's group of downloads.
 func NewGroupID() string { return newItemID() }
 
 // AddToGroup is Add for one video of a playlist.
-func (q *Queue) AddToGroup(o Options, title, group, groupTitle string) (Item, error) {
+func (q *Queue) AddToGroup(o Options, src Source, group, groupTitle string) (Item, error) {
 	if err := o.Validate(); err != nil {
 		return Item{}, err
 	}
@@ -249,7 +287,10 @@ func (q *Queue) AddToGroup(o Options, title, group, groupTitle string) (Item, er
 	item := &Item{
 		ID:         id,
 		Options:    o,
-		Title:      title,
+		Title:      src.Title,
+		Uploader:   src.Uploader,
+		Duration:   src.Duration,
+		Thumbnail:  src.Thumbnail,
 		State:      StateQueued,
 		AddedAt:    time.Now().UnixMilli(),
 		Group:      group,
@@ -371,6 +412,8 @@ func (q *Queue) Retry(id string) error {
 	item.ErrorKind = ""
 	item.Notice = ""
 	item.FilePath = ""
+	item.Resolution = ""
+	item.Bytes = 0
 	snapshot := *item
 	q.cond.Broadcast()
 	q.mu.Unlock()
@@ -634,7 +677,7 @@ func (q *Queue) run(ctx context.Context, id string) {
 					notice += ". " + remuxNotice
 					detail = joinLines([]string{reason, remuxDetail})
 				}
-				q.finishWithNotice(id, path, notice, detail)
+				q.finishWithNotice(id, path, result.Resolution, notice, detail)
 				return
 			}
 		}
@@ -647,11 +690,16 @@ func (q *Queue) run(ctx context.Context, id string) {
 
 	q.retagChapters(ctx, id, item, result)
 	path, notice, detail := q.remux(ctx, result.FilePath)
+	if notice == "" && result.Existing {
+		// Not a failure, and the file is right there — but "Done" in two
+		// seconds for a download that never ran needs saying.
+		notice = "You already had this file, so nothing was downloaded again."
+	}
 	if notice != "" {
-		q.finishWithNotice(id, path, notice, detail)
+		q.finishWithNotice(id, path, result.Resolution, notice, detail)
 		return
 	}
-	q.finish(id, path)
+	q.finish(id, path, result.Resolution)
 }
 
 // remux moves an AVI or FLV into MP4 so macOS opens it, returning the path to
@@ -718,6 +766,10 @@ type attemptResult struct {
 	Output string
 	// FilePath is the file it finished with.
 	FilePath string
+	// Resolution labels the finished file, empty for audio.
+	Resolution string
+	// Existing is the file having been there already, so nothing downloaded.
+	Existing bool
 	// Chapters are the per-track files --split-chapters wrote.
 	Chapters []ChapterFile
 }
@@ -747,9 +799,11 @@ func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, attem
 	// stay trapped inside a throttle window.
 	q.emitter.Flush(id)
 	return err, attemptResult{
-		Output:   joinLines(errLines),
-		FilePath: parser.OutputPath(),
-		Chapters: parser.ChapterFiles(),
+		Output:     joinLines(errLines),
+		FilePath:   parser.OutputPath(),
+		Resolution: parser.OutputResolution(),
+		Existing:   parser.Existing(),
+		Chapters:   parser.ChapterFiles(),
 	}
 }
 
@@ -806,7 +860,7 @@ func (q *Queue) fail(id, output string, err error, ctx context.Context) {
 }
 
 // finishWithNotice completes an item that succeeded with a caveat.
-func (q *Queue) finishWithNotice(id, filePath, notice, detail string) {
+func (q *Queue) finishWithNotice(id, filePath, resolution, notice, detail string) {
 	q.mu.Lock()
 	if item, ok := q.items[id]; ok {
 		item.Notice = notice
@@ -814,10 +868,17 @@ func (q *Queue) finishWithNotice(id, filePath, notice, detail string) {
 	}
 	q.mu.Unlock()
 
-	q.finish(id, filePath)
+	q.finish(id, filePath, resolution)
 }
 
-func (q *Queue) finish(id, filePath string) {
+func (q *Queue) finish(id, filePath, resolution string) {
+	// The file on disk, not the transfer: merging, remuxing and extracting
+	// audio all change the size after the last progress line.
+	var size int64
+	if info, err := os.Stat(filePath); err == nil {
+		size = info.Size()
+	}
+
 	q.mu.Lock()
 	item, ok := q.items[id]
 	if !ok {
@@ -825,6 +886,8 @@ func (q *Queue) finish(id, filePath string) {
 		return
 	}
 	item.FilePath = filePath
+	item.Resolution = resolution
+	item.Bytes = size
 	item.State = StateDone
 	item.Progress.Stage = StagePostProcessing
 	item.Progress.Percent = 100

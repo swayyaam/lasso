@@ -45,7 +45,7 @@ func (o Options) ForEntry(e Entry, playlistTitle string) (Options, error) {
 
 	template := o.Output.Template
 	if template == "" {
-		template = DefaultTemplate
+		template = o.Pick.defaultTemplate()
 	}
 	if folder := PlaylistFolder(playlistTitle); folder != "" {
 		template = folder + "/" + template
@@ -84,4 +84,13 @@ func PlaylistFolder(title string) string {
 		folder = strings.TrimSpace(string(r[:100]))
 	}
 	return strings.ReplaceAll(folder, "%", "%%")
+}
+
+// Source is what a queued video of this playlist remembers about itself.
+func (e Entry) Source() Source {
+	src := Source{Title: e.Title, Uploader: e.Uploader, Duration: e.Duration}
+	if t, ok := BestThumbnail(e.Thumbnails, sourceThumbnailWidth); ok {
+		src.Thumbnail = t.URL
+	}
+	return src
 }

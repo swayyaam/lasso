@@ -43,7 +43,7 @@ func TestQuittingMidDownloadResumesNextLaunch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "queue.json")
 
 	h := newQueueHarnessWith(t, blockingRunner(), 1, nil, savedTo(path))
-	item, _ := h.q.Add(uniqueOptions(), "Long video")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "Long video"})
 	h.waitFor(t, item.ID, StateDownloading)
 	h.q.Close() // quitting Lasso
 
@@ -71,7 +71,7 @@ func TestACancelIsNotBroughtBack(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "queue.json")
 	h := newQueueHarnessWith(t, blockingRunner(), 1, nil, savedTo(path))
 
-	item, _ := h.q.Add(uniqueOptions(), "Not wanted")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "Not wanted"})
 	h.waitFor(t, item.ID, StateDownloading)
 	h.q.Cancel(item.ID)
 	h.waitFor(t, item.ID, StateCancelled)
@@ -93,12 +93,12 @@ func TestPausedAndFailedComeBackAsTheyWere(t *testing.T) {
 	}}
 
 	h := newQueueHarnessWith(t, failing, 1, nil, savedTo(path))
-	broken, _ := h.q.Add(uniqueOptions(), "Broken")
+	broken, _ := h.q.Add(uniqueOptions(), Source{Title: "Broken"})
 	h.waitFor(t, broken.ID, StateFailed)
 	h.q.Close()
 
 	h2 := newQueueHarnessWith(t, blockingRunner(), 1, nil, savedTo(path))
-	paused, _ := h2.q.Add(uniqueOptions(), "Later")
+	paused, _ := h2.q.Add(uniqueOptions(), Source{Title: "Later"})
 	h2.waitFor(t, paused.ID, StateDownloading)
 	h2.q.Pause(paused.ID)
 	h2.waitFor(t, paused.ID, StatePaused)
@@ -127,7 +127,7 @@ func TestIDsDoNotRepeatAcrossLaunches(t *testing.T) {
 	for launch := 0; launch < 3; launch++ {
 		h := newQueueHarnessWith(t, blockingRunner(), 1, nil)
 		for i := 0; i < 5; i++ {
-			item, _ := h.q.Add(uniqueOptions(), "x")
+			item, _ := h.q.Add(uniqueOptions(), Source{Title: "x"})
 			if seen[item.ID] {
 				t.Fatalf("ID %q was issued twice across launches", item.ID)
 			}
@@ -141,7 +141,7 @@ func TestTheSavedQueueIsPrivateAndARuinedOneIsIgnored(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "queue.json")
 	h := newQueueHarnessWith(t, blockingRunner(), 1, nil, savedTo(path))
-	item, _ := h.q.Add(uniqueOptions(), "x")
+	item, _ := h.q.Add(uniqueOptions(), Source{Title: "x"})
 	h.waitFor(t, item.ID, StateDownloading)
 	h.q.Close()
 

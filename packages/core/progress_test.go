@@ -303,3 +303,36 @@ func TestCompletedLineWithoutPathIsIgnored(t *testing.T) {
 		t.Errorf("OutputPath = %q, want an empty report not to erase a known file", got)
 	}
 }
+
+func TestCompletedLineLabelsTheResolution(t *testing.T) {
+	cases := []struct {
+		line string
+		want string
+	}{
+		{`{"stage":"complete","path":"/tmp/a.mp4","width":3840,"height":2160}`, "4K"},
+		{`{"stage":"complete","path":"/tmp/b.mp4","width":2026,"height":1036}`, "1080p"},
+		// A Short: yt-dlp's height is the long side.
+		{`{"stage":"complete","path":"/tmp/c.mp4","width":1080,"height":1920}`, "1080p"},
+		{`{"stage":"complete","path":"/tmp/d.mp4","width":256,"height":144}`, "144p"},
+		// Audio has no dimensions, and must not be mistaken for a video.
+		{`{"stage":"complete","path":"/tmp/e.m4a","width":0,"height":0}`, ""},
+	}
+	for _, c := range cases {
+		p := NewProgressParser()
+		p.Line(c.line)
+		if got := p.OutputResolution(); got != c.want {
+			t.Errorf("%s: OutputResolution = %q, want %q", c.line, got, c.want)
+		}
+	}
+}
+
+func TestAlreadyDownloadedIsNoticed(t *testing.T) {
+	p := NewProgressParser()
+	if p.Existing() {
+		t.Fatal("a fresh parser has skipped nothing")
+	}
+	p.Line(`[download] /tmp/Clip [x] 480p.mp4 has already been downloaded`)
+	if !p.Existing() {
+		t.Error("yt-dlp skipping an existing file should be noticed")
+	}
+}

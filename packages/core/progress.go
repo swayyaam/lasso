@@ -53,6 +53,9 @@ type progressLine struct {
 	Fragments  int     `json:"fragments"`
 	// Path is the finished file, on a completedTemplate line only.
 	Path string `json:"path"`
+	// Width and Height are that file's dimensions, zero for audio.
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 // stageComplete is the stage completedTemplate reports. It is not a Stage: a
@@ -94,7 +97,10 @@ type ProgressParser struct {
 	stage    Stage
 	// output is the last file yt-dlp reported as finished. Unlike filename it
 	// survives post-processing, because yt-dlp reports it after the fact.
-	output string
+	output                    string
+	outputWidth, outputHeight int
+	// existing is yt-dlp finding the file already there and skipping it.
+	existing bool
 	// chapters are the per-track files --split-chapters wrote. They need
 	// retagging afterwards, and this is the only place they are named.
 	chapters []ChapterFile
@@ -109,6 +115,23 @@ func NewProgressParser() *ProgressParser {
 // none. For a playlist that is the last item downloaded, which is the one a
 // user asking to see the result most likely means.
 func (p *ProgressParser) OutputPath() string { return p.output }
+
+// Existing reports whether yt-dlp found the file already downloaded and did
+// not download it again.
+func (p *ProgressParser) Existing() bool { return p.existing }
+
+// OutputResolution labels the file OutputPath names, e.g. "1080p", or "" for
+// audio and when yt-dlp did not say.
+//
+// It is measured on the short side, as the quality picker is: yt-dlp's height
+// is the long side of a vertical video, and a 1080x1920 Short is 1080p.
+func (p *ProgressParser) OutputResolution() string {
+	short := p.outputHeight
+	if p.outputWidth > 0 && p.outputWidth < short {
+		short = p.outputWidth
+	}
+	return ResolutionLabel(short)
+}
 
 // ChapterFiles are the per-track files --split-chapters wrote, in the order
 // yt-dlp wrote them.
@@ -143,6 +166,7 @@ func (p *ProgressParser) parseJSON(line string) (Progress, bool) {
 	if raw.Stage == stageComplete {
 		if raw.Path != "" {
 			p.output = raw.Path
+			p.outputWidth, p.outputHeight = raw.Width, raw.Height
 			// The in-flight display should stop naming a file that has just
 			// been replaced by this one.
 			p.filename = raw.Path
@@ -176,6 +200,10 @@ func (p *ProgressParser) parseLogLine(line string) (Progress, bool) {
 	}
 
 	if tag == "download" {
+		if strings.HasSuffix(rest, "has already been downloaded") {
+			p.existing = true
+			return Progress{}, false
+		}
 		if item, items, ok := parseItemPosition(rest); ok {
 			p.item, p.items = item, items
 			return p.decorate(Progress{Stage: p.stage}), true
