@@ -17,6 +17,12 @@
 // When a release does change them, the manifests disagree and the update is
 // refused with an explanation rather than quietly installing helpers the user
 // did not get.
+//
+// It never uses GitHub's API. Everything it reads comes from the release
+// download CDN — the latest release's latest.json, then the archive at an
+// address derived from the version that manifest names — which does not count
+// against the API's 60-an-hour allowance. packages/ghrelease explains, and
+// enforces the manners that still apply.
 package updater
 
 import (
@@ -27,60 +33,109 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/swayyaam/lasso/packages/ghrelease"
 )
 
 const (
-	// DefaultReleaseAPI is the only endpoint this talks to.
-	DefaultReleaseAPI = "https://api.github.com/repos/swayyaam/lasso/releases/latest"
+	// DefaultReleasesURL is where Lasso's releases live. Every address the
+	// updater uses is derived from it.
+	DefaultReleasesURL = "https://github.com/swayyaam/lasso/releases"
 
-	// APIEnv overrides that endpoint. It exists so the whole update — download,
-	// verify, carry the helpers across, reseal, swap — can be exercised against
-	// a local server on a real bundle, rather than only ever being tried for
-	// the first time by someone's actual installation.
+	// ReleasesEnv overrides DefaultReleasesURL. It exists so the whole update —
+	// download, verify, carry the helpers across, reseal, swap — can be run
+	// against a local server laid out like GitHub, on a real bundle, rather
+	// than only ever being tried for the first time by someone's installation.
 	//
 	// Same idea as LASSO_BIN_SOURCE and LASSO_SUPPORT_DIR in packages/binaries.
-	APIEnv = "LASSO_UPDATE_API"
+	ReleasesEnv = "LASSO_RELEASES_URL"
+
+	// ManifestName is the file every release publishes about itself, read from
+	// the latest one at <releases>/latest/download/latest.json.
+	ManifestName = "latest.json"
+
+	// ManifestSchema is the manifest format this updater reads. A release that
+	// changes the format bumps it, and older copies of Lasso then say so and
+	// point at the releases page rather than misreading it.
+	ManifestSchema = 1
 
 	// AppAsset is the app on its own, without Contents/Resources/bin.
 	AppAsset = "Lasso-app.zip"
-	// SumsAsset lists the SHA-256 of every asset in the release.
-	SumsAsset = "SHA256SUMS"
 
-	// minRequestInterval is the floor between two requests to the release
-	// API. GitHub asks callers to make requests serially and to leave at
-	// least a second between them; this is deliberately longer, because the
-	// answer to "is there a newer release" cannot change in ten seconds, and
-	// someone leaning on the button should not become a burst of traffic.
-	minRequestInterval = 10 * time.Second
-
-	// backoffBase and backoffMax space out retries after consecutive
-	// failures, so an unreachable network or a wrong URL does not turn every
-	// settings screen into another request.
-	backoffBase = 30 * time.Second
-	backoffMax  = 30 * time.Minute
+	// CheckMaxAge is how long a check is reused — across relaunches too, since
+	// the cache lives on disk. Long enough that opening Settings costs
+	// nothing, short enough that a release published this morning is offered
+	// this afternoon.
+	CheckMaxAge = 6 * time.Hour
 
 	checkTimeout    = 30 * time.Second
 	installTimeout  = 15 * time.Minute
 	maxDownloadSize = 128 << 20
-	maxSumsSize     = 1 << 20
 )
 
 // ErrHelpersChanged means the release ships different helper programs, so the
 // small update cannot carry the installed ones across.
 var ErrHelpersChanged = errors.New("this release updates the helper programs too")
 
+// Manifest is latest.json: what a release says about itself.
+//
+// It is everything the updater needs to decide, in one small request: the
+// version, the notes shown before installing, and each file's size and
+// digest. It never carries an address. Where files live is derived from the
+// version, so a manifest cannot send the updater anywhere else.
+//
+// cmd/release-manifest writes it with this same type, so there is one
+// definition of the shape.
+type Manifest struct {
+	SchemaVersion int                  `json:"schemaVersion"`
+	Version       string               `json:"version"`
+	Published     string               `json:"published"`
+	Notes         string               `json:"notes"`
+	Assets        map[string]AssetInfo `json:"assets"`
+}
+
+// AssetInfo describes one published file.
+type AssetInfo struct {
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"`
+}
+
+var (
+	versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+	digestPattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+// Validate refuses a manifest the updater should not act on.
+//
+// The version becomes part of a download address, so it has to be exactly a
+// version; and a file listed without a usable size and digest could not be
+// verified, so it is not listed at all as far as the updater is concerned.
+func (m Manifest) Validate() error {
+	if m.SchemaVersion != ManifestSchema {
+		return fmt.Errorf("the newest release describes itself in a format this version of Lasso does not read (format %d). Download it from the releases page", m.SchemaVersion)
+	}
+	if !versionPattern.MatchString(m.Version) {
+		return fmt.Errorf("the release manifest names an unusable version %q", m.Version)
+	}
+	for name, a := range m.Assets {
+		if a.Size <= 0 || !digestPattern.MatchString(a.SHA256) {
+			return fmt.Errorf("the release manifest describes %s without a usable size and checksum", name)
+		}
+	}
+	return nil
+}
+
 // Update describes a release that is newer than the running app.
 type Update struct {
 	// Version is the release's version, without the leading v.
 	Version string `json:"version"`
-	// Notes is the release body, shown before installing.
+	// Notes is the release's notes, shown before installing.
 	Notes string `json:"notes"`
 	// PageURL is the release page, for anyone who would rather do it by hand.
 	PageURL string `json:"pageUrl"`
@@ -116,172 +171,21 @@ type Config struct {
 	BundlePath string
 	// CurrentVersion is what is running, without the leading v.
 	CurrentVersion string
-	// ReleaseAPI defaults to DefaultReleaseAPI. Tests point it at a local server.
-	ReleaseAPI string
-	// HTTP defaults to a client with a sensible timeout.
-	HTTP *http.Client
+	// ReleasesURL defaults to DefaultReleasesURL. Tests point it at a local
+	// server laid out the same way.
+	ReleasesURL string
+	// Releases fetches release files. Pass the process's shared client, so a
+	// refusal from GitHub reaches every updater and the cache outlives the
+	// process; nil builds a private one that keeps nothing between launches.
+	Releases *ghrelease.Client
 	// Run defaults to executing the command for real.
 	Run Runner
 }
 
 // Updater checks for and installs new releases.
-//
-// Keep one and reuse it. The limiter is the reason: an Updater built fresh
-// for every check remembers nothing, so it cannot honour a refusal it was
-// given a moment ago.
 type Updater struct {
 	cfg Config
 	log []string
-
-	// checking serialises calls to the release API. The limiter's own mutex
-	// guards its fields; this one guards the request itself.
-	checking sync.Mutex
-	lim      limiter
-}
-
-// limiter is what keeps Lasso inside GitHub's allowance.
-//
-// Exceeding the unauthenticated allowance — 60 requests an hour per address —
-// is answered with a 403 and nothing worse. What actually gets a caller
-// blocked is the behaviour around it: ignoring a refusal and asking again
-// straight away, retrying a failure in a tight loop, running requests
-// concurrently. So this refuses locally instead of letting any of that reach
-// GitHub, and it applies to every caller including a deliberate press of
-// "Check again" — a rule the user interface can opt out of is not a rule.
-//
-// Its other half is the ETag. A conditional request that GitHub answers 304
-// does not count against the rate limit at all, so the common case — asking
-// again when nothing has been released — becomes free rather than cheap.
-type limiter struct {
-	mu sync.Mutex
-
-	// next is the earliest another request may be sent, and why. reason is
-	// nil when the wait is only spacing, which is the case where serving the
-	// last answer is honest.
-	next   time.Time
-	reason error
-
-	failures int
-
-	etag   string
-	cached releaseInfo
-	valid  bool
-}
-
-// hold decides whether a request may go out now.
-//
-// It returns the release to serve instead, or the error to report, or neither
-// when the caller should go ahead and ask.
-func (l *limiter) hold(now time.Time) (releaseInfo, bool, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if now.Before(l.next) {
-		if l.reason != nil {
-			return releaseInfo{}, false, l.reason
-		}
-		if l.valid {
-			return l.cached, true, nil
-		}
-		// Inside the spacing window with nothing to serve. Rare, and still
-		// not a reason to send a request.
-		return releaseInfo{}, false, fmt.Errorf("Lasso just checked for updates; try again in a moment")
-	}
-	return releaseInfo{}, false, nil
-}
-
-// conditional returns the ETag to ask with, if there is one.
-func (l *limiter) conditional() (string, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.etag, l.etag != "" && l.valid
-}
-
-// sent records a request leaving, which spaces out the next one whatever the
-// answer turns out to be.
-func (l *limiter) sent(now time.Time) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.next = now.Add(minRequestInterval)
-	l.reason = nil
-}
-
-// ok records a release that came back with a body.
-func (l *limiter) ok(now time.Time, etag string, r releaseInfo) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.failures, l.reason = 0, nil
-	l.etag, l.cached, l.valid = etag, r, true
-	l.next = now.Add(minRequestInterval)
-}
-
-// unchanged records a 304, which keeps the cache and costs no allowance.
-func (l *limiter) unchanged(now time.Time) (releaseInfo, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.failures, l.reason = 0, nil
-	l.next = now.Add(minRequestInterval)
-	return l.cached, l.valid
-}
-
-// forget drops the cached release, so the next request asks outright.
-func (l *limiter) forget() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.etag, l.cached, l.valid = "", releaseInfo{}, false
-}
-
-// refused records GitHub turning the request away, and holds every later one
-// until it says the limit has reset.
-func (l *limiter) refused(until time.Time, err error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.failures++
-	l.reason = err
-	if until.After(l.next) {
-		l.next = until
-	}
-}
-
-// failed records a request that did not arrive, and backs off so a broken
-// network is not retried on every settings screen.
-func (l *limiter) failed(now time.Time, err error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.failures++
-	wait := backoffBase << min(l.failures-1, 16)
-	if wait > backoffMax || wait <= 0 {
-		wait = backoffMax
-	}
-	l.reason = err
-	l.next = now.Add(wait)
-}
-
-// refusalWindow reads how long GitHub wants to be left alone.
-//
-// Retry-After comes first because it is what a secondary rate limit sends,
-// and a secondary limit is the one that escalates to a block if ignored.
-// X-RateLimit-Reset covers the ordinary hourly allowance.
-func refusalWindow(resp *http.Response, now time.Time) time.Time {
-	if after := resp.Header.Get("Retry-After"); after != "" {
-		if secs, err := strconv.Atoi(after); err == nil && secs > 0 {
-			return now.Add(time.Duration(secs) * time.Second)
-		}
-		if when, err := http.ParseTime(after); err == nil && when.After(now) {
-			return when
-		}
-	}
-	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
-		if reset := resp.Header.Get("X-RateLimit-Reset"); reset != "" {
-			if unix, err := strconv.ParseInt(reset, 10, 64); err == nil {
-				if when := time.Unix(unix, 0); when.After(now) {
-					return when
-				}
-			}
-		}
-	}
-	// A refusal with no guidance still earns more room than plain spacing.
-	return now.Add(backoffBase)
 }
 
 // New builds an Updater.
@@ -292,11 +196,12 @@ func New(cfg Config) (*Updater, error) {
 	if cfg.CurrentVersion == "" {
 		return nil, fmt.Errorf("updater needs to know which version is running")
 	}
-	if cfg.ReleaseAPI == "" {
-		cfg.ReleaseAPI = DefaultReleaseAPI
+	if cfg.ReleasesURL == "" {
+		cfg.ReleasesURL = DefaultReleasesURL
 	}
-	if cfg.HTTP == nil {
-		cfg.HTTP = &http.Client{Timeout: installTimeout}
+	cfg.ReleasesURL = strings.TrimSuffix(cfg.ReleasesURL, "/")
+	if cfg.Releases == nil {
+		cfg.Releases = ghrelease.New(ghrelease.Config{UserAgent: "Lasso/" + cfg.CurrentVersion})
 	}
 	if cfg.Run == nil {
 		cfg.Run = execRun
@@ -304,182 +209,60 @@ func New(cfg Config) (*Updater, error) {
 	return &Updater{cfg: cfg}, nil
 }
 
-type releaseInfo struct {
-	TagName string `json:"tag_name"`
-	Body    string `json:"body"`
-	HTMLURL string `json:"html_url"`
-	Draft   bool   `json:"draft"`
-	Assets  []struct {
-		Name string `json:"name"`
-		URL  string `json:"browser_download_url"`
-		Size int64  `json:"size"`
-	} `json:"assets"`
-}
-
-func (r releaseInfo) asset(name string) (url string, size int64, ok bool) {
-	for _, a := range r.Assets {
-		if a.Name == name {
-			return a.URL, a.Size, true
-		}
-	}
-	return "", 0, false
-}
-
 // Check asks whether a newer release exists.
 //
-// It reads and reports; nothing is downloaded and nothing on disk is touched,
-// so it is safe to call on a timer or whenever a window opens.
-func (u *Updater) Check(ctx context.Context) (Update, error) {
+// It reads one small file and touches nothing on disk. A check younger than
+// maxAge is answered from the cache without asking at all; zero is a
+// deliberate "check now", which is still spaced and still honours a refusal.
+func (u *Updater) Check(ctx context.Context, maxAge time.Duration) (Update, error) {
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 
-	release, err := u.latest(ctx)
+	m, err := u.manifest(ctx, maxAge)
 	if err != nil {
 		return Update{}, err
 	}
 
-	version := strings.TrimPrefix(release.TagName, "v")
-	update := Update{Version: version, Notes: release.Body, PageURL: release.HTMLURL}
-
-	if !IsNewer(u.cfg.CurrentVersion, version) {
+	update := Update{Version: m.Version, Notes: m.Notes, PageURL: u.pageURL(m.Version)}
+	if !IsNewer(u.cfg.CurrentVersion, m.Version) {
 		return update, nil
 	}
-	// A release with no app asset cannot be installed from here, so it is not
-	// offered as one — saying an update is available and then failing to
+	// A release with no app archive cannot be installed from here, so it is
+	// not offered as one: saying an update is available and then failing to
 	// install it would be worse than staying quiet.
-	_, size, ok := release.asset(AppAsset)
+	app, ok := m.Assets[AppAsset]
 	if !ok {
 		return update, nil
 	}
-
 	update.Available = true
-	update.Bytes = size
+	update.Bytes = app.Size
 	return update, nil
 }
 
-func (u *Updater) latest(ctx context.Context) (releaseInfo, error) {
-	// Serial, never concurrent: GitHub asks for that directly, and two checks
-	// racing would each see the other's allowance as unspent.
-	u.checking.Lock()
-	defer u.checking.Unlock()
-
-	now := time.Now()
-	if cached, serve, err := u.lim.hold(now); err != nil {
-		return releaseInfo{}, err
-	} else if serve {
-		return cached, nil
+func (u *Updater) manifest(ctx context.Context, maxAge time.Duration) (Manifest, error) {
+	body, err := u.cfg.Releases.Get(ctx, u.cfg.ReleasesURL+"/latest/download/"+ManifestName, maxAge)
+	if errors.Is(err, ghrelease.ErrNotFound) {
+		return Manifest{}, fmt.Errorf("the newest Lasso release does not describe itself for the updater, so it can only be installed from the releases page")
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.cfg.ReleaseAPI, nil)
 	if err != nil {
-		return releaseInfo{}, err
+		return Manifest{}, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	// GitHub asks every caller to identify itself, and it makes Lasso's
-	// traffic legible in their logs rather than anonymous Go.
-	req.Header.Set("User-Agent", "Lasso/"+u.cfg.CurrentVersion)
-	// A 304 does not count against the rate limit, so asking conditionally
-	// makes the usual answer — nothing new — cost nothing at all.
-	if etag, ok := u.lim.conditional(); ok {
-		req.Header.Set("If-None-Match", etag)
+	var m Manifest
+	if err := json.Unmarshal(body, &m); err != nil {
+		return Manifest{}, fmt.Errorf("could not read the release manifest: %w", err)
 	}
-
-	u.lim.sent(now)
-	resp, err := u.cfg.HTTP.Do(req)
-	if err != nil {
-		wrapped := fmt.Errorf("could not reach the update server: %w", err)
-		u.lim.failed(time.Now(), wrapped)
-		return releaseInfo{}, wrapped
+	if err := m.Validate(); err != nil {
+		return Manifest{}, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotModified {
-		if cached, ok := u.lim.unchanged(time.Now()); ok {
-			return cached, nil
-		}
-		// 304 with nothing to show it against. Not worth an error: drop the
-		// ETag so the next attempt asks outright.
-		u.lim.forget()
-		return releaseInfo{}, fmt.Errorf("the update server said nothing had changed, but Lasso had nothing to compare")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		failure := describeAPIFailure(resp)
-		u.lim.refused(refusalWindow(resp, time.Now()), failure)
-		return releaseInfo{}, failure
-	}
-
-	var release releaseInfo
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxSumsSize)).Decode(&release); err != nil {
-		wrapped := fmt.Errorf("could not read the release: %w", err)
-		u.lim.failed(time.Now(), wrapped)
-		return releaseInfo{}, wrapped
-	}
-
-	u.lim.ok(time.Now(), resp.Header.Get("ETag"), release)
-	return release, nil
+	return m, nil
 }
 
-// describeAPIFailure turns a refusal into something worth reading.
-//
-// Rate limiting is the one that actually happens: GitHub allows 60
-// unauthenticated requests an hour per address, and an address is a whole
-// office behind one NAT as easily as it is one person. "403 Forbidden" tells
-// that person nothing; the limit resetting on its own is the entire answer.
-func describeAPIFailure(resp *http.Response) error {
-	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
-		return fmt.Errorf("the update server answered %s", resp.Status)
-	}
-
-	// The hourly allowance, spent. It refills on its own, and the clock is
-	// the only thing worth telling anyone.
-	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
-		when := "shortly"
-		if reset := resp.Header.Get("X-RateLimit-Reset"); reset != "" {
-			if unix, err := strconv.ParseInt(reset, 10, 64); err == nil {
-				if wait, ok := humanWait(time.Until(time.Unix(unix, 0))); ok {
-					when = "in about " + wait
-				}
-			}
-		}
-		return fmt.Errorf("GitHub is rate-limiting update checks from your network. It will work again %s — or download the new version from the releases page.", when)
-	}
-
-	// A secondary limit: GitHub telling a caller it is going too fast rather
-	// than that it has run out. This is the one that escalates to a block
-	// when it is ignored, so Lasso waits exactly as long as it is told.
-	if after := resp.Header.Get("Retry-After"); after != "" {
-		when := "shortly"
-		if secs, err := strconv.Atoi(after); err == nil && secs > 0 {
-			if wait, ok := humanWait(time.Duration(secs) * time.Second); ok {
-				when = "in about " + wait
-			}
-		}
-		return fmt.Errorf("GitHub asked Lasso to slow down. It will check again %s.", when)
-	}
-
-	return fmt.Errorf("the update server answered %s", resp.Status)
+func (u *Updater) pageURL(version string) string {
+	return u.cfg.ReleasesURL + "/tag/v" + version
 }
 
-// humanWait renders a wait the way a sentence needs it.
-//
-// Duration.String() gives "24m0s", which belongs in a log rather than in
-// something a person reads. GitHub's window is an hour, so minutes and the
-// exact hour cover the whole real range; a wait far outside it means the
-// local clock is wrong, and a time quoted against a wrong clock is worse than
-// no time at all, so that case declines to give one.
-func humanWait(d time.Duration) (string, bool) {
-	minutes := int(d.Round(time.Minute).Minutes())
-	switch {
-	case minutes < 1 || minutes > 120:
-		return "", false
-	case minutes == 1:
-		return "a minute", true
-	case minutes < 60:
-		return fmt.Sprintf("%d minutes", minutes), true
-	default:
-		return "an hour", true
-	}
+func (u *Updater) assetURL(version, name string) string {
+	return u.cfg.ReleasesURL + "/download/v" + version + "/" + name
 }
 
 // Install downloads the newest release and puts it in place.
@@ -493,25 +276,20 @@ func (u *Updater) Install(ctx context.Context) (Result, error) {
 
 	u.log = nil
 
-	update, err := u.Check(ctx)
+	// The check that offered this update is usually seconds old, so the
+	// manifest comes from the cache: installing exactly what was offered, and
+	// costing no extra request to do it.
+	m, err := u.manifest(ctx, CheckMaxAge)
 	if err != nil {
 		return Result{}, err
 	}
-	if !update.Available {
+	app, ok := m.Assets[AppAsset]
+	if !ok || !IsNewer(u.cfg.CurrentVersion, m.Version) {
 		return Result{Version: u.cfg.CurrentVersion, Output: u.output()}, nil
 	}
 
 	if err := u.writable(); err != nil {
 		return Result{}, err
-	}
-
-	release, err := u.latest(ctx)
-	if err != nil {
-		return Result{}, err
-	}
-	assetURL, _, ok := release.asset(AppAsset)
-	if !ok {
-		return Result{}, fmt.Errorf("release %s has no %s to install", update.Version, AppAsset)
 	}
 
 	work, err := os.MkdirTemp(filepath.Dir(u.cfg.BundlePath), ".lasso-update-*")
@@ -524,7 +302,7 @@ func (u *Updater) Install(ctx context.Context) (Result, error) {
 	defer os.RemoveAll(work)
 
 	archive := filepath.Join(work, AppAsset)
-	if err := u.download(ctx, assetURL, archive, release); err != nil {
+	if err := u.download(ctx, u.assetURL(m.Version, AppAsset), archive, app); err != nil {
 		return Result{}, err
 	}
 	u.note("downloaded and verified " + AppAsset)
@@ -547,7 +325,7 @@ func (u *Updater) Install(ctx context.Context) (Result, error) {
 
 	u.note("replaced " + filepath.Base(u.cfg.BundlePath))
 	return Result{
-		Version:      update.Version,
+		Version:      m.Version,
 		Installed:    true,
 		NeedsRestart: true,
 		Output:       u.output(),
@@ -556,7 +334,7 @@ func (u *Updater) Install(ctx context.Context) (Result, error) {
 
 // writable refuses an update the swap could not complete.
 //
-// Better to say so before downloading 15 MB than after. Running from the disk
+// Better to say so before downloading 5 MB than after. Running from the disk
 // image is the common case — people open the DMG and launch it from there
 // without ever dragging it to Applications.
 func (u *Updater) writable() error {
@@ -574,84 +352,36 @@ func (u *Updater) writable() error {
 	return os.Remove(name)
 }
 
-// download fetches the asset, hashing as it goes, and refuses anything whose
-// digest does not match the one published alongside it.
-func (u *Updater) download(ctx context.Context, url, dest string, release releaseInfo) error {
-	want, err := u.expectedDigest(ctx, release)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := u.cfg.HTTP.Do(req)
-	if err != nil {
+// download fetches the app archive and refuses it unless its bytes are
+// exactly the ones the manifest describes.
+func (u *Updater) download(ctx context.Context, url, dest string, want AssetInfo) error {
+	// The declared size is the ceiling: anything larger is not what was
+	// published, and is cut off rather than written to disk in full.
+	limit := min(want.Size, maxDownloadSize)
+	if err := u.cfg.Releases.Download(ctx, url, dest, limit); err != nil {
 		return fmt.Errorf("could not download the update: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("downloading the update failed: %s", resp.Status)
-	}
-
-	f, err := os.Create(dest)
+	got, err := fileDigest(dest)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
-	digest := sha256.New()
-	// Capped so a wrong or hostile URL cannot fill the disk.
-	if _, err := io.Copy(io.MultiWriter(f, digest), io.LimitReader(resp.Body, maxDownloadSize)); err != nil {
-		return fmt.Errorf("could not download the update: %w", err)
-	}
-
-	got := hex.EncodeToString(digest.Sum(nil))
-	if got != want {
+	if got != want.SHA256 {
 		return fmt.Errorf("the download does not match its published checksum; it may be damaged or tampered with")
 	}
 	return nil
 }
 
-// expectedDigest reads the SHA256SUMS asset and finds this asset's line.
-func (u *Updater) expectedDigest(ctx context.Context, release releaseInfo) (string, error) {
-	sumsURL, _, ok := release.asset(SumsAsset)
-	if !ok {
-		return "", fmt.Errorf("release %s publishes no %s, so the download cannot be verified", release.TagName, SumsAsset)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sumsURL, nil)
+func fileDigest(path string) (string, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-	resp, err := u.cfg.HTTP.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("could not fetch %s: %w", SumsAsset, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("could not fetch %s: %s", SumsAsset, resp.Status)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSumsSize))
-	if err != nil {
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
-
-	// Lines are the shasum format: digest, whitespace, then the filename.
-	for _, line := range strings.Split(string(body), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		if strings.TrimPrefix(fields[len(fields)-1], "*") == AppAsset {
-			return strings.ToLower(fields[0]), nil
-		}
-	}
-	return "", fmt.Errorf("%s does not list %s", SumsAsset, AppAsset)
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // unpack extracts the archive and returns the app bundle inside it.

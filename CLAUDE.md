@@ -33,6 +33,7 @@ packages/presets/    Go: built-in + user presets, JSON persistence
 packages/history/    Go: the record of finished downloads, JSON persistence
 packages/doctor/     Go: diagnoses why downloads fail, and repairs what it can
 packages/updater/    Go: replaces Lasso with a newer release of itself
+packages/ghrelease/  Go: reads GitHub release files politely, without the API
 packages/ui/         React: shared components + design tokens
 scripts/             fetch-binaries.sh and build helpers
 DESIGN-webflow.md    The visual design system. Do not modify it.
@@ -124,9 +125,12 @@ These are standing requirements, not optimisations to consider later.
 
 ## Network policy
 
-Lasso makes exactly three kinds of outbound request: yt-dlp's own traffic, the
-binary updater, and thumbnail fetches through `core.ThumbnailCache`. There is
-no telemetry and no analytics.
+Lasso makes exactly four kinds of outbound request: yt-dlp's own traffic, the
+yt-dlp updater, Lasso's own updater, and thumbnail fetches through
+`core.ThumbnailCache`. There is no telemetry and no analytics.
+
+Both updaters go through `packages/ghrelease`, and neither touches
+`api.github.com` — see "Staying inside GitHub's allowance" below.
 
 The thumbnail cache is the only one written in Go, and it is deliberately the
 only place that fetches remote images — the webview never talks to a CDN
@@ -149,6 +153,11 @@ invocation against 0.16s warm, which is why Lasso ships onedir. So
 against the release's published SHA2-256SUMS, stages it, proves it runs, and
 only then swaps the folder. A failed or interrupted update leaves the working
 copy in place.
+
+It learns the newest version from the redirect GitHub sends for
+`/releases/latest` — `ghrelease.Client.LatestTag` reads the `Location` header
+and never the page — and builds every download address from that tag. When the
+tag matches what is installed, that one redirect is the whole cost.
 
 After unpacking, `fixupTree` re-applies every fixup across the whole folder:
 directory permissions, the executable bit, quarantine removal, and a signature
@@ -323,6 +332,21 @@ versions, carrying the old ones across would leave someone on a build that
 says it updated and did not, so the update is refused with `ErrHelpersChanged`
 and the DMG is the way through.
 
+**Every release publishes `latest.json`.** It is what the updater reads —
+version, notes, and each file's size and SHA-256 — from
+`releases/latest/download/latest.json`. `make release-assets NOTES=notes.md`
+writes it through `cmd/release-manifest`, which uses the same
+`updater.Manifest` type the app parses and refuses anything the app would. A
+release without it cannot be installed from inside Lasso; the app says so and
+points at the releases page.
+
+The manifest never carries an address. Downloads come from
+`<releases>/download/v<version>/`, and the version must match `\d+.\d+.\d+`
+before it goes into that path, so a manifest cannot send the updater
+anywhere else. **Keep publishing `SHA256SUMS` too**: Lasso 0.1.2 to 0.1.5 find
+releases through the API and verify against it, and they need to be able to
+update to whatever comes next.
+
 Two things are easy to get wrong here, and one of them already shipped:
 
 - **Reseal after carrying the helpers in.** They are written into a bundle
@@ -340,38 +364,53 @@ a derived path rather than a search.
 
 ### Staying inside GitHub's allowance
 
-The release API is called unauthenticated, which GitHub allows 60 times an
-hour **per address** — an address being a whole office behind one connection
-as easily as one person. Going over earns a 403 and nothing worse. What gets a
-caller blocked is the behaviour around it, so `updater.limiter` makes that
-behaviour impossible rather than merely unlikely:
+**Neither updater uses GitHub's API.** The REST API allows 60 unauthenticated
+requests an hour per address — an address being a whole office as easily as
+one person — and an update check is exactly the small, repeated request that
+runs it down. None of it is needed: GitHub serves release files from its
+download CDN at documented addresses, and those do not count against the
+allowance. That was measured, not assumed: three downloads through
+`releases/latest/download/` left the anonymous quota where it was.
 
-- **A refusal is honoured locally.** Once GitHub answers `X-RateLimit-Remaining: 0`
-  or sends `Retry-After`, no request leaves until that window passes — and the
-  stored explanation is returned instead. This applies to **every** caller,
-  including a deliberate press of "Check again". A rule the interface can opt
-  out of is not a rule.
-- **Requests are conditional.** The ETag of the last release is sent as
-  `If-None-Match`, and GitHub does not count a 304 against the allowance. The
-  usual answer — nothing new — therefore costs nothing.
-- **Requests are serial**, behind `Updater.checking`, because GitHub asks for
-  that and two racing checks each spend allowance the other did not see.
-- **Ten seconds minimum between requests**, which serves the last answer
-  rather than erroring: the answer cannot change in ten seconds.
+- Lasso's own releases: `releases/latest/download/latest.json`, then
+  `releases/download/v<version>/Lasso-app.zip`.
+- yt-dlp's: the `releases/latest` redirect for the tag, then
+  `releases/download/<tag>/SHA2-256SUMS` and the archive.
+
+Being off the API is not a licence to be careless, so `packages/ghrelease`
+still behaves as a good client, and both updaters go through it rather than
+around it:
+
+- **Answers are cached on disk** (`github.json` in Application Support). A
+  check younger than `updater.CheckMaxAge` (six hours) is answered without
+  asking, including after a relaunch — a fresh process used to mean a fresh
+  request, which is how relaunching during development ran the quota down.
+- **Expired copies revalidate** with `If-None-Match`, so an unchanged file
+  comes back as a 304 with no body.
+- **A refusal is honoured until it expires, across relaunches too.** A 429, or
+  any answer with `Retry-After`, holds every later request — checks, forced
+  checks and downloads alike — for as long as GitHub said, and at least a
+  minute when it said nothing. The explanation is repeated from memory rather
+  than asked for again. A rule the interface can opt out of is not a rule.
+- **Requests are serial**, and each identifies itself with a User-Agent naming
+  Lasso and where it comes from.
+- **Ten seconds minimum between requests for the same file**, which serves the
+  last answer rather than erroring: the answer cannot change in ten seconds.
 - **Failures back off** from 30 s to 30 min, so a dead network is not retried
   every time the settings screen opens.
 
-The six-hour cache in `apps/desktop` sits above all of that and is a separate
-policy — "do not bother asking" rather than "must not ask".
+**Keep one `ghrelease.Client` for the life of the process** and share it:
+`App.releases` is created in `startup` and handed to both updaters. Two
+clients would each miss the other's refusal, and a client rebuilt per check
+remembers nothing — which was the original bug.
 
-**Keep one `Updater` for the life of the process.** `App.releaseUpdater` does.
-An `Updater` built per check carries a limiter that remembers nothing, which
-silently undoes every guarantee above — this was the original bug.
+Nothing checks on a timer. Every request follows something the person did:
+opening Settings, or pressing a button.
 
 `ditto`, not `archive/zip`: it carries the extended attributes and symlinks a
 signed bundle depends on. Every external command goes through the injected
 `Runner`, which is what lets the unit tests cover the failure paths without a
-toolchain — and `LASSO_UPDATE_API` points the whole thing at a local server so
+toolchain — and `LASSO_RELEASES_URL` points the whole thing at a local server so
 the integration test exercises a real update on a real bundle.
 
 ## Errors and the doctor
@@ -402,4 +441,5 @@ make build            build Lasso.app
 make test             Go tests across all modules + JS tests
 make lint             go vet + gofmt + JS lint
 make fetch-binaries   re-download and verify sidecars
+make release-assets NOTES=notes.md   DMG, update zip, latest.json and SHA256SUMS
 ```

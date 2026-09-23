@@ -50,7 +50,7 @@ func TestRealUpdateReplacesARealBundle(t *testing.T) {
 	u, err := New(Config{
 		BundlePath:     installed,
 		CurrentVersion: current,
-		ReleaseAPI:     server.URL + "/release",
+		ReleasesURL:    server.URL + "/releases",
 		// The real toolchain. That is the point of this test.
 	})
 	if err != nil {
@@ -208,29 +208,26 @@ func buildThinRelease(t *testing.T, source, version string) (archive []byte, dig
 	return archive, digestOf(archive)
 }
 
-// serveRelease stands in for GitHub.
+// serveRelease stands in for GitHub, laid out the way it serves releases:
+// the manifest at /releases/latest/download/latest.json and the archive at
+// /releases/download/v<version>/Lasso-app.zip. No API.
 func serveRelease(t *testing.T, tag string, archive []byte, digest string) *httptest.Server {
 	t.Helper()
+	version := strings.TrimPrefix(tag, "v")
 
-	var server *httptest.Server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/release", func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
-			"tag_name": tag,
-			"body":     "integration test release",
-			"html_url": "https://example.com/" + tag,
-			"assets": []map[string]any{
-				{"name": AppAsset, "browser_download_url": server.URL + "/app.zip", "size": len(archive)},
-				{"name": SumsAsset, "browser_download_url": server.URL + "/sums", "size": 128},
-			},
+	mux.HandleFunc("/releases/latest/download/"+ManifestName, func(w http.ResponseWriter, _ *http.Request) {
+		json.NewEncoder(w).Encode(Manifest{
+			SchemaVersion: ManifestSchema,
+			Version:       version,
+			Published:     "2026-09-23T00:00:00Z",
+			Notes:         "integration test release",
+			Assets:        map[string]AssetInfo{AppAsset: {Size: int64(len(archive)), SHA256: digest}},
 		})
 	})
-	mux.HandleFunc("/app.zip", func(w http.ResponseWriter, _ *http.Request) { w.Write(archive) })
-	mux.HandleFunc("/sums", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintf(w, "%s  %s\n", digest, AppAsset)
-	})
+	mux.HandleFunc("/releases/download/"+tag+"/"+AppAsset, func(w http.ResponseWriter, _ *http.Request) { w.Write(archive) })
 
-	server = httptest.NewServer(mux)
+	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server
 }

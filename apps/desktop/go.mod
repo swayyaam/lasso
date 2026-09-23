@@ -30,6 +30,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/samber/lo v1.49.1 // indirect
 	github.com/swayyaam/lasso/packages/doctor v0.0.0
+	github.com/swayyaam/lasso/packages/ghrelease v0.0.0
 	github.com/swayyaam/lasso/packages/history v0.0.0
 	github.com/swayyaam/lasso/packages/updater v0.0.0
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
@@ -55,3 +56,5 @@ replace github.com/swayyaam/lasso/packages/history => ../../packages/history
 replace github.com/swayyaam/lasso/packages/doctor => ../../packages/doctor
 
 replace github.com/swayyaam/lasso/packages/updater => ../../packages/updater
+
+replace github.com/swayyaam/lasso/packages/ghrelease => ../../packages/ghrelease

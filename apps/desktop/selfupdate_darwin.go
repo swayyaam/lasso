@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/swayyaam/lasso/packages/ghrelease"
 	"github.com/swayyaam/lasso/packages/updater"
 )
 
@@ -54,7 +55,7 @@ func appVersion(bundle string) string {
 }
 
 // newUpdater builds an updater for the running app, or explains why it cannot.
-func newUpdater() (*updater.Updater, error) {
+func newUpdater(releases *ghrelease.Client) (*updater.Updater, error) {
 	bundle := bundlePath()
 	if bundle == "" {
 		return nil, fmt.Errorf("Lasso is running from a development build, which updates itself by being rebuilt")
@@ -69,7 +70,26 @@ func newUpdater() (*updater.Updater, error) {
 		BundlePath:     bundle,
 		CurrentVersion: version,
 		// Empty unless overridden, which leaves the updater on its default.
-		ReleaseAPI: os.Getenv(updater.APIEnv),
+		ReleasesURL: os.Getenv(updater.ReleasesEnv),
+		Releases:    releases,
+	})
+}
+
+// releaseStateFile holds the GitHub client's cache and any standing refusal.
+const releaseStateFile = "github.json"
+
+// newReleaseClient builds the process's one GitHub client.
+//
+// The User-Agent names the app and where it comes from, which is what GitHub
+// asks of every caller and makes Lasso's traffic legible rather than anonymous.
+func newReleaseClient(support string) *ghrelease.Client {
+	version := appVersion(bundlePath())
+	if version == "" {
+		version = "dev"
+	}
+	return ghrelease.New(ghrelease.Config{
+		UserAgent: "Lasso/" + version + " (+https://github.com/swayyaam/lasso)",
+		StatePath: filepath.Join(support, releaseStateFile),
 	})
 }
 

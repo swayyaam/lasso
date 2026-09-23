@@ -5,6 +5,7 @@ use (
 	./packages/binaries
 	./packages/core
 	./packages/doctor
+	./packages/ghrelease
 	./packages/history
 	./packages/presets
 	./packages/updater

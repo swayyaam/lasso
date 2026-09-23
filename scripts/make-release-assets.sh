@@ -4,7 +4,12 @@
 #
 #   Lasso.dmg       the full installer, for a first install
 #   Lasso-app.zip   the app without its helper programs, for in-app updates
-#   SHA256SUMS      digests of both, which the updater checks before installing
+#   latest.json     what the release says about itself: version, notes, and
+#                   each file's size and digest. This is what the updater
+#                   reads, from releases/latest/download/, which is GitHub's
+#                   download CDN rather than its rate-limited API.
+#   SHA256SUMS      digests for people checking by hand — and for Lasso 0.1.2
+#                   to 0.1.5, which verify against it. Keep publishing it.
 #
 # The zip is the interesting one. Contents/Resources/bin is 328 MB of the
 # bundle's 329 MB and changes only when binaries.lock.json does, so it is left
@@ -16,7 +21,10 @@
 # release wants different versions, the manifests disagree and it refuses
 # rather than installing an update that silently keeps the old ffmpeg.
 #
-# Usage: scripts/make-release-assets.sh [path/to/Lasso.app] [output-dir]
+# Usage: NOTES=path/to/notes.md scripts/make-release-assets.sh [path/to/Lasso.app] [output-dir]
+#
+# NOTES is required: the app shows them before installing, and a release
+# without them would offer an update with nothing to say about it.
 
 set -euo pipefail
 
@@ -26,6 +34,8 @@ OUTDIR="${2:-$REPO_ROOT/apps/desktop/build/bin}"
 
 die() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 
+[ -n "${NOTES:-}" ] || die "set NOTES to the release notes file: NOTES=notes.md make release-assets"
+[ -s "$NOTES" ] || die "NOTES=$NOTES is missing or empty"
 [ -d "$APP" ] || die "no app bundle at $APP — run \`make build\` first"
 [ -f "$APP/Contents/Resources/bin/manifest.json" ] || die "$APP has no helper manifest; run \`make build\`"
 
@@ -37,6 +47,7 @@ codesign --verify --deep --strict "$APP" >/dev/null 2>&1 \
 DMG="$OUTDIR/Lasso.dmg"
 ZIP="$OUTDIR/Lasso-app.zip"
 SUMS="$OUTDIR/SHA256SUMS"
+MANIFEST="$OUTDIR/latest.json"
 
 [ -f "$DMG" ] || die "no $DMG — run \`make dmg\` first"
 
@@ -62,7 +73,18 @@ ditto -c -k --sequesterRsrc --keepParent "$staging/$(basename "$APP")" "$ZIP" \
 ( cd "$OUTDIR" && shasum -a 256 "$(basename "$DMG")" "$(basename "$ZIP")" > "$(basename "$SUMS")" ) \
 	|| die "could not write $SUMS"
 
-printf 'Release assets in %s\n' "$OUTDIR"
-for f in "$DMG" "$ZIP" "$SUMS"; do
+# The version comes from the bundle itself — the same Info.plist the running
+# app reads — so the manifest cannot disagree with what it describes.
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" \
+	|| die "could not read the app's version"
+
+# Written by the same Manifest type the updater parses, and validated by it,
+# so a release the app could not install is refused here rather than by users.
+( cd "$REPO_ROOT" && go run ./packages/updater/cmd/release-manifest \
+	-version "$VERSION" -notes "$NOTES" -out "$MANIFEST" "$ZIP" "$DMG" ) \
+	|| die "could not write $MANIFEST"
+
+printf 'Release assets for %s in %s\n' "$VERSION" "$OUTDIR"
+for f in "$DMG" "$ZIP" "$MANIFEST" "$SUMS"; do
 	printf '  %-16s %s\n' "$(basename "$f")" "$(du -h "$f" | awk '{print $1}')"
 done

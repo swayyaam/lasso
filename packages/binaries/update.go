@@ -4,15 +4,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/swayyaam/lasso/packages/ghrelease"
 )
 
 // Lasso updates yt-dlp itself rather than calling `yt-dlp -U`.
@@ -28,8 +29,15 @@ import (
 // release asset the lock file pins, verifies its digest, and swaps the folder.
 
 const (
-	// releaseAPI is the only endpoint this updater talks to.
-	releaseAPI = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
+	// ytDlpReleases is where yt-dlp's releases live. The updater never uses
+	// GitHub's API: the latest-release page's redirect names the newest tag,
+	// and that tag's files come from the download CDN — neither counts
+	// against the API's 60-an-hour allowance. packages/ghrelease has the rest.
+	ytDlpReleases = "https://github.com/yt-dlp/yt-dlp/releases"
+
+	// sumsMaxAge is how long a release's checksum list is reused. A tag's
+	// files never change once published, so this is generous.
+	sumsMaxAge = 24 * time.Hour
 
 	// ytDlpAsset is the release asset Lasso installs. It must stay the same
 	// shape as binaries.lock.json pins, or an update would silently change the
@@ -66,37 +74,18 @@ func (r UpdateResult) UserMessage() string {
 	}
 }
 
-// client returns the HTTP client to use, defaulting when unset.
-func (m *Manager) client() *http.Client {
-	if m.http != nil {
-		return m.http
-	}
-	return http.DefaultClient
-}
-
-type releaseInfo struct {
-	TagName string `json:"tag_name"`
-	Assets  []struct {
-		Name string `json:"name"`
-		URL  string `json:"browser_download_url"`
-	} `json:"assets"`
-}
-
-func (r releaseInfo) asset(name string) (string, bool) {
-	for _, a := range r.Assets {
-		if a.Name == name {
-			return a.URL, true
-		}
-	}
-	return "", false
-}
-
 // UpdateYtDlp installs the latest yt-dlp release into Application Support.
 //
 // The new copy is staged beside the old one and only swapped in after it has
 // been verified to run, so a failed or interrupted update leaves the working
 // installation untouched.
-func (m *Manager) UpdateYtDlp(ctx context.Context) (UpdateResult, error) {
+//
+// releases is the process's shared GitHub client, so a refusal from GitHub
+// reaches this updater and Lasso's own alike. nil builds a private one.
+func (m *Manager) UpdateYtDlp(ctx context.Context, releases *ghrelease.Client) (UpdateResult, error) {
+	if releases == nil {
+		releases = ghrelease.New(ghrelease.Config{UserAgent: "Lasso"})
+	}
 	ctx, cancel := context.WithTimeout(ctx, updateTimeout)
 	defer cancel()
 
@@ -110,26 +99,23 @@ func (m *Manager) UpdateYtDlp(ctx context.Context) (UpdateResult, error) {
 	result.VersionBefore = before.Version
 	fmt.Fprintf(log, "Installed version: %s\n", before.Version)
 
-	release, err := m.latestRelease(ctx)
+	// A deliberate press asks now; the shared client still spaces presses
+	// and honours any refusal, so leaning on the button costs nothing extra.
+	tag, err := releases.LatestTag(ctx, m.releasesURL, 0)
 	if err != nil {
 		return result, err
 	}
-	fmt.Fprintf(log, "Latest release: %s\n", release.TagName)
+	fmt.Fprintf(log, "Latest release: %s\n", tag)
 
-	if release.TagName == before.Version {
+	if tag == before.Version {
 		result.VersionAfter = before.Version
 		result.Output = log.String() + "Already up to date.\n"
 		return result, nil
 	}
 
-	zipURL, ok := release.asset(ytDlpAsset)
-	if !ok {
-		return result, fmt.Errorf("the latest yt-dlp release has no %s", ytDlpAsset)
-	}
-	sumsURL, ok := release.asset(sumsAsset)
-	if !ok {
-		return result, fmt.Errorf("the latest yt-dlp release has no checksum file")
-	}
+	// Addresses are built from the tag rather than read from anywhere, so
+	// nothing GitHub sends back can point the download somewhere else.
+	base := strings.TrimSuffix(m.releasesURL, "/") + "/download/" + tag + "/"
 
 	staging, err := os.MkdirTemp(m.paths.Bin, ".yt-dlp-update-")
 	if err != nil {
@@ -139,12 +125,22 @@ func (m *Manager) UpdateYtDlp(ctx context.Context) (UpdateResult, error) {
 
 	archive := filepath.Join(staging, ytDlpAsset)
 	fmt.Fprintf(log, "Downloading %s\n", ytDlpAsset)
-	if err := m.download(ctx, zipURL, archive, maxDownloadBytes); err != nil {
+	sums, err := releases.Get(ctx, base+sumsAsset, sumsMaxAge)
+	if errors.Is(err, ghrelease.ErrNotFound) {
+		return result, fmt.Errorf("yt-dlp %s publishes no checksum file, so its download cannot be verified", tag)
+	}
+	if err != nil {
+		return result, err
+	}
+	want, err := digestFor(sums, ytDlpAsset)
+	if err != nil {
 		return result, err
 	}
 
-	want, err := m.expectedDigest(ctx, sumsURL, ytDlpAsset)
-	if err != nil {
+	if err := releases.Download(ctx, base+ytDlpAsset, archive, maxDownloadBytes); err != nil {
+		if errors.Is(err, ghrelease.ErrNotFound) {
+			return result, fmt.Errorf("yt-dlp %s has no %s", tag, ytDlpAsset)
+		}
 		return result, err
 	}
 	got, err := fileDigest(archive)
@@ -209,90 +205,16 @@ func (m *Manager) UpdateYtDlp(ctx context.Context) (UpdateResult, error) {
 	return result, nil
 }
 
-// latestRelease asks GitHub what the newest yt-dlp release is.
-func (m *Manager) latestRelease(ctx context.Context) (releaseInfo, error) {
-	var info releaseInfo
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.updateAPI, nil)
-	if err != nil {
-		return info, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	resp, err := m.client().Do(req)
-	if err != nil {
-		return info, fmt.Errorf("could not reach the yt-dlp release server: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return info, fmt.Errorf("the yt-dlp release server returned %s", resp.Status)
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxChecksumBytes)).Decode(&info); err != nil {
-		return info, fmt.Errorf("could not read the release information: %w", err)
-	}
-	if info.TagName == "" {
-		return info, fmt.Errorf("the release server did not name a version")
-	}
-	return info, nil
-}
-
-// expectedDigest pulls one file's published digest out of the release's
-// checksum list.
-func (m *Manager) expectedDigest(ctx context.Context, sumsURL, name string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sumsURL, nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := m.client().Do(req)
-	if err != nil {
-		return "", fmt.Errorf("could not fetch the update's checksums: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("the checksum file returned %s", resp.Status)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxChecksumBytes))
-	if err != nil {
-		return "", err
-	}
-
-	for _, line := range strings.Split(string(body), "\n") {
+// digestFor pulls one file's published digest out of a checksum list, in
+// shasum's format: digest, whitespace, filename.
+func digestFor(sums []byte, name string) (string, error) {
+	for _, line := range strings.Split(string(sums), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 2 && fields[1] == name {
 			return strings.ToLower(fields[0]), nil
 		}
 	}
 	return "", fmt.Errorf("the release's checksum file does not list %s", name)
-}
-
-// download fetches a URL to a file, refusing anything over the size limit.
-func (m *Manager) download(ctx context.Context, url, dest string, limit int64) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := m.client().Do(req)
-	if err != nil {
-		return fmt.Errorf("could not download the update: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("downloading the update returned %s", resp.Status)
-	}
-
-	out, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, io.LimitReader(resp.Body, limit)); err != nil {
-		return fmt.Errorf("could not save the update: %w", err)
-	}
-	return out.Sync()
 }
 
 func fileDigest(path string) (string, error) {

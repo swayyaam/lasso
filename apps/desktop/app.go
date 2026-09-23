@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/swayyaam/lasso/packages/binaries"
 	"github.com/swayyaam/lasso/packages/core"
 	"github.com/swayyaam/lasso/packages/doctor"
+	"github.com/swayyaam/lasso/packages/ghrelease"
 	"github.com/swayyaam/lasso/packages/history"
 	"github.com/swayyaam/lasso/packages/presets"
 	"github.com/swayyaam/lasso/packages/updater"
@@ -42,30 +42,42 @@ type App struct {
 	// every call can report it rather than panicking on a nil dependency.
 	startupErr error
 
-	// The last update check, cached. GitHub allows 60 unauthenticated calls an
-	// hour from one address, and an address can be a whole office — so opening
-	// Settings repeatedly must not spend that budget.
-	updateChecked time.Time
-	lastUpdate    updater.Update
+	// releases is the process's one GitHub client, shared by Lasso's own
+	// updater and the yt-dlp updater. It keeps its cache and any refusal from
+	// GitHub on disk, so a relaunch neither repeats a recent check nor forgets
+	// being told to wait. See packages/ghrelease.
+	releases *ghrelease.Client
 
-	// One updater, kept for the life of the process. It carries the rate
-	// limiter that keeps Lasso inside GitHub's allowance, and a limiter
-	// rebuilt for every check would remember no refusal it had been given.
-	updOnce sync.Once
-	upd     *updater.Updater
-	updErr  error
+	// One updater, kept for the life of the process.
+	updMu sync.Mutex
+	upd   *updater.Updater
 }
 
 // releaseUpdater returns the process's one updater, building it on first use.
+//
+// Not a sync.Once: "still starting up" is a reason to try again shortly, and
+// a Once would remember it for the rest of the session.
 func (a *App) releaseUpdater() (*updater.Updater, error) {
-	a.updOnce.Do(func() { a.upd, a.updErr = newUpdater() })
-	return a.upd, a.updErr
-}
+	a.updMu.Lock()
+	defer a.updMu.Unlock()
+	if a.upd != nil {
+		return a.upd, nil
+	}
 
-// updateCheckTTL is how long a check is reused for. Long enough that browsing
-// the settings screen costs nothing, short enough that a release published
-// this morning is offered this afternoon.
-const updateCheckTTL = 6 * time.Hour
+	a.mu.RLock()
+	releases := a.releases
+	a.mu.RUnlock()
+	if releases == nil {
+		return nil, fmt.Errorf("Lasso is still starting up")
+	}
+
+	u, err := newUpdater(releases)
+	if err != nil {
+		return nil, err
+	}
+	a.upd = u
+	return u, nil
+}
 
 // NewApp creates the application.
 func NewApp() *App { return &App{} }
@@ -88,6 +100,10 @@ func (a *App) startup(ctx context.Context) {
 		a.fail(fmt.Errorf("could not find Lasso's application folder: %w", err))
 		return
 	}
+
+	a.mu.Lock()
+	a.releases = newReleaseClient(support)
+	a.mu.Unlock()
 
 	settingsStore, err := NewSettingsStore(support)
 	if err != nil {
@@ -698,34 +714,20 @@ func (a *App) AppVersion() string {
 
 // CheckForUpdate asks whether a newer release exists. It downloads nothing.
 //
-// The answer is cached, because the interface checks whenever the settings
-// screen opens and GitHub's allowance for an unauthenticated caller is 60 an
-// hour per address. Pressing the button passes force and always asks.
+// The settings screen checks whenever it opens, and that costs nothing: a
+// check younger than updater.CheckMaxAge is answered from the cache, which
+// outlives the process. Pressing the button passes force, which asks now —
+// still spaced, and still honouring any refusal from GitHub.
 func (a *App) CheckForUpdate(force bool) (updater.Update, error) {
-	a.mu.RLock()
-	cached, checked := a.lastUpdate, a.updateChecked
-	a.mu.RUnlock()
-
-	if !force && !checked.IsZero() && time.Since(checked) < updateCheckTTL {
-		return cached, nil
-	}
-
 	u, err := a.releaseUpdater()
 	if err != nil {
 		return updater.Update{}, err
 	}
-	update, err := u.Check(a.ctx)
-	if err != nil {
-		// Deliberately not cached: a failure is usually the network or a rate
-		// limit, and both are worth retrying rather than being remembered for
-		// six hours.
-		return updater.Update{}, err
+	maxAge := updater.CheckMaxAge
+	if force {
+		maxAge = 0
 	}
-
-	a.mu.Lock()
-	a.lastUpdate, a.updateChecked = update, time.Now()
-	a.mu.Unlock()
-	return update, nil
+	return u.Check(a.ctx, maxAge)
 }
 
 // InstallUpdate downloads and installs the newest release.
@@ -750,14 +752,7 @@ func (a *App) InstallUpdate() (updater.Result, error) {
 	if err != nil {
 		return updater.Result{}, err
 	}
-	result, err := u.Install(a.ctx)
-	if err == nil && result.Installed {
-		// What was cached describes a version that is no longer running.
-		a.mu.Lock()
-		a.updateChecked = time.Time{}
-		a.mu.Unlock()
-	}
-	return result, err
+	return u.Install(a.ctx)
 }
 
 // RestartToFinish launches the installed version and quits this one.
@@ -777,14 +772,14 @@ func (a *App) RestartToFinish() error {
 // Support and reports what happened.
 func (a *App) UpdateYtDlp() (binaries.UpdateResult, error) {
 	a.mu.RLock()
-	manager := a.manager
+	manager, releases := a.manager, a.releases
 	a.mu.RUnlock()
 
 	if manager == nil {
 		return binaries.UpdateResult{}, fmt.Errorf("Lasso is still starting up")
 	}
 
-	result, err := manager.UpdateYtDlp(a.ctx)
+	result, err := manager.UpdateYtDlp(a.ctx, releases)
 	if err != nil {
 		return result, err
 	}

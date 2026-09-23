@@ -6,16 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // ---- fixtures ---------------------------------------------------------
@@ -72,57 +69,104 @@ func digestOf(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// releaseServer stands in for the GitHub release endpoints.
+// releaseServer stands in for github.com, laid out the way GitHub serves
+// releases: the latest release's manifest under /releases/latest/download/,
+// each version's files under /releases/download/v<version>/. There is no API
+// here, and any request outside that layout fails the test.
 type releaseServer struct {
 	*httptest.Server
+	t       *testing.T
+	version string
 	archive []byte
-	// omitSums drops the checksum asset, which must stop an install.
-	omitSums bool
-	// omitApp drops the app asset.
+
+	// omitApp publishes a manifest with no app archive in it.
 	omitApp bool
+	// omitManifest makes latest.json a 404, as a release without one would be.
+	omitManifest bool
 	// corruptDigest publishes a checksum that does not match the archive.
 	corruptDigest bool
+	// declaredSize overrides the archive size the manifest publishes.
+	declaredSize int64
+	// status, when set, is the answer to every request.
+	status     int
+	retryAfter string
+
+	mu     sync.Mutex
+	hits   map[string]int
+	agents []string
 }
 
 func newReleaseServer(t *testing.T, tag string, archive []byte) *releaseServer {
 	t.Helper()
-	rs := &releaseServer{archive: archive}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/release", func(w http.ResponseWriter, _ *http.Request) {
-		type asset struct {
-			Name string `json:"name"`
-			URL  string `json:"browser_download_url"`
-			Size int64  `json:"size"`
-		}
-		var assets []asset
-		if !rs.omitApp {
-			assets = append(assets, asset{AppAsset, rs.URL + "/app.zip", int64(len(rs.archive))})
-		}
-		if !rs.omitSums {
-			assets = append(assets, asset{SumsAsset, rs.URL + "/sums", 128})
-		}
-		json.NewEncoder(w).Encode(map[string]any{
-			"tag_name": tag,
-			"body":     "notes for " + tag,
-			"html_url": "https://example.com/releases/" + tag,
-			"assets":   assets,
-		})
-	})
-	mux.HandleFunc("/app.zip", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write(rs.archive)
-	})
-	mux.HandleFunc("/sums", func(w http.ResponseWriter, _ *http.Request) {
-		digest := digestOf(rs.archive)
-		if rs.corruptDigest {
-			digest = strings.Repeat("0", 64)
-		}
-		fmt.Fprintf(w, "%s  %s\n%s  Lasso.dmg\n", digest, AppAsset, strings.Repeat("a", 64))
-	})
-
-	rs.Server = httptest.NewServer(mux)
+	rs := &releaseServer{t: t, version: strings.TrimPrefix(tag, "v"), archive: archive, hits: map[string]int{}}
+	rs.Server = httptest.NewServer(http.HandlerFunc(rs.serve))
 	t.Cleanup(rs.Close)
 	return rs
+}
+
+func (rs *releaseServer) serve(w http.ResponseWriter, r *http.Request) {
+	rs.mu.Lock()
+	rs.hits[r.URL.Path]++
+	rs.agents = append(rs.agents, r.Header.Get("User-Agent"))
+	rs.mu.Unlock()
+
+	if !strings.HasPrefix(r.URL.Path, "/releases/") {
+		rs.t.Errorf("a request left the releases layout: %s", r.URL.Path)
+	}
+	if rs.status != 0 {
+		if rs.retryAfter != "" {
+			w.Header().Set("Retry-After", rs.retryAfter)
+		}
+		w.WriteHeader(rs.status)
+		return
+	}
+
+	switch r.URL.Path {
+	case "/releases/latest/download/" + ManifestName:
+		if rs.omitManifest {
+			http.NotFound(w, r)
+			return
+		}
+		m := Manifest{
+			SchemaVersion: ManifestSchema,
+			Version:       rs.version,
+			Published:     "2026-09-23T00:00:00Z",
+			Notes:         "notes for " + rs.version,
+			Assets:        map[string]AssetInfo{},
+		}
+		if !rs.omitApp {
+			digest := digestOf(rs.archive)
+			if rs.corruptDigest {
+				digest = strings.Repeat("0", 64)
+			}
+			size := int64(len(rs.archive))
+			if rs.declaredSize != 0 {
+				size = rs.declaredSize
+			}
+			m.Assets[AppAsset] = AssetInfo{Size: size, SHA256: digest}
+		}
+		json.NewEncoder(w).Encode(m)
+	case "/releases/download/v" + rs.version + "/" + AppAsset:
+		w.Write(rs.archive)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (rs *releaseServer) count(path string) int {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	return rs.hits[path]
+}
+
+func (rs *releaseServer) total() int {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	n := 0
+	for _, c := range rs.hits {
+		n += c
+	}
+	return n
 }
 
 // fakeRunner stands in for ditto, codesign and xattr.
@@ -224,7 +268,7 @@ func newHarness(t *testing.T, currentVersion, releaseTag string, helpers map[str
 	u, err := New(Config{
 		BundlePath:     bundle,
 		CurrentVersion: currentVersion,
-		ReleaseAPI:     server.URL + "/release",
+		ReleasesURL:    server.URL + "/releases",
 		Run:            runner.run,
 	})
 	if err != nil {
@@ -274,7 +318,7 @@ func TestIsNewer(t *testing.T) {
 func TestCheckFindsANewerRelease(t *testing.T) {
 	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
 
-	update, err := h.u.Check(context.Background())
+	update, err := h.u.Check(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -292,7 +336,7 @@ func TestCheckFindsANewerRelease(t *testing.T) {
 func TestCheckSaysNothingWhenCurrent(t *testing.T) {
 	h := newHarness(t, "0.2.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
 
-	update, err := h.u.Check(context.Background())
+	update, err := h.u.Check(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -307,7 +351,7 @@ func TestCheckIgnoresAReleaseItCannotInstall(t *testing.T) {
 	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
 	h.server.omitApp = true
 
-	update, err := h.u.Check(context.Background())
+	update, err := h.u.Check(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -320,12 +364,12 @@ func TestCheckReportsAnUnreachableServer(t *testing.T) {
 	u, err := New(Config{
 		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
 		CurrentVersion: "0.1.0",
-		ReleaseAPI:     "http://127.0.0.1:1/release",
+		ReleasesURL:    "http://127.0.0.1:1/releases",
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := u.Check(context.Background()); err == nil {
+	if _, err := u.Check(context.Background(), 0); err == nil {
 		t.Error("an unreachable update server was not reported")
 	}
 }
@@ -426,14 +470,26 @@ func TestInstallRefusesAWrongChecksum(t *testing.T) {
 	assertUntouched(t, h.bundle, "0.1.0")
 }
 
-func TestInstallRefusesWithoutPublishedChecksums(t *testing.T) {
-	// No checksums means no way to know what was downloaded, and the update is
-	// a replacement for the whole application.
+func TestInstallRefusesWithoutAManifest(t *testing.T) {
+	// The manifest carries the digest. Without it there is no way to know
+	// what was downloaded, and the update replaces the whole application.
 	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
-	h.server.omitSums = true
+	h.server.omitManifest = true
 
 	if _, err := h.u.Install(context.Background()); err == nil {
-		t.Fatal("an unverifiable download was installed")
+		t.Fatal("an update with no manifest was installed")
+	}
+	assertUntouched(t, h.bundle, "0.1.0")
+}
+
+func TestInstallRefusesAnArchiveLargerThanPublished(t *testing.T) {
+	// The declared size is the ceiling, so a swapped or padded archive is cut
+	// off rather than written to disk in full and then rejected.
+	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
+	h.server.declaredSize = int64(len(h.server.archive)) - 1
+
+	if _, err := h.u.Install(context.Background()); err == nil {
+		t.Fatal("an archive larger than the manifest said was installed")
 	}
 	assertUntouched(t, h.bundle, "0.1.0")
 }
@@ -482,7 +538,7 @@ func TestInstallRefusesAReadOnlyLocation(t *testing.T) {
 	u, _ := New(Config{
 		BundlePath:     bundle,
 		CurrentVersion: "0.1.0",
-		ReleaseAPI:     server.URL + "/release",
+		ReleasesURL:    server.URL + "/releases",
 		Run:            (&fakeRunner{t: t, stagedVersion: "0.2.0"}).run,
 	})
 
@@ -548,313 +604,106 @@ func assertUntouched(t *testing.T, bundle, version string) {
 	}
 }
 
-func TestRateLimitIsExplainedRatherThanShown(t *testing.T) {
-	// GitHub allows 60 unauthenticated calls an hour per address, and an
-	// address can be a whole office. "403 Forbidden" tells that person
-	// nothing, and the limit resetting on its own is the whole answer.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-RateLimit-Remaining", "0")
-		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(time.Now().Add(23*time.Minute).Unix()))
-		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `{"message":"API rate limit exceeded"}`)
-	}))
-	t.Cleanup(server.Close)
+// ---- staying off GitHub's API ----------------------------------------
+//
+// The manners themselves — caching, refusals across relaunches, spacing,
+// backoff, serial requests — are tested in packages/ghrelease. These check
+// that the updater goes through them and never around them.
 
-	u, _ := New(Config{
-		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
-		CurrentVersion: "0.1.0",
-		ReleaseAPI:     server.URL,
-	})
+func TestAnUpdateCostsOneSmallRequestAndTheArchive(t *testing.T) {
+	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
 
-	_, err := u.Check(context.Background())
-	if err == nil {
-		t.Fatal("a rate-limited check reported success")
+	if _, err := h.u.Check(context.Background(), 0); err != nil {
+		t.Fatalf("Check: %v", err)
 	}
-	if !strings.Contains(err.Error(), "rate-limiting") {
-		t.Errorf("error = %v, want it to name rate limiting", err)
+	if _, err := h.u.Install(context.Background()); err != nil {
+		t.Fatalf("Install: %v", err)
 	}
-	if strings.Contains(err.Error(), "403") {
-		t.Errorf("error = %v, want the status code kept out of it", err)
+	// serve() has already failed the test if anything went outside /releases/.
+	if n := h.server.count("/releases/latest/download/" + ManifestName); n != 1 {
+		t.Errorf("latest.json was fetched %d times for a check and an install; want 1, the install reusing the check's copy", n)
 	}
-	// The reset time is the actionable part, in words rather than in Go's
-	// duration syntax — "23m0s" is a log line, not a sentence.
-	if !strings.Contains(err.Error(), "23 minutes") {
-		t.Errorf("error = %v, want it to say when it will work again", err)
-	}
-	if strings.Contains(err.Error(), "m0s") {
-		t.Errorf("error = %v, want no raw Duration in it", err)
+	if n := h.server.count("/releases/download/v0.2.0/" + AppAsset); n != 1 {
+		t.Errorf("the archive was fetched %d times; want 1", n)
 	}
 }
 
-func TestHumanWaitReadsAsASentence(t *testing.T) {
-	// The whole point of this helper is that its output is dropped into
-	// prose, so each case is checked as the words it produces.
-	cases := []struct {
-		in   time.Duration
-		want string
-		ok   bool
-	}{
-		{20 * time.Second, "", false}, // rounds to nothing to say
-		{90 * time.Second, "2 minutes", true},
-		{time.Minute, "a minute", true},
-		{23 * time.Minute, "23 minutes", true},
-		{59 * time.Minute, "59 minutes", true},
-		{time.Hour, "an hour", true},
-		// A wrong local clock, which would otherwise quote a confident and
-		// completely wrong time.
-		{9 * time.Hour, "", false},
-		{-5 * time.Minute, "", false},
-	}
-	for _, c := range cases {
-		got, ok := humanWait(c.in)
-		if got != c.want || ok != c.ok {
-			t.Errorf("humanWait(%v) = %q, %v; want %q, %v", c.in, got, ok, c.want, c.ok)
+func TestChecksWithinMaxAgeAskNothing(t *testing.T) {
+	// Opening Settings checks. Opening it again, or five times, must not.
+	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
+
+	for i := 0; i < 5; i++ {
+		if _, err := h.u.Check(context.Background(), CheckMaxAge); err != nil {
+			t.Fatalf("Check: %v", err)
 		}
 	}
+	if n := h.server.total(); n != 1 {
+		t.Errorf("%d requests for five checks; want 1", n)
+	}
 }
 
-func TestOtherFailuresKeepTheirStatus(t *testing.T) {
-	// Only rate limiting gets the special explanation; anything else is more
-	// useful reported as it came back.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(server.Close)
+func TestARefusalIsExplainedAndHonouredByCheckAndInstall(t *testing.T) {
+	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
+	h.server.status = http.StatusTooManyRequests
+	h.server.retryAfter = "900"
 
-	u, _ := New(Config{
-		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
-		CurrentVersion: "0.1.0",
-		ReleaseAPI:     server.URL,
-	})
+	_, err := h.u.Check(context.Background(), 0)
+	if err == nil || !strings.Contains(err.Error(), "slow down") || !strings.Contains(err.Error(), "15 minutes") {
+		t.Fatalf("err = %v, want the slow-down explanation with the wait in words", err)
+	}
+	if _, err := h.u.Check(context.Background(), 0); err == nil {
+		t.Error("a forced check went ahead inside the refusal window")
+	}
+	if _, err := h.u.Install(context.Background()); err == nil {
+		t.Error("an install went ahead inside the refusal window")
+	}
+	if n := h.server.total(); n != 1 {
+		t.Errorf("%d requests reached GitHub; want 1, the rest refused locally", n)
+	}
+}
 
-	_, err := u.Check(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "500") {
-		t.Errorf("error = %v, want the status reported", err)
+func TestAMissingManifestIsExplained(t *testing.T) {
+	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
+	h.server.omitManifest = true
+
+	_, err := h.u.Check(context.Background(), 0)
+	if err == nil || !strings.Contains(err.Error(), "releases page") {
+		t.Errorf("err = %v, want it to point at the releases page", err)
+	}
+}
+
+func TestAManifestThatCouldMisdirectTheDownloadIsRefused(t *testing.T) {
+	// The version becomes part of the download address. Anything that is not
+	// exactly a version could walk that address somewhere else.
+	good := strings.Repeat("a", 64)
+	for _, m := range []Manifest{
+		{SchemaVersion: 1, Version: "../../evil"},
+		{SchemaVersion: 1, Version: "1.0.0/../2.0.0"},
+		{SchemaVersion: 1, Version: "v1.0.0"},
+		{SchemaVersion: 2, Version: "1.0.0"},
+		{SchemaVersion: 1, Version: "1.0.0", Assets: map[string]AssetInfo{AppAsset: {Size: 10, SHA256: "not-a-digest"}}},
+		{SchemaVersion: 1, Version: "1.0.0", Assets: map[string]AssetInfo{AppAsset: {Size: 0, SHA256: good}}},
+	} {
+		if err := m.Validate(); err == nil {
+			t.Errorf("Validate accepted %+v", m)
+		}
+	}
+	ok := Manifest{SchemaVersion: 1, Version: "1.0.0", Assets: map[string]AssetInfo{AppAsset: {Size: 10, SHA256: good}}}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("Validate refused a good manifest: %v", err)
 	}
 }
 
 func TestCheckIdentifiesItself(t *testing.T) {
-	// GitHub asks every caller to say who it is.
-	var agent string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		agent = r.Header.Get("User-Agent")
-		json.NewEncoder(w).Encode(map[string]any{"tag_name": "v0.1.0"})
-	}))
-	t.Cleanup(server.Close)
-
-	u, _ := New(Config{
-		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
-		CurrentVersion: "0.1.0",
-		ReleaseAPI:     server.URL,
-	})
-	u.Check(context.Background())
-
-	if !strings.HasPrefix(agent, "Lasso/") {
-		t.Errorf("User-Agent = %q, want Lasso to identify itself", agent)
+	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
+	if _, err := h.u.Check(context.Background(), 0); err != nil {
+		t.Fatal(err)
 	}
-}
-
-// --- Staying inside GitHub's allowance -------------------------------------
-//
-// Exceeding the hourly allowance only earns a 403. What gets a caller blocked
-// is what it does next, so these cover the "next": asking again immediately,
-// retrying a failure in a loop, and ignoring a Retry-After.
-
-// countingAPI serves a release and counts how many requests actually arrive.
-type countingAPI struct {
-	mu       sync.Mutex
-	requests int
-	etags    []string
-	handler  func(w http.ResponseWriter, r *http.Request, n int)
-}
-
-func (c *countingAPI) start(t *testing.T) string {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c.mu.Lock()
-		c.requests++
-		n := c.requests
-		c.etags = append(c.etags, r.Header.Get("If-None-Match"))
-		c.mu.Unlock()
-		c.handler(w, r, n)
-	}))
-	t.Cleanup(server.Close)
-	return server.URL
-}
-
-func (c *countingAPI) count() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.requests
-}
-
-func releaseJSON(w http.ResponseWriter) {
-	fmt.Fprint(w, `{"tag_name":"v9.9.9","body":"notes","html_url":"https://example.com",
-		"assets":[{"name":"Lasso-app.zip","browser_download_url":"https://example.com/a.zip","size":5}]}`)
-}
-
-func TestARefusalStopsTheNextRequestLeaving(t *testing.T) {
-	// The one that matters. Being told "0 remaining" and asking again anyway
-	// is the behaviour that turns a throttle into a block, so the second
-	// check must not reach the network at all.
-	api := &countingAPI{handler: func(w http.ResponseWriter, _ *http.Request, _ int) {
-		w.Header().Set("X-RateLimit-Remaining", "0")
-		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(time.Now().Add(30*time.Minute).Unix()))
-		w.WriteHeader(http.StatusForbidden)
-	}}
-	u, _ := New(Config{
-		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
-		CurrentVersion: "0.1.0",
-		ReleaseAPI:     api.start(t),
-	})
-
-	if _, err := u.Check(context.Background()); err == nil {
-		t.Fatal("a rate-limited check reported success")
-	}
-	// Someone leaning on "Check again".
-	for i := 0; i < 5; i++ {
-		_, err := u.Check(context.Background())
-		if err == nil {
-			t.Fatal("a check during the rate-limit window reported success")
+	h.server.mu.Lock()
+	defer h.server.mu.Unlock()
+	for _, agent := range h.server.agents {
+		if agent != "Lasso/0.1.0" {
+			t.Errorf("User-Agent = %q, want Lasso/0.1.0", agent)
 		}
-		if !strings.Contains(err.Error(), "rate-limiting") {
-			t.Errorf("error = %v, want the rate-limit explanation repeated from memory", err)
-		}
-	}
-	if got := api.count(); got != 1 {
-		t.Errorf("%d requests reached GitHub; want 1, the rest refused locally", got)
-	}
-}
-
-func TestRetryAfterIsObeyed(t *testing.T) {
-	// A secondary rate limit. GitHub says how long to wait and this is the
-	// signal it escalates on, so the wait is taken literally.
-	api := &countingAPI{handler: func(w http.ResponseWriter, _ *http.Request, _ int) {
-		w.Header().Set("Retry-After", "120")
-		w.WriteHeader(http.StatusForbidden)
-	}}
-	u, _ := New(Config{
-		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
-		CurrentVersion: "0.1.0",
-		ReleaseAPI:     api.start(t),
-	})
-
-	_, err := u.Check(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "slow down") {
-		t.Fatalf("error = %v, want it to name the slow-down", err)
-	}
-	if _, err := u.Check(context.Background()); err == nil {
-		t.Fatal("a check inside the Retry-After window reported success")
-	}
-	if got := api.count(); got != 1 {
-		t.Errorf("%d requests reached GitHub; want 1 — Retry-After was ignored", got)
-	}
-}
-
-func TestRepeatedChecksAskConditionallyAndReuseTheAnswer(t *testing.T) {
-	// A 304 costs nothing against the allowance, so the usual case — nothing
-	// new since last time — should cost nothing.
-	api := &countingAPI{handler: func(w http.ResponseWriter, r *http.Request, n int) {
-		w.Header().Set("ETag", `W/"abc"`)
-		if n > 1 {
-			if r.Header.Get("If-None-Match") != `W/"abc"` {
-				t.Errorf("request %d did not ask conditionally", n)
-			}
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		releaseJSON(w)
-	}}
-	u, _ := New(Config{
-		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
-		CurrentVersion: "0.1.0",
-		ReleaseAPI:     api.start(t),
-	})
-
-	first, err := u.Check(context.Background())
-	if err != nil {
-		t.Fatalf("Check: %v", err)
-	}
-	if !first.Available || first.Version != "9.9.9" {
-		t.Fatalf("first check = %+v, want 9.9.9 available", first)
-	}
-
-	// Inside the spacing window: served from memory, nothing sent.
-	again, err := u.Check(context.Background())
-	if err != nil {
-		t.Fatalf("second Check: %v", err)
-	}
-	if again.Version != first.Version || !again.Available {
-		t.Errorf("second check = %+v, want the same answer as the first", again)
-	}
-	if got := api.count(); got != 1 {
-		t.Errorf("%d requests for two checks; want 1", got)
-	}
-
-	// Past the spacing window it asks again — conditionally, and the 304
-	// still yields the full answer.
-	u.lim.next = time.Now().Add(-time.Second)
-	third, err := u.Check(context.Background())
-	if err != nil {
-		t.Fatalf("third Check: %v", err)
-	}
-	if third.Version != "9.9.9" || !third.Available {
-		t.Errorf("third check = %+v, want the cached release returned for the 304", third)
-	}
-	if got := api.count(); got != 2 {
-		t.Errorf("%d requests; want 2", got)
-	}
-}
-
-func TestAnUnreachableServerBacksOff(t *testing.T) {
-	// A wrong URL or a dead network must not mean a fresh request every time
-	// the settings screen opens.
-	u, _ := New(Config{
-		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
-		CurrentVersion: "0.1.0",
-		// Reserved by RFC 6761 to never resolve.
-		ReleaseAPI: "http://update.invalid/releases/latest",
-		HTTP:       &http.Client{Timeout: 2 * time.Second},
-	})
-
-	if _, err := u.Check(context.Background()); err == nil {
-		t.Fatal("a check against an unreachable server reported success")
-	}
-	wait := time.Until(u.lim.next)
-	if wait < backoffBase-time.Second {
-		t.Errorf("next attempt allowed in %v; want at least %v", wait, backoffBase)
-	}
-}
-
-func TestChecksDoNotRunConcurrently(t *testing.T) {
-	// GitHub asks for serial requests, and two racing checks would each
-	// spend allowance the other had not accounted for.
-	var inFlight, overlapped int32
-	api := &countingAPI{handler: func(w http.ResponseWriter, _ *http.Request, _ int) {
-		if atomic.AddInt32(&inFlight, 1) > 1 {
-			atomic.StoreInt32(&overlapped, 1)
-		}
-		time.Sleep(20 * time.Millisecond)
-		atomic.AddInt32(&inFlight, -1)
-		releaseJSON(w)
-	}}
-	u, _ := New(Config{
-		BundlePath:     filepath.Join(t.TempDir(), "Lasso.app"),
-		CurrentVersion: "0.1.0",
-		ReleaseAPI:     api.start(t),
-	})
-
-	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() { defer wg.Done(); u.Check(context.Background()) }()
-	}
-	wg.Wait()
-
-	if atomic.LoadInt32(&overlapped) == 1 {
-		t.Error("two checks were in flight at once")
-	}
-	if got := api.count(); got != 1 {
-		t.Errorf("%d requests for 8 concurrent checks; want 1", got)
 	}
 }

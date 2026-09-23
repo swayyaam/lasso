@@ -2,6 +2,7 @@ package binaries
 
 import (
 	"context"
+	"github.com/swayyaam/lasso/packages/ghrelease"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,7 +109,7 @@ func TestRealYtDlpUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	archive := filepath.Join(t.TempDir(), "old.zip")
-	if err := m.download(context.Background(), oldURL, archive, maxDownloadBytes); err != nil {
+	if err := ghrelease.New(ghrelease.Config{UserAgent: "Lasso/test"}).Download(context.Background(), oldURL, archive, maxDownloadBytes); err != nil {
 		t.Fatalf("fetching the old release: %v", err)
 	}
 	if err := unzip(context.Background(), archive, filepath.Join(binDir, "yt-dlp")); err != nil {
@@ -127,7 +128,7 @@ func TestRealYtDlpUpdate(t *testing.T) {
 	}
 	t.Logf("installed the old release: %s", before.Version)
 
-	result, err := m.UpdateYtDlp(context.Background())
+	result, err := m.UpdateYtDlp(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("UpdateYtDlp: %v\n%s", err, result.Output)
 	}

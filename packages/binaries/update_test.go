@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -60,23 +59,21 @@ func newReleaseServer(t *testing.T, version string, archive []byte, digest strin
 	t.Helper()
 	rs := &releaseServer{hits: map[string]int{}}
 
+	// Laid out like github.com: the latest-release page redirects to the tag,
+	// and the tag's files sit under /releases/download/<tag>/. No API.
 	mux := http.NewServeMux()
-	mux.HandleFunc("/release", func(w http.ResponseWriter, r *http.Request) {
-		rs.hits["release"]++
-		base := "http://" + r.Host
-		json.NewEncoder(w).Encode(map[string]any{
-			"tag_name": version,
-			"assets": []map[string]string{
-				{"name": ytDlpAsset, "browser_download_url": base + "/zip"},
-				{"name": sumsAsset, "browser_download_url": base + "/sums"},
-			},
-		})
+	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		rs.hits["latest"]++
+		if strings.HasPrefix(r.URL.Path, "/api") {
+			t.Error("the updater called an API endpoint")
+		}
+		http.Redirect(w, r, "/releases/tag/"+version, http.StatusFound)
 	})
-	mux.HandleFunc("/zip", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/releases/download/"+version+"/"+ytDlpAsset, func(w http.ResponseWriter, _ *http.Request) {
 		rs.hits["zip"]++
 		w.Write(archive)
 	})
-	mux.HandleFunc("/sums", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/releases/download/"+version+"/"+sumsAsset, func(w http.ResponseWriter, _ *http.Request) {
 		rs.hits["sums"]++
 		w.Write([]byte("0000  some-other-file\n" + digest + "  " + ytDlpAsset + "\n"))
 	})
@@ -93,8 +90,7 @@ func updatableManager(t *testing.T, server *releaseServer) *Manager {
 	if _, err := m.Install(context.Background()); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	m.updateAPI = server.URL + "/release"
-	m.http = server.Client()
+	m.releasesURL = server.URL + "/releases"
 	return m
 }
 
@@ -104,7 +100,7 @@ func TestUpdateInstallsNewRelease(t *testing.T) {
 	server := newReleaseServer(t, newVersion, archive, digestOf(archive))
 	m := updatableManager(t, server)
 
-	result, err := m.UpdateYtDlp(context.Background())
+	result, err := m.UpdateYtDlp(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("UpdateYtDlp: %v", err)
 	}
@@ -139,7 +135,7 @@ func TestUpdateRecordsNewVersionInStamp(t *testing.T) {
 	server := newReleaseServer(t, newVersion, archive, digestOf(archive))
 	m := updatableManager(t, server)
 
-	if _, err := m.UpdateYtDlp(context.Background()); err != nil {
+	if _, err := m.UpdateYtDlp(context.Background(), nil); err != nil {
 		t.Fatalf("UpdateYtDlp: %v", err)
 	}
 
@@ -166,7 +162,7 @@ func TestUpdateSkipsWhenAlreadyCurrent(t *testing.T) {
 	server := newReleaseServer(t, current, archive, digestOf(archive))
 	m := updatableManager(t, server)
 
-	result, err := m.UpdateYtDlp(context.Background())
+	result, err := m.UpdateYtDlp(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("UpdateYtDlp: %v", err)
 	}
@@ -193,7 +189,7 @@ func TestUpdateRejectsWrongChecksum(t *testing.T) {
 	server := newReleaseServer(t, "2026.12.01", tampered, digestOf(archive))
 	m := updatableManager(t, server)
 
-	_, err := m.UpdateYtDlp(context.Background())
+	_, err := m.UpdateYtDlp(context.Background(), nil)
 	if err == nil {
 		t.Fatal("UpdateYtDlp installed an archive that failed its checksum")
 	}
@@ -220,7 +216,7 @@ func TestUpdateKeepsWorkingCopyWhenNewOneWillNotRun(t *testing.T) {
 	server := newReleaseServer(t, "2026.12.01", archive, digestOf(archive))
 	m := updatableManager(t, server)
 
-	if _, err := m.UpdateYtDlp(context.Background()); err == nil {
+	if _, err := m.UpdateYtDlp(context.Background(), nil); err == nil {
 		t.Fatal("UpdateYtDlp installed a binary that would not run")
 	}
 
@@ -235,8 +231,11 @@ func TestUpdateKeepsWorkingCopyWhenNewOneWillNotRun(t *testing.T) {
 
 func TestUpdateReportsMissingAsset(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/release", func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"tag_name": "2026.12.01", "assets": []any{}})
+	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/releases/tag/2026.12.01", http.StatusFound)
+	})
+	mux.HandleFunc("/releases/download/2026.12.01/"+sumsAsset, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(strings.Repeat("a", 64) + "  " + ytDlpAsset + "\n"))
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -245,10 +244,9 @@ func TestUpdateReportsMissingAsset(t *testing.T) {
 	if _, err := m.Install(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	m.updateAPI = server.URL + "/release"
-	m.http = server.Client()
+	m.releasesURL = server.URL + "/releases"
 
-	_, err := m.UpdateYtDlp(context.Background())
+	_, err := m.UpdateYtDlp(context.Background(), nil)
 	if err == nil || !strings.Contains(err.Error(), ytDlpAsset) {
 		t.Errorf("error = %v, want it to name the missing asset", err)
 	}
@@ -259,31 +257,39 @@ func TestUpdateReportsUnreachableServer(t *testing.T) {
 	if _, err := m.Install(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	m.updateAPI = "http://127.0.0.1:1/release"
+	m.releasesURL = "http://127.0.0.1:1/releases"
 
-	if _, err := m.UpdateYtDlp(context.Background()); err == nil {
+	if _, err := m.UpdateYtDlp(context.Background(), nil); err == nil {
 		t.Fatal("UpdateYtDlp succeeded with no server")
 	}
 }
 
-func TestExpectedDigestParsing(t *testing.T) {
-	body := "aaa  yt-dlp\nbbb  " + ytDlpAsset + "\nccc  yt-dlp.exe\n"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(body))
-	}))
-	defer server.Close()
+func TestDigestForParsing(t *testing.T) {
+	body := []byte("aaa  yt-dlp\nbbb  " + ytDlpAsset + "\nccc  yt-dlp.exe\n")
 
-	m := &Manager{http: server.Client()}
-	got, err := m.expectedDigest(context.Background(), server.URL, ytDlpAsset)
+	got, err := digestFor(body, ytDlpAsset)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != "bbb" {
 		t.Errorf("digest = %q, want the line for %s", got, ytDlpAsset)
 	}
+	if _, err := digestFor(body, "absent.zip"); err == nil {
+		t.Error("digestFor accepted a name that is not listed")
+	}
+}
 
-	if _, err := m.expectedDigest(context.Background(), server.URL, "absent.zip"); err == nil {
-		t.Error("expectedDigest accepted a name that is not listed")
+func TestUpdateNeverTouchesTheAPIAndReadsNothingWhenCurrent(t *testing.T) {
+	// The check that finds nothing new is the common one, so it has to be the
+	// cheapest: one redirect read, no checksum list, no archive.
+	server := newReleaseServer(t, fakeVersions[YtDlp], nil, "")
+	m := updatableManager(t, server)
+
+	if _, err := m.UpdateYtDlp(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if server.hits["latest"] != 1 || server.hits["sums"] != 0 || server.hits["zip"] != 0 {
+		t.Errorf("hits = %v, want only the one redirect read", server.hits)
 	}
 }
 
