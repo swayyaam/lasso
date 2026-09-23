@@ -48,9 +48,9 @@ func TestPlaylistEntriesMatchYtDlpsRangeRules(t *testing.T) {
 func TestEachVideoGetsItsOwnDownload(t *testing.T) {
 	playlist := Options{URL: "https://www.youtube.com/playlist?list=PL1", Pick: Pick1080p,
 		Playlist: Playlist{Start: 2, End: 10}}
-	e := Entry{ID: "x", Title: "BELLAKEO", URL: "https://www.youtube.com/watch?v=x"}
+	e := Entry{ID: "x", Title: "Blender 4.2 LTS", URL: "https://www.youtube.com/watch?v=x"}
 
-	o, err := playlist.ForEntry(e, "Popular Music Videos")
+	o, err := playlist.ForEntry(e, "Blender Releases")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,20 +63,20 @@ func TestEachVideoGetsItsOwnDownload(t *testing.T) {
 	if o.Pick != Pick1080p {
 		t.Error("the quality chosen for the playlist was not carried to its videos")
 	}
-	if o.Output.Template != "Popular Music Videos/"+Pick1080p.defaultTemplate() {
+	if o.Output.Template != "Blender Releases/"+Pick1080p.defaultTemplate() {
 		t.Errorf("template = %q, want the videos gathered in a folder named after the playlist", o.Output.Template)
 	}
 }
 
 func TestPlaylistFolderIsSafeAsAPathAndATemplate(t *testing.T) {
 	cases := map[string]string{
-		"Popular Music Videos": "Popular Music Videos",
-		"../../Library":        "-..-Library",
-		"AC/DC: Live":          "AC-DC- Live",
-		"...hidden":            "hidden",
-		"100% Hits":            "100%% Hits", // or yt-dlp reads it as a field
-		"line\nbreak\ttab":     "linebreaktab",
-		"   ":                  "",
+		"Blender Releases": "Blender Releases",
+		"../../Library":    "-..-Library",
+		"AC/DC: Live":      "AC-DC- Live",
+		"...hidden":        "hidden",
+		"100% Hits":        "100%% Hits", // or yt-dlp reads it as a field
+		"line\nbreak\ttab": "linebreaktab",
+		"   ":              "",
 	}
 	for in, want := range cases {
 		if got := PlaylistFolder(in); got != want {

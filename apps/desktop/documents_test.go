@@ -11,7 +11,7 @@ func TestDocumentsAreFixedAndOnTheProjectsOwnPages(t *testing.T) {
 			t.Errorf("%s points at %s, outside the project", name, url)
 		}
 	}
-	for _, name := range []string{"privacy", "terms", "licence"} {
+	for _, name := range []string{"privacy", "terms", "licence", "notices"} {
 		if _, ok := documents[name]; !ok {
 			t.Errorf("no document called %q", name)
 		}

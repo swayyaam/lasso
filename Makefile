@@ -11,7 +11,7 @@ GOBIN := $(shell go env GOPATH)/bin
 endif
 WAILS := $(shell command -v wails 2>/dev/null || echo $(GOBIN)/wails)
 
-.PHONY: help setup doctor dev build dmg release-assets release-notes test test-go test-js lint lint-go lint-js fetch-binaries clean
+.PHONY: help setup doctor dev build dmg release-assets release-notes test test-go test-js lint lint-go lint-js lint-tokens lint-notices notices fetch-binaries clean
 
 help: ## Show available targets
 	@echo "Lasso — make targets"
@@ -87,7 +87,7 @@ test-go: ## Run Go tests across every workspace module
 test-js: ## Run JS tests via Turborepo
 	pnpm run test
 
-lint: lint-go lint-js lint-tokens ## Lint everything
+lint: lint-go lint-js lint-tokens lint-notices ## Lint everything
 
 lint-go: ## go vet + gofmt across every workspace module
 	@for m in $(GO_MODULES); do \
@@ -104,6 +104,12 @@ lint-js: ## Lint JS via Turborepo
 
 lint-tokens: ## Fail if any component hardcodes a colour
 	@node scripts/check-tokens.mjs
+
+lint-notices: ## Fail if THIRD_PARTY_NOTICES.md no longer matches what is built
+	@node scripts/third-party-notices.mjs --check
+
+notices: ## Regenerate THIRD_PARTY_NOTICES.md from the app's real dependencies
+	@node scripts/third-party-notices.mjs
 
 fetch-binaries: ## Download + verify sidecar binaries for this machine
 	./scripts/fetch-binaries.sh

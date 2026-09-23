@@ -304,13 +304,14 @@ export function SettingsSheet({
               </div>
             </Details>
 
-            <nav className="flex items-center gap-sm pt-xs text-body-sm" aria-label="Documents">
+            <nav className="flex flex-wrap items-center gap-x-sm gap-y-xxs pt-xs text-body-sm" aria-label="Documents">
               {/* By name, never by address: the backend owns the URLs. */}
               {(
                 [
                   ["privacy", "Privacy policy"],
                   ["terms", "Terms of use"],
                   ["licence", "Licence (GPL-3.0)"],
+                  ["notices", "Third-party notices"],
                 ] as const
               ).map(([name, label]) => (
                 <button

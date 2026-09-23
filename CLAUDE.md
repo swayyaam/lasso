@@ -645,6 +645,32 @@ an address YouTube distrusts is what makes it worse.
 YouTube's Proof-of-Origin token provider (bgutil) was measured and not bundled.
 The numbers are in `docs/v0.2.md` Phase 4. Read them before trying again.
 
+## Copyright and notices
+
+Lasso ships other people's software, and most of it may be redistributed on a
+condition: its notice travels with every copy, and for the GPL programs,
+directions to the complete source. `THIRD_PARTY_NOTICES.md` carries both.
+
+- **It is generated, never edited**: `make notices` rebuilds it from
+  `go list -deps` of the app and pnpm's production tree, plus the helper
+  programs' notices in `third_party/`. `make lint` fails when it no longer
+  matches, so a new dependency means `make notices` in the same commit.
+- **A package with no licence file fails the build** rather than shipping
+  without its notice. Put the text from the project's repository in
+  `third_party/licences/<package>.txt` (`/` in a scoped name becomes `__`).
+- **Bumping ffmpeg means a new `third_party/ffmpeg/NOTICE.md`**: the version,
+  the configuration line from `ffmpeg -version`, the libraries it links, and
+  where their source is. The generator refuses a notice that names a
+  different version from `binaries.lock.json`. Check the source links still
+  answer: the GPL obligation to provide source lasts as long as Lasso
+  distributes that build.
+- **The documents ship in the bundle**, copied into `Contents/Resources` by
+  `bundle-binaries.sh` before signing: `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+  `PRIVACY.md`, `TERMS.md`. Outside `bin/`, so the update zip keeps them.
+- **Examples use work that is free to copy**: Big Buck Bunny and other
+  Blender films, "Me at the zoo", Creative Commons audio. Commercial music in
+  the README or tests is what the 2020 takedown of youtube-dl pointed at.
+
 ## Commands
 
 ```

@@ -15,10 +15,12 @@ var documents = map[string]string{
 	"privacy": "https://github.com/swayyaam/lasso/blob/main/PRIVACY.md",
 	"terms":   "https://github.com/swayyaam/lasso/blob/main/TERMS.md",
 	"licence": "https://github.com/swayyaam/lasso/blob/main/LICENSE",
+	"notices": "https://github.com/swayyaam/lasso/blob/main/THIRD_PARTY_NOTICES.md",
 }
 
-// OpenDocument opens the privacy policy, the terms or the licence in the
-// person's browser.
+// OpenDocument opens the privacy policy, the terms, the licence or the
+// third-party notices in the person's browser. Each also ships inside the app,
+// in Contents/Resources.
 func (a *App) OpenDocument(name string) error {
 	url, ok := documents[name]
 	if !ok {

@@ -33,5 +33,15 @@ cp -R "$SOURCE"/. "$DEST"/
 # The fetch stamps are build-time bookkeeping and have no place in the bundle.
 rm -rf "$DEST/.stamps"
 
+# The licences travel with every copy: most of what Lasso is built from may be
+# redistributed only with its notice, and the GPL programs only with directions
+# to their source. Outside bin/, so the update zip, which empties bin/, keeps
+# them too.
+LEGAL="$APP/Contents/Resources"
+for doc in LICENSE THIRD_PARTY_NOTICES.md PRIVACY.md TERMS.md; do
+	[ -f "$REPO_ROOT/$doc" ] || die "missing $doc — run \`make notices\` for THIRD_PARTY_NOTICES.md"
+	cp "$REPO_ROOT/$doc" "$LEGAL/$doc"
+done
+
 printf 'Bundled sidecar binaries (%s) into %s\n' "$PLATFORM" "$(basename "$APP")"
 du -sh "$DEST" | awk '{printf "  %s of helper programs\n", $1}'

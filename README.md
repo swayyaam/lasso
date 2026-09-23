@@ -274,4 +274,10 @@ freedoms.
 The programs it bundles keep their own licences: yt-dlp is
 [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE), ffmpeg and
 ffprobe are GPLv3 for this build, and deno is
-[MIT](https://github.com/denoland/deno/blob/main/LICENSE.md).
+[MIT](https://github.com/denoland/deno/blob/main/LICENSE.md). Every library
+compiled into Lasso is listed with its licence in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), which also ships inside the
+app and says where to get the source of the GPL programs.
+
+What you download with Lasso is a separate matter: see the
+[terms of use](TERMS.md) on copyright.
