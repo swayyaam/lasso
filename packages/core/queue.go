@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,6 +86,10 @@ type QueueConfig struct {
 	// SubtitleRetryDelay is how long to wait before retrying a download whose
 	// subtitles failed. Zero uses DefaultSubtitleRetryDelay.
 	SubtitleRetryDelay time.Duration
+	// SavePath is where the queue is kept between launches. Empty keeps it
+	// in memory only, as tests do.
+	SavePath string
+
 	// Remuxer moves AVI and FLV downloads into MP4, so macOS opens them. nil
 	// leaves every file as it came.
 	Remuxer Remuxer
@@ -107,8 +110,9 @@ const DefaultSubtitleRetryDelay = 3 * time.Second
 // Queue runs downloads with a bounded number in flight.
 //
 // Items are started in the order they were added. Cancelling kills the whole
-// process group so no ffmpeg is left behind, and the queue is deliberately
-// in-memory: quitting Lasso discards it.
+// process group so no ffmpeg is left behind. With a SavePath the queue
+// survives quitting and crashing: unfinished items come back and resume, and
+// paused and failed ones come back as they were. See queuestore.go.
 type Queue struct {
 	runner   Runner
 	tagger   Tagger
@@ -116,7 +120,10 @@ type Queue struct {
 	emitter  *ProgressEmitter
 	onState  func(Item)
 	onRemove func(ids []string)
-	nextID   int
+	// savePath is where the queue is kept between launches; empty keeps it
+	// in memory. saveMu serialises writes to it.
+	savePath string
+	saveMu   sync.Mutex
 	// subsRetryIn is how long to wait before retrying a download whose
 	// subtitles failed.
 	subsRetryIn time.Duration
@@ -133,6 +140,9 @@ type Queue struct {
 	// pausing marks ids whose cancellation is a pause. The process is killed
 	// the same way either way; this is what tells the two apart afterwards.
 	pausing map[string]bool
+	// cancelling marks running items the user cancelled, as opposed to ones
+	// the shutdown interrupted.
+	cancelling map[string]bool
 
 	wg sync.WaitGroup
 }
@@ -165,13 +175,16 @@ func NewQueue(cfg QueueConfig) (*Queue, error) {
 		remuxer:     cfg.Remuxer,
 		onState:     cfg.OnState,
 		onRemove:    cfg.OnRemove,
+		savePath:    cfg.SavePath,
 		limit:       concurrency,
 		subsRetryIn: retryIn,
 		items:       map[string]*Item{},
 		cancels:     map[string]context.CancelFunc{},
 		pausing:     map[string]bool{},
+		cancelling:  map[string]bool{},
 	}
 	q.cond = sync.NewCond(&q.mu)
+	q.restore()
 	q.emitter = NewProgressEmitter(interval, func(id string, p Progress) {
 		q.recordProgress(id, p)
 		if cfg.OnProgress != nil {
@@ -218,8 +231,7 @@ func (q *Queue) Add(o Options, title string) (Item, error) {
 			return Item{}, fmt.Errorf("That's already in the queue at the same quality.")
 		}
 	}
-	q.nextID++
-	id := strconv.Itoa(q.nextID)
+	id := newItemID()
 	item := &Item{
 		ID:      id,
 		Options: o,
@@ -300,6 +312,9 @@ func (q *Queue) Cancel(id string) error {
 
 	cancel, running := q.cancels[id]
 	if running {
+		// Remembered, so quitting a moment later cannot mistake this for a
+		// download the shutdown interrupted and bring it back next launch.
+		q.cancelling[id] = true
 		q.mu.Unlock()
 		// The runner turns this into a process-group kill.
 		cancel()
@@ -473,6 +488,9 @@ func (q *Queue) deleteLocked(id string) {
 }
 
 func (q *Queue) notifyRemoved(ids []string) {
+	if len(ids) > 0 {
+		q.persist()
+	}
 	if len(ids) > 0 && q.onRemove != nil {
 		q.onRemove(ids)
 	}
@@ -748,7 +766,18 @@ func (q *Queue) fail(id, output string, err error, ctx context.Context) {
 		q.mu.Lock()
 		paused := q.pausing[id]
 		delete(q.pausing, id)
+		byUser := q.cancelling[id]
+		delete(q.cancelling, id)
+		// Nobody cancelled it: Lasso is quitting. It was a download in
+		// progress, so it is saved as one and resumes next launch, rather
+		// than landing in history as something the user cancelled.
+		interrupted := q.closed && !byUser && !paused
 		q.mu.Unlock()
+
+		if interrupted {
+			q.transition(id, StateQueued, nil)
+			return
+		}
 
 		if paused {
 			// Whatever was transferred stays on disk, and the progress already
@@ -840,6 +869,7 @@ func (q *Queue) recordProgress(id string, p Progress) {
 // notify calls the state callback. It is always called without the lock held,
 // so a callback that reaches back into the queue cannot deadlock it.
 func (q *Queue) notify(item Item) {
+	q.persist()
 	if q.onState != nil {
 		q.onState(item)
 	}

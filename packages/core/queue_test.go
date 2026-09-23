@@ -1227,3 +1227,10 @@ func uniqueOptions() Options {
 	o.URL = fmt.Sprintf("https://example.com/watch?v=%d", uniqueCounter.Add(1))
 	return o
 }
+
+// statesOf returns every state an item has been reported in, in order.
+func (h *queueHarness) statesOf(id string) []State {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]State(nil), h.states[id]...)
+}

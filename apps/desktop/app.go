@@ -52,6 +52,9 @@ type App struct {
 	// being told to wait. See packages/ghrelease.
 	releases *ghrelease.Client
 
+	// instance is this copy's hold on the support folder; see instanceLock.
+	instance *instanceLock
+
 	// One updater, kept for the life of the process.
 	updMu sync.Mutex
 	upd   *updater.Updater
@@ -163,6 +166,8 @@ func (a *App) startQueue(ctx context.Context, manager *binaries.Manager, concurr
 		// Tracks split out of a chaptered recording keep the recording's tags,
 		// because yt-dlp cuts them with the audio copied. This is what gives
 		// each one its own title afterwards.
+		// The queue survives quitting and crashing; see core/queuestore.go.
+		SavePath:    filepath.Join(manager.Paths().Support, "queue.json"),
 		Tagger:      &core.FFmpegTagger{Path: manager.Path(binaries.FFmpeg)},
 		Remuxer:     &core.FFmpegRemuxer{Path: manager.Path(binaries.FFmpeg)},
 		Concurrency: concurrency,
@@ -828,7 +833,17 @@ func (a *App) InstallUpdate() (updater.Result, error) {
 
 // RestartToFinish launches the installed version and quits this one.
 func (a *App) RestartToFinish() error {
+	// Let go of the support folder before the new version starts, or it would
+	// find this copy still holding it, defer to it, and exit — leaving nothing
+	// running once this one quits.
+	a.instance.Release()
 	if err := relaunch(a.ctx, bundlePath()); err != nil {
+		// Still running, so take it back.
+		if support, serr := binaries.SupportDir(); serr == nil {
+			if lock, _, lerr := acquireInstance(support); lerr == nil {
+				a.instance = lock
+			}
+		}
 		return err
 	}
 	if a.ctx != nil {

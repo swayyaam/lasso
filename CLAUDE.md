@@ -511,6 +511,31 @@ reaches Info.plist, where the updater and the release manifest both read it.
    0.1.5) and `releases/latest/download/latest.json` (0.1.6 on), downloading the
    zip and checking it against both.
 
+## One copy, and a queue that survives
+
+**One copy of Lasso per support folder.** Two copies share one settings file,
+one history and one queue, and each overwrites the other. `instanceLock` holds
+an `flock` on `lasso.lock` in the support folder; a second copy brings the
+first to the front and exits. It is Lasso's own lock rather than Wails'
+`SingleInstanceLock`, because that one is held until the process exits — and
+the updater restarts by launching the new version a moment *before* the old one
+quits, so the new version would defer to the old one and leave nothing
+running. `RestartToFinish` releases the lock first. `LASSO_SUPPORT_DIR` gives a
+copy its own folder and so its own lock, which is how an isolated test copy
+runs beside the real one.
+
+**The queue is saved** (`queue.json`, 0600) on every state change and removal —
+never on progress, which a resumed download re-reads from its part file.
+Unfinished items come back queued and resume; paused and failed come back as
+they were; finished and cancelled are left to history. Quitting mid-download
+is an interruption, not a cancellation: `Close` marks what it stops as queued,
+and `Cancel` remembers the items the user cancelled so the two are never
+confused.
+
+**Item IDs are random**, not a counter. History keeps its entries' IDs and
+`OpenFile` and `RevealInFinder` resolve by ID, so a counter restarting at 1
+each launch made today's "3" and yesterday's "3" the same name.
+
 ## Errors and the doctor
 
 `packages/core` classifies a yt-dlp failure into an `ErrorKind` and a

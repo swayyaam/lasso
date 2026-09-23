@@ -8,8 +8,10 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"log"
 
+	"github.com/swayyaam/lasso/packages/binaries"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -21,6 +23,23 @@ var assets embed.FS
 
 func main() {
 	app := NewApp()
+
+	// One copy per support folder; see instanceLock. A second copy brings the
+	// first to the front and leaves — the same thing launching a running app
+	// from the Dock does.
+	if support, err := binaries.SupportDir(); err == nil {
+		lock, holder, err := acquireInstance(support)
+		if errors.Is(err, errInstanceHeld) {
+			activateInstance(holder)
+			return
+		}
+		if err != nil {
+			// Not being able to lock is no reason not to run; it only loses
+			// the protection.
+			log.Printf("lasso: running without the single-instance lock: %v", err)
+		}
+		app.instance = lock
+	}
 
 	err := wails.Run(&options.App{
 		Title:  "Lasso",
