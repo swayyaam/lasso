@@ -413,6 +413,31 @@ signed bundle depends on. Every external command goes through the injected
 toolchain — and `LASSO_RELEASES_URL` points the whole thing at a local server so
 the integration test exercises a real update on a real bundle.
 
+## Releasing
+
+The version lives in `apps/desktop/wails.json` (`info.productVersion`) and
+reaches Info.plist, where the updater and the release manifest both read it.
+
+1. Bump the version, commit `chore: <version>`, push.
+2. `make release-assets NOTES=notes.md` — build, reseal, DMG, update zip,
+   `latest.json`, `SHA256SUMS`. The notes are shown in the app before
+   installing, so write them for someone deciding whether to update.
+3. Verify before tagging, because a pushed tag cannot be moved: version,
+   `codesign --verify --deep --strict`, `shasum -c SHA256SUMS`, `latest.json`
+   sizes and digests against the files, and
+   `LASSO_INTEGRATION=1 go test ./packages/updater -run RealUpdate`.
+4. Tag and push the tag.
+5. **Publish in stages, never with one `gh release create` carrying the
+   assets.** When an upload fails, `gh` deletes the draft it created — taking
+   the files already uploaded with it — and can still exit 0; that is how
+   0.1.3 existed as a tag with no release. So: `gh release create --draft`
+   with notes only; `gh release upload` the small files; upload the DMG on its
+   own; then `gh release edit --draft=false --latest`. A draft is invisible to
+   both discovery paths, so nobody sees a half-uploaded release.
+6. Check both ways clients find it: `releases/latest` through the API (0.1.2 to
+   0.1.5) and `releases/latest/download/latest.json` (0.1.6 on), downloading the
+   zip and checking it against both.
+
 ## Errors and the doctor
 
 `packages/core` classifies a yt-dlp failure into an `ErrorKind` and a
