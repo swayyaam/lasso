@@ -32,6 +32,8 @@ export function DownloadAgain(arg1:string):Promise<core.Item>;
 
 export function Enqueue(arg1:core.Options,arg2:string):Promise<core.Item>;
 
+export function EnqueuePlaylist(arg1:core.Options,arg2:string,arg3:Array<core.Entry>):Promise<number>;
+
 export function Events():Promise<main.EventNames>;
 
 export function FetchMetadata(arg1:string):Promise<core.Metadata>;

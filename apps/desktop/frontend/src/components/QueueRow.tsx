@@ -104,7 +104,7 @@ export function QueueRow({ item, expanded }: { item: core.Item; expanded: boolea
             {item.title || item.options?.url}
           </p>
           <p className="mt-0.5 truncate text-caption text-ink-tertiary">
-            {describe(item)}
+            {item.groupTitle ? `${item.groupTitle} · ${describe(item)}` : describe(item)}
           </p>
         </div>
         <StatusBadge tone={STATE_TONES[state] ?? "neutral"}>{STATE_LABELS[state] ?? state}</StatusBadge>

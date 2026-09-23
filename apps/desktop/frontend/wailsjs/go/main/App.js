@@ -50,6 +50,10 @@ export function Enqueue(arg1, arg2) {
   return window['go']['main']['App']['Enqueue'](arg1, arg2);
 }
 
+export function EnqueuePlaylist(arg1, arg2, arg3) {
+  return window['go']['main']['App']['EnqueuePlaylist'](arg1, arg2, arg3);
+}
+
 export function Events() {
   return window['go']['main']['App']['Events']();
 }

@@ -532,6 +532,19 @@ is an interruption, not a cancellation: `Close` marks what it stops as queued,
 and `Cancel` remembers the items the user cancelled so the two are never
 confused.
 
+**A playlist is one download per video.** `EnqueuePlaylist` selects entries
+with `core.PlaylistEntries` (yt-dlp's own range and reverse rules), and each
+becomes an item in a shared group, so it retries, cancels and lands in history
+on its own and honours "Downloads at once". `Options.ForEntry` gives each its
+own link, drops the playlist range, and gathers them in a folder named by
+`PlaylistFolder` — which treats the title as untrusted: no separators, no
+leading dots, and `%` doubled, or yt-dlp would read "100% Hits" as a field.
+
+**Live streams are not downloaded while they are live.** `Metadata.Blocked`
+says why and the Download button waits. Handed to yt-dlp, a live stream records
+until it ends — for a 24/7 stream, never — and nothing yt-dlp reports tells the
+two apart. Once over, the recording downloads like any video.
+
 **Item IDs are random**, not a counter. History keeps its entries' IDs and
 `OpenFile` and `RevealInFinder` resolve by ID, so a counter restarting at 1
 each launch made today's "3" and yesterday's "3" the same name.

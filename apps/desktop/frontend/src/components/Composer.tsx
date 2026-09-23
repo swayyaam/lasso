@@ -44,7 +44,8 @@ export function Composer({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [command, setCommand] = useState("");
   const [activePreset, setActivePreset] = useState<string | null>(null);
-  const [queued, setQueued] = useState(false);
+  // What the last press added: 1 for a video, the count for a playlist.
+  const [queued, setQueued] = useState(0);
 
   const urlRef = useRef<HTMLInputElement>(null);
   // A resolve in flight must not overwrite a newer one that already finished.
@@ -75,11 +76,16 @@ export function Composer({
     if (!metadata || disabled) return;
     setError("");
     try {
-      await api.Enqueue({ ...options, url: url.trim() } as core.Options, metadata.title);
+      const request = { ...options, url: url.trim() } as core.Options;
+      // A playlist becomes one download per video, each its own row.
+      const added =
+        metadata.kind === "playlist"
+          ? await api.EnqueuePlaylist(request, metadata.title, metadata.entries ?? [])
+          : (await api.Enqueue(request, metadata.title), 1);
       // Confirm without clearing: the same link is often downloaded twice at
       // different qualities, and wiping the field would punish that.
-      setQueued(true);
-      setTimeout(() => setQueued(false), 1800);
+      setQueued(added);
+      setTimeout(() => setQueued(0), 1800);
     } catch (e) {
       setErrorTitle("Not added to the queue");
       setError(cleanError(e));
@@ -124,7 +130,9 @@ export function Composer({
     return () => window.removeEventListener("paste", onPaste);
   });
 
-  const canDownload = Boolean(metadata) && !resolving && !disabled;
+  // A live or not-yet-started stream has nothing finished to download; the
+  // backend says why in metadata.blocked, and the button waits for it.
+  const canDownload = Boolean(metadata) && !metadata?.blocked && !resolving && !disabled;
 
   return (
     <section
@@ -200,6 +208,11 @@ export function Composer({
 
       {resolving && <MetadataSkeleton />}
       {metadata && !resolving && <MetadataCard metadata={metadata} />}
+      {metadata?.blocked && !resolving && (
+        <Banner title="Not yet" tone="neutral">
+          {metadata.blocked}
+        </Banner>
+      )}
 
       <QualityPicks
         quality={metadata?.quality}
@@ -253,7 +266,7 @@ export function Composer({
             )
           }
         >
-          {queued ? "Added" : "Download"}
+          {queued > 1 ? `Added ${queued}` : queued ? "Added" : "Download"}
         </Button>
       </div>
 

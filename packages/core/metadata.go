@@ -105,6 +105,12 @@ type Metadata struct {
 	// Formats. The UI offers exactly these rungs, so it can never present a
 	// resolution the source does not have.
 	Quality QualityOptions `json:"quality"`
+
+	// Live is where the video is in a broadcast's life; see Unavailable.
+	Live LiveStatus `json:"live"`
+	// Blocked, when set, is why this cannot be downloaded yet — the sentence
+	// the interface shows in place of a Download button.
+	Blocked string `json:"blocked"`
 }
 
 // IsPlaylist reports whether this resolved to more than one item.
@@ -129,6 +135,8 @@ type rawMetadata struct {
 	UploaderID string   `json:"uploader_id"`
 	WebpageURL string   `json:"webpage_url"`
 	Duration   *float64 `json:"duration"`
+	LiveStatus string   `json:"live_status"`
+	IsLive     *bool    `json:"is_live"`
 
 	Thumbnails []rawThumbnail `json:"thumbnails"`
 	Formats    []rawFormat    `json:"formats"`
@@ -185,7 +193,13 @@ func ParseMetadata(data []byte, playback Playback) (*Metadata, error) {
 		WebpageURL: raw.WebpageURL,
 		Duration:   deref(raw.Duration),
 		Thumbnails: convertThumbnails(raw.Thumbnails),
+		Live:       LiveStatus(raw.LiveStatus),
 	}
+	// Older extractors only say is_live.
+	if m.Live == LiveNone && raw.IsLive != nil && *raw.IsLive {
+		m.Live = LiveNow
+	}
+	m.Blocked = m.Unavailable()
 
 	if raw.Type == string(KindPlaylist) {
 		m.Kind = KindPlaylist

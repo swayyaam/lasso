@@ -399,6 +399,8 @@ export namespace core {
 	    errorKind: string;
 	    notice: string;
 	    filePath: string;
+	    group: string;
+	    groupTitle: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Item(source);
@@ -417,6 +419,8 @@ export namespace core {
 	        this.errorKind = source["errorKind"];
 	        this.notice = source["notice"];
 	        this.filePath = source["filePath"];
+	        this.group = source["group"];
+	        this.groupTitle = source["groupTitle"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -528,6 +532,8 @@ export namespace core {
 	    formats: Format[];
 	    entries: Entry[];
 	    quality: QualityOptions;
+	    live: string;
+	    blocked: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Metadata(source);
@@ -545,6 +551,8 @@ export namespace core {
 	        this.formats = this.convertValues(source["formats"], Format);
 	        this.entries = this.convertValues(source["entries"], Entry);
 	        this.quality = this.convertValues(source["quality"], QualityOptions);
+	        this.live = source["live"];
+	        this.blocked = source["blocked"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

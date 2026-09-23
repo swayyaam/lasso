@@ -360,6 +360,64 @@ func (a *App) Enqueue(o core.Options, title string) (core.Item, error) {
 	return queue.Add(o, title)
 }
 
+// EnqueuePlaylist adds each chosen video of a playlist as its own download,
+// and reports how many were added.
+//
+// A playlist used to be one download: one row whose progress bar reset for
+// every video, one history entry for all of them, no way to retry or cancel a
+// single video, and one video at a time whatever "Downloads at once" said.
+// Now each video is its own row, grouped under the playlist's name, and they
+// land together in a folder named after it.
+//
+// A video already in the queue at the same quality is skipped rather than
+// failing the rest, so adding a playlist twice adds only what is new.
+func (a *App) EnqueuePlaylist(o core.Options, title string, entries []core.Entry) (int, error) {
+	a.mu.RLock()
+	queue, manager, settings := a.queue, a.manager, a.settings
+	a.mu.RUnlock()
+
+	if queue == nil || manager == nil || settings == nil {
+		return 0, fmt.Errorf("Lasso cannot download yet: check Settings for details")
+	}
+
+	base := settings.Get().ApplyTo(fromInterface(o))
+	base.FFmpegLocation = manager.FFmpegLocation()
+	base.DenoPath = manager.Path(binaries.Deno)
+	base.ArcProfileDir = arcProfileDir()
+	base.Playback = a.machinePlayback()
+
+	if err := checkDiskSpace(base.Output.Folder); err != nil {
+		return 0, err
+	}
+
+	picked := core.PlaylistEntries(entries, o.Playlist)
+	if len(picked) == 0 {
+		return 0, fmt.Errorf("the range you chose selects none of this playlist's %d videos", len(entries))
+	}
+
+	group := core.NewGroupID()
+	added, unusable := 0, 0
+	for _, e := range picked {
+		opts, err := base.ForEntry(e, title)
+		if err != nil {
+			unusable++
+			continue
+		}
+		if _, err := queue.AddToGroup(opts, e.Title, group, title); err == nil {
+			added++
+		}
+	}
+
+	switch {
+	case added > 0:
+		return added, nil
+	case unusable == len(picked):
+		return 0, fmt.Errorf("none of this playlist's videos came with a link Lasso can download")
+	default:
+		return 0, fmt.Errorf("every video you chose from this playlist is already in the queue")
+	}
+}
+
 // QueueItems returns the whole queue, for the initial render and after a
 // window reload.
 func (a *App) QueueItems() []core.Item {

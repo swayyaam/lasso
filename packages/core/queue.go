@@ -67,6 +67,12 @@ type Item struct {
 	// Progress.Filename: that names the file being written, which any
 	// post-processor replaces and deletes.
 	FilePath string `json:"filePath"`
+
+	// Group ties together the videos of one playlist, so the interface can
+	// show them as one and act on them together. Empty for a single video.
+	Group string `json:"group"`
+	// GroupTitle is the playlist's name.
+	GroupTitle string `json:"groupTitle"`
 }
 
 // QueueConfig configures a Queue.
@@ -212,6 +218,14 @@ func (q *Queue) Start(ctx context.Context) {
 // Title may be empty, in which case the queue resolves it before downloading,
 // which is what the fetching state covers.
 func (q *Queue) Add(o Options, title string) (Item, error) {
+	return q.AddToGroup(o, title, "", "")
+}
+
+// NewGroupID names a playlist's group of downloads.
+func NewGroupID() string { return newItemID() }
+
+// AddToGroup is Add for one video of a playlist.
+func (q *Queue) AddToGroup(o Options, title, group, groupTitle string) (Item, error) {
 	if err := o.Validate(); err != nil {
 		return Item{}, err
 	}
@@ -233,11 +247,13 @@ func (q *Queue) Add(o Options, title string) (Item, error) {
 	}
 	id := newItemID()
 	item := &Item{
-		ID:      id,
-		Options: o,
-		Title:   title,
-		State:   StateQueued,
-		AddedAt: time.Now().UnixMilli(),
+		ID:         id,
+		Options:    o,
+		Title:      title,
+		State:      StateQueued,
+		AddedAt:    time.Now().UnixMilli(),
+		Group:      group,
+		GroupTitle: groupTitle,
 	}
 	q.items[id] = item
 	q.order = append(q.order, id)
