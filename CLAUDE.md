@@ -2,7 +2,9 @@
 
 Lasso is a minimal macOS GUI over `yt-dlp`. The default experience is "paste a
 link, pick a quality, download"; everything else hides behind progressive
-disclosure. Target is macOS only — Apple Silicon first, Intel second.
+disclosure. Target is macOS, Apple Silicon first. Windows support is being
+added in 0.3 (`docs/v0.3.md`): platform code lives in `_darwin.go` and
+`_windows.go` files, and nothing shared may assume one or the other.
 
 ## Git rules
 
