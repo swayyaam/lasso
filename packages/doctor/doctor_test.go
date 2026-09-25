@@ -519,3 +519,54 @@ func TestIsYouTube(t *testing.T) {
 		}
 	}
 }
+
+func TestYtDlpAgeIsReportedAndWarnsWhenStale(t *testing.T) {
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	results := func(version string) []binaries.VerifyResult {
+		return []binaries.VerifyResult{{Name: binaries.YtDlp, OK: true, Version: version}}
+	}
+
+	d := newDoctor(t, func(c *Config) { c.Now = func() time.Time { return now } })
+	fresh, ok := d.checkYtDlpAge(results("2026.08.19"))
+	if !ok || fresh.Status != StatusOK || !strings.Contains(fresh.Summary, "38 days ago") {
+		t.Errorf("fresh = %+v, %v; want OK and its age", fresh, ok)
+	}
+
+	stale, _ := d.checkYtDlpAge(results("2026.05.01"))
+	if stale.Status != StatusWarn || stale.Fixable {
+		t.Errorf("stale without an updater = %+v; want a warning that points at Settings", stale)
+	}
+
+	// Nightly builds append a time.
+	if nightly, ok := d.checkYtDlpAge(results("2026.09.20.232345")); !ok || nightly.Status != StatusOK {
+		t.Errorf("nightly = %+v, %v", nightly, ok)
+	}
+
+	// Not running, or not a date: nothing to say, and the helper programs
+	// check already covers a yt-dlp that will not start.
+	if _, ok := d.checkYtDlpAge([]binaries.VerifyResult{{Name: binaries.YtDlp, OK: false}}); ok {
+		t.Error("a yt-dlp that does not run has no age to report")
+	}
+	if _, ok := d.checkYtDlpAge(results("unknown")); ok {
+		t.Error("a version that is not a date has no age to report")
+	}
+}
+
+func TestAStaleYtDlpCanBeUpdatedFromTheDoctor(t *testing.T) {
+	updated := false
+	d := newDoctor(t, func(c *Config) {
+		c.Now = func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) }
+		c.UpdateYtDlp = func(context.Context) (string, error) {
+			updated = true
+			return "Updated to 2026.09.25.", nil
+		}
+	})
+	stale, _ := d.checkYtDlpAge([]binaries.VerifyResult{{Name: binaries.YtDlp, OK: true, Version: "2026.05.01"}})
+	if !stale.Fixable || stale.FixLabel != "Update yt-dlp" {
+		t.Fatalf("stale = %+v; want it fixable", stale)
+	}
+	out, err := d.Fix(context.Background(), CheckYtDlpAge)
+	if err != nil || !updated || out != "Updated to 2026.09.25." {
+		t.Errorf("Fix = %q, %v (updated %v)", out, err, updated)
+	}
+}

@@ -13,6 +13,9 @@ const (
 	StageFetching       Stage = "fetching"
 	StageDownloading    Stage = "downloading"
 	StagePostProcessing Stage = "post-processing"
+	// StageWaiting is a download whose connection dropped, waiting to try
+	// again. RetryAt says when.
+	StageWaiting Stage = "waiting"
 )
 
 // PercentUnknown is reported when the total size is not yet known, which is
@@ -36,6 +39,9 @@ type Progress struct {
 	Detail string `json:"detail"`
 	// Filename is the file currently being written, when yt-dlp has said.
 	Filename string `json:"filename"`
+	// RetryAt is Unix milliseconds when a waiting download tries again, and
+	// zero otherwise.
+	RetryAt int64 `json:"retryAt"`
 }
 
 // progressLine mirrors the JSON yt-dlp is asked to emit. Two templates produce

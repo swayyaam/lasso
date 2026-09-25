@@ -584,6 +584,30 @@ two apart. Once over, the recording downloads like any video.
 `OpenFile` and `RevealInFinder` resolve by ID, so a counter restarting at 1
 each launch made today's "3" and yesterday's "3" the same name.
 
+## Left running
+
+A download is often started and walked away from, so three things keep it
+going without anyone watching.
+
+- **The Mac stays awake while something is working.** `keepAwake` holds one
+  `PreventUserIdleSystemSleep` assertion, named "Lasso is downloading", while
+  any download is `Busy` (unfinished and not paused), and releases it when
+  none is. Idle sleep only: never the display, never a closed lid. `activity`
+  derives it from the queue's callbacks, beside the Dock badge.
+- **A dropped connection is retried**, `DefaultNetworkRetryDelays` apart (10 s,
+  30 s, 2 min), and only for `ErrNetwork`. Each attempt resumes from the part
+  file because yt-dlp always runs with `--continue`. The wait is
+  `StageWaiting` with `RetryAt`, and the retries reuse whatever options the
+  last attempt ran with, so subtitles dropped once stay dropped.
+- **A site that changed is fixed by a newer yt-dlp**, so `ErrSiteChanged`
+  (yt-dlp's "please report this issue" wording, which it adds only to errors
+  it did not expect) offers "Update yt-dlp and retry". The doctor also warns
+  once yt-dlp is 60 days old. Neither updates on its own.
+
+Queue tests default to no network retries (`NetworkRetryDelays: []`): most use
+a network error only as a convenient failure, and would otherwise sit through
+real waits.
+
 ## Links from outside the window
 
 A link reaches Lasso five ways: pasted anywhere in the window, dropped on it,

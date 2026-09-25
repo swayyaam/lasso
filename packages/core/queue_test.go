@@ -56,6 +56,9 @@ func newQueueHarnessWith(t *testing.T, runner Runner, concurrency int, tagger Ta
 		Concurrency: concurrency,
 		// Emit every update so tests see exact values rather than racing a window.
 		ProgressInterval: time.Nanosecond,
+		// No automatic network retries unless a test asks for them: most tests
+		// use a network error only as a convenient failure.
+		NetworkRetryDelays: []time.Duration{},
 		OnState: func(item Item) {
 			h.mu.Lock()
 			h.states[item.ID] = append(h.states[item.ID], item.State)
@@ -546,6 +549,7 @@ func newSubtitleHarness(t *testing.T, runner Runner) *queueHarness {
 		Concurrency:        1,
 		ProgressInterval:   time.Nanosecond,
 		SubtitleRetryDelay: time.Millisecond,
+		NetworkRetryDelays: []time.Duration{},
 		OnState: func(item Item) {
 			h.mu.Lock()
 			h.states[item.ID] = append(h.states[item.ID], item.State)
@@ -1325,5 +1329,174 @@ func TestAFileAlreadyThereSaysSo(t *testing.T) {
 	done, _ := h.q.Get(item.ID)
 	if !strings.Contains(done.Notice, "already had this file") {
 		t.Errorf("Notice = %q, want it to say nothing was downloaded", done.Notice)
+	}
+}
+
+func TestBusyIsWorkNotJustUnfinished(t *testing.T) {
+	busy := map[State]bool{
+		StateQueued: true, StateFetching: true, StateDownloading: true, StatePostProcessing: true,
+		StatePaused: false, StateDone: false, StateFailed: false, StateCancelled: false,
+	}
+	for state, want := range busy {
+		if got := state.Busy(); got != want {
+			t.Errorf("%s.Busy() = %v, want %v", state, got, want)
+		}
+	}
+}
+
+// dropped is yt-dlp's own output when the network is gone, verbatim.
+const dropped = `ERROR: [generic] watch?v=x: Unable to download webpage: HTTPSConnection(host='video.example.invalid', port=443): Failed to resolve 'video.example.invalid' ([Errno 8] nodename nor servname provided, or not known) (caused by TransportError("HTTPSConnection(host='video.example.invalid', port=443): Failed to resolve 'video.example.invalid' ([Errno 8] nodename nor servname provided, or not known)"))`
+
+// flakyRunner fails its first `drops` download attempts with a dropped
+// connection, then succeeds, and counts every attempt.
+func flakyRunner(drops int32, attempts *atomic.Int32) *funcRunner {
+	return &funcRunner{run: func(_ context.Context, args []string, stdout, stderr func(string)) error {
+		if isMetadataCall(args) {
+			stdout(`{"id":"x","title":"Clip"}`)
+			return nil
+		}
+		if attempts.Add(1) <= drops {
+			stderr(dropped)
+			return errors.New("exit status 1")
+		}
+		stdout(`{"stage":"complete","path":"/tmp/Clip.mp4","width":0,"height":0}`)
+		return nil
+	}}
+}
+
+func quickRetries(delays ...time.Duration) func(*QueueConfig) {
+	return func(c *QueueConfig) { c.NetworkRetryDelays = delays }
+}
+
+func TestADroppedConnectionIsRetriedWithoutAClick(t *testing.T) {
+	var attempts atomic.Int32
+	var waited atomic.Bool
+	h := newQueueHarnessWith(t, flakyRunner(2, &attempts), 1, nil,
+		quickRetries(time.Millisecond, time.Millisecond, time.Millisecond),
+		func(c *QueueConfig) {
+			c.OnProgress = func(_ string, p Progress) {
+				if p.Stage == StageWaiting && p.RetryAt > 0 && strings.Contains(p.Detail, "Connection lost") {
+					waited.Store(true)
+				}
+			}
+		})
+
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
+	h.waitFor(t, item.ID, StateDone)
+
+	if got := attempts.Load(); got != 3 {
+		t.Errorf("attempts = %d, want 3: two dropped, then the one that finished", got)
+	}
+	if !waited.Load() {
+		t.Error("the wait between attempts was never shown")
+	}
+	h.mu.Lock()
+	seen := slices.Clone(h.states[item.ID])
+	h.mu.Unlock()
+	if slices.Contains(seen, StateFailed) {
+		t.Error("a download that recovered by itself was shown as failed on the way")
+	}
+}
+
+func TestADownloadThatStaysOfflineFailsAfterTheLastTry(t *testing.T) {
+	var attempts atomic.Int32
+	h := newQueueHarnessWith(t, flakyRunner(100, &attempts), 1, nil,
+		quickRetries(time.Millisecond, time.Millisecond, time.Millisecond))
+
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
+	h.waitFor(t, item.ID, StateFailed)
+
+	if got := attempts.Load(); got != 4 {
+		t.Errorf("attempts = %d, want 4: the first and three retries", got)
+	}
+	failed, _ := h.q.Get(item.ID)
+	if failed.ErrorKind != ErrNetwork {
+		t.Errorf("ErrorKind = %q, want %q", failed.ErrorKind, ErrNetwork)
+	}
+}
+
+func TestOnlyNetworkFailuresAreRetried(t *testing.T) {
+	// A removed video will be just as removed in thirty seconds.
+	var attempts atomic.Int32
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, stderr func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		attempts.Add(1)
+		stderr("ERROR: [youtube] x: Video unavailable")
+		return errors.New("exit status 1")
+	}}
+	h := newQueueHarnessWith(t, runner, 1, nil, quickRetries(time.Millisecond, time.Millisecond))
+
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
+	h.waitFor(t, item.ID, StateFailed)
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("attempts = %d, want 1", got)
+	}
+}
+
+func TestCancellingDuringTheWaitCancels(t *testing.T) {
+	var attempts atomic.Int32
+	waiting := make(chan string, 1)
+	h := newQueueHarnessWith(t, flakyRunner(100, &attempts), 1, nil,
+		quickRetries(time.Hour),
+		func(c *QueueConfig) {
+			c.OnProgress = func(id string, p Progress) {
+				if p.Stage == StageWaiting {
+					select {
+					case waiting <- id:
+					default:
+					}
+				}
+			}
+		})
+
+	item, _ := h.q.Add(Options{URL: "https://example.com/v", Pick: PickBest}, Source{Title: "Clip"})
+	select {
+	case <-waiting:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the download never started waiting")
+	}
+	if err := h.q.Cancel(item.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	h.waitFor(t, item.ID, StateCancelled)
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("attempts = %d, want 1: cancelled before the hour was up", got)
+	}
+}
+
+func TestAfterDroppingSubtitlesNetworkRetriesStayWithoutThem(t *testing.T) {
+	// The path this used to get wrong: subtitles fail and are dropped, then
+	// the connection drops too. The retry must not bring the subtitles back,
+	// and the finished download must still say they were left out.
+	var afterDrop atomic.Int32
+	runner := &funcRunner{run: func(_ context.Context, args []string, stdout, stderr func(string)) error {
+		if isMetadataCall(args) {
+			return nil
+		}
+		if wantsSubs(args) {
+			stderr("ERROR: Unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests")
+			return errors.New("exit status 1")
+		}
+		if afterDrop.Add(1) == 1 {
+			stderr(dropped)
+			return errors.New("exit status 1")
+		}
+		stdout(`{"stage":"complete","path":"/tmp/Clip.mp4","width":0,"height":0}`)
+		return nil
+	}}
+	h := newSubtitleHarness(t, runner)
+	h.q.networkRetries = []time.Duration{time.Millisecond}
+
+	item, _ := h.q.Add(subtitleOptions(), Source{Title: "t"})
+	h.waitFor(t, item.ID, StateDone)
+
+	done, _ := h.q.Get(item.ID)
+	if !strings.Contains(done.Notice, "without subtitles") {
+		t.Errorf("Notice = %q, want it to say the subtitles were left out", done.Notice)
+	}
+	if got := afterDrop.Load(); got != 2 {
+		t.Errorf("attempts without subtitles = %d, want 2: the dropped one and its retry", got)
 	}
 }

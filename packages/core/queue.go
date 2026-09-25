@@ -34,6 +34,13 @@ func (s State) IsTerminal() bool {
 	return s == StateDone || s == StateFailed || s == StateCancelled
 }
 
+// Busy reports whether a download is doing, or about to do, work: everything
+// unfinished except paused. A paused download holds nothing open and is
+// waiting on a person, so it does not count as activity.
+func (s State) Busy() bool {
+	return !s.IsTerminal() && s != StatePaused
+}
+
 // DefaultConcurrency is how many downloads run at once out of the box.
 const DefaultConcurrency = 2
 
@@ -130,6 +137,9 @@ type QueueConfig struct {
 	// SubtitleRetryDelay is how long to wait before retrying a download whose
 	// subtitles failed. Zero uses DefaultSubtitleRetryDelay.
 	SubtitleRetryDelay time.Duration
+	// NetworkRetryDelays are the waits before each new attempt at a download
+	// whose connection dropped. Nil uses DefaultNetworkRetryDelays.
+	NetworkRetryDelays []time.Duration
 	// SavePath is where the queue is kept between launches. Empty keeps it
 	// in memory only, as tests do.
 	SavePath string
@@ -151,6 +161,12 @@ type QueueConfig struct {
 // watching the queue does not think it has stalled.
 const DefaultSubtitleRetryDelay = 3 * time.Second
 
+// DefaultNetworkRetryDelays are the waits before trying a dropped download
+// again: long enough for Wi-Fi to come back or a laptop to find a network,
+// and three tries before deciding it will not, about two and a half minutes in
+// all. Each attempt resumes from the part file.
+var DefaultNetworkRetryDelays = []time.Duration{10 * time.Second, 30 * time.Second, 2 * time.Minute}
+
 // Queue runs downloads with a bounded number in flight.
 //
 // Items are started in the order they were added. Cancelling kills the whole
@@ -168,6 +184,9 @@ type Queue struct {
 	// in memory. saveMu serialises writes to it.
 	savePath string
 	saveMu   sync.Mutex
+	// networkRetries are the waits before each retry of a dropped download.
+	networkRetries []time.Duration
+
 	// subsRetryIn is how long to wait before retrying a download whose
 	// subtitles failed.
 	subsRetryIn time.Duration
@@ -213,19 +232,24 @@ func NewQueue(cfg QueueConfig) (*Queue, error) {
 		retryIn = DefaultSubtitleRetryDelay
 	}
 
+	if cfg.NetworkRetryDelays == nil {
+		cfg.NetworkRetryDelays = DefaultNetworkRetryDelays
+	}
+
 	q := &Queue{
-		runner:      cfg.Runner,
-		tagger:      cfg.Tagger,
-		remuxer:     cfg.Remuxer,
-		onState:     cfg.OnState,
-		onRemove:    cfg.OnRemove,
-		savePath:    cfg.SavePath,
-		limit:       concurrency,
-		subsRetryIn: retryIn,
-		items:       map[string]*Item{},
-		cancels:     map[string]context.CancelFunc{},
-		pausing:     map[string]bool{},
-		cancelling:  map[string]bool{},
+		runner:         cfg.Runner,
+		tagger:         cfg.Tagger,
+		remuxer:        cfg.Remuxer,
+		onState:        cfg.OnState,
+		onRemove:       cfg.OnRemove,
+		savePath:       cfg.SavePath,
+		limit:          concurrency,
+		subsRetryIn:    retryIn,
+		networkRetries: cfg.NetworkRetryDelays,
+		items:          map[string]*Item{},
+		cancels:        map[string]context.CancelFunc{},
+		pausing:        map[string]bool{},
+		cancelling:     map[string]bool{},
 	}
 	q.cond = sync.NewCond(&q.mu)
 	q.restore()
@@ -655,32 +679,40 @@ func (q *Queue) run(ctx context.Context, id string) {
 		}
 	}
 
-	err, result := q.attempt(ctx, id, item.Options)
+	// opts is what the latest attempt ran with. Dropping subtitles changes it,
+	// and every attempt after that must run without them too.
+	opts := item.Options
+	err, result := q.attempt(ctx, id, opts)
 
 	// A subtitle fetch that fails takes the whole download with it: yt-dlp
 	// treats it as fatal and has no flag to ignore only that. Losing an
 	// otherwise-finished video because a caption file 429'd is the wrong
 	// trade, so it gets one retry and then continues without them.
-	if err != nil && ctx.Err() == nil && item.Options.WantsSubtitles() && IsSubtitleFailure(result.Output) {
+	var withoutSubs string // why subtitles were dropped, if they were
+	if err != nil && ctx.Err() == nil && opts.WantsSubtitles() && IsSubtitleFailure(result.Output) {
 		if q.sleep(ctx, q.subsRetryIn) {
-			err, result = q.attempt(ctx, id, item.Options)
+			err, result = q.attempt(ctx, id, opts)
 		}
-
 		if err != nil && ctx.Err() == nil && IsSubtitleFailure(result.Output) {
-			reason := result.Output
-			err, result = q.attempt(ctx, id, item.Options.WithoutSubtitles())
-			if err == nil {
-				q.retagChapters(ctx, id, item, result)
-				path, remuxNotice, remuxDetail := q.remux(ctx, result.FilePath)
-				notice, detail := "Downloaded without subtitles", reason
-				if remuxNotice != "" {
-					notice += ". " + remuxNotice
-					detail = joinLines([]string{reason, remuxDetail})
-				}
-				q.finishWithNotice(id, path, result.Resolution, notice, detail)
-				return
-			}
+			withoutSubs = result.Output
+			opts = opts.WithoutSubtitles()
+			err, result = q.attempt(ctx, id, opts)
 		}
+	}
+
+	// A dropped connection is the network's fault, not the download's. Wait
+	// and go again: yt-dlp runs with --continue, so each attempt resumes from
+	// the part file rather than starting over. Pausing or cancelling during
+	// the wait ends it, the same as during a transfer.
+	for i, wait := range q.networkRetries {
+		if err == nil || ctx.Err() != nil || ClassifyError(result.Output, err).Kind != ErrNetwork {
+			break
+		}
+		q.waitForNetwork(id, wait, i+1)
+		if !q.sleep(ctx, wait) {
+			break
+		}
+		err, result = q.attempt(ctx, id, opts)
 	}
 
 	if err != nil {
@@ -690,6 +722,13 @@ func (q *Queue) run(ctx context.Context, id string) {
 
 	q.retagChapters(ctx, id, item, result)
 	path, notice, detail := q.remux(ctx, result.FilePath)
+	if withoutSubs != "" {
+		if notice == "" {
+			notice, detail = "Downloaded without subtitles", withoutSubs
+		} else {
+			notice, detail = "Downloaded without subtitles. "+notice, joinLines([]string{withoutSubs, detail})
+		}
+	}
 	if notice == "" && result.Existing {
 		// Not a failure, and the file is right there — but "Done" in two
 		// seconds for a download that never ran needs saying.
@@ -805,6 +844,22 @@ func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, attem
 		Existing:   parser.Existing(),
 		Chapters:   parser.ChapterFiles(),
 	}
+}
+
+// waitForNetwork shows a dropped download as waiting, keeping how far it got
+// so the bar does not jump back to nothing.
+func (q *Queue) waitForNetwork(id string, wait time.Duration, attempt int) {
+	item, ok := q.Get(id)
+	if !ok {
+		return
+	}
+	p := item.Progress
+	p.Stage = StageWaiting
+	p.Speed, p.ETA = 0, 0
+	p.Detail = fmt.Sprintf("Connection lost. Try %d of %d", attempt, len(q.networkRetries))
+	p.RetryAt = time.Now().Add(wait).UnixMilli()
+	q.emitter.Update(id, p)
+	q.emitter.Flush(id)
 }
 
 // sleep waits unless the download is cancelled first, reporting whether the
@@ -941,6 +996,9 @@ func (q *Queue) recordProgress(id string, p Progress) {
 			item.State = StateDownloading
 		case StagePostProcessing:
 			item.State = StatePostProcessing
+		case StageWaiting:
+			// Still a download in progress, between attempts.
+			item.State = StateDownloading
 		}
 	}
 }

@@ -100,6 +100,17 @@ func TestRealWordingsFromThisSession(t *testing.T) {
 			ErrNotFound, "doesn't exist",
 		},
 		{
+			// The wording is yt-dlp's own bug_reports_message, verbatim,
+			// after an extraction error it did not expect.
+			"ERROR: [youtube] jNQXAC9IVRw: Unable to extract uploader id; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U",
+			ErrSiteChanged, "Updating yt-dlp",
+		},
+		{
+			// When the error before it ends a sentence, yt-dlp capitalises it.
+			"ERROR: [soundcloud] 62986583: Failed to parse JSON. Please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U",
+			ErrSiteChanged, "Updating yt-dlp",
+		},
+		{
 			"ERROR: [youtube] jfKfPfyJRdk: This live stream recording is not available.",
 			ErrUnavailable, "recording",
 		},

@@ -47,6 +47,7 @@ const (
 	CheckCookies       = "cookies"
 	CheckNotifications = "notifications"
 	CheckYouTube       = "youtube"
+	CheckYtDlpAge      = "yt-dlp-age"
 )
 
 // Check is one diagnosis.
@@ -114,6 +115,11 @@ type Config struct {
 	// BotCheckAt is when YouTube last refused this connection as a possible
 	// bot, zero when it has not; see BotChecks.
 	BotCheckAt time.Time
+	// UpdateYtDlp installs the newest yt-dlp and says what happened. When it
+	// is set, an old yt-dlp is something the doctor can fix, not only report.
+	UpdateYtDlp func(ctx context.Context) (string, error)
+	// Now is the clock, for yt-dlp's age. Nil uses time.Now.
+	Now func() time.Time
 }
 
 // NotificationState is whether finished-download notifications arrive as Lasso.
@@ -151,8 +157,9 @@ func New(cfg Config) (*Doctor, error) {
 // is most useful.
 func (d *Doctor) Run(ctx context.Context) Report {
 	cookies := d.checkCookies(ctx)
+	results := d.cfg.Manager.Verify(ctx)
 	checks := []Check{
-		d.checkBinaries(ctx),
+		d.checkBinaries(results),
 		d.checkDownloadFolder(),
 		d.checkDiskSpace(),
 		cookies,
@@ -160,6 +167,9 @@ func (d *Doctor) Run(ctx context.Context) Report {
 	}
 	if youtube, ok := d.checkBotCheck(cookies); ok {
 		checks = append(checks, youtube)
+	}
+	if age, ok := d.checkYtDlpAge(results); ok {
+		checks = append(checks, age)
 	}
 
 	// Worst first: the thing stopping a download should not be below the thing
@@ -227,6 +237,12 @@ func (d *Doctor) Fix(ctx context.Context, id string) (string, error) {
 		}
 		return describeFixups(report), nil
 
+	case CheckYtDlpAge:
+		if d.cfg.UpdateYtDlp == nil {
+			break
+		}
+		return d.cfg.UpdateYtDlp(ctx)
+
 	case CheckDownloadeFold:
 		if d.cfg.DownloadFolder == "" {
 			return "", fmt.Errorf("no download folder is set")
@@ -259,7 +275,7 @@ func describeFixups(report binaries.InstallReport) string {
 
 // ---- individual checks ------------------------------------------------
 
-func (d *Doctor) checkBinaries(ctx context.Context) Check {
+func (d *Doctor) checkBinaries(results []binaries.VerifyResult) Check {
 	check := Check{
 		ID:       CheckBinaries,
 		Title:    "Helper programs",
@@ -267,7 +283,6 @@ func (d *Doctor) checkBinaries(ctx context.Context) Check {
 		FixLabel: "Repair",
 	}
 
-	results := d.cfg.Manager.Verify(ctx)
 	failures := binaries.Failures(results)
 
 	if len(failures) == 0 {

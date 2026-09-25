@@ -32,6 +32,9 @@ const (
 	ErrNotFound ErrorKind = "not-found"
 	// ErrRefused is a site answering 403.
 	ErrRefused ErrorKind = "refused"
+	// ErrSiteChanged is yt-dlp failing in a way it did not expect, which is
+	// almost always a site having changed under it. A newer yt-dlp is the fix.
+	ErrSiteChanged ErrorKind = "site-changed"
 )
 
 // DownloadError is a yt-dlp failure translated into something a person can act
@@ -125,6 +128,17 @@ var classifiers = []struct {
 			"video has been removed", "no longer available", "removed by the uploader",
 			"this video does not exist",
 		},
+	},
+	{
+		// yt-dlp appends this to every extractor error it did not expect
+		// (bug_reports_message in yt_dlp/utils/_utils.py), and never to the
+		// expected ones: a private video, a network failure, a 404. So it
+		// marks the failures a newer yt-dlp fixes. Ahead of the unsupported
+		// link rule: yt-dlp's usual "a site changed" error begins "Unable to
+		// extract", and was being reported as a link Lasso cannot handle.
+		kind:     ErrSiteChanged,
+		message:  "The site has changed in a way this version of yt-dlp does not understand yet. Updating yt-dlp usually fixes it.",
+		patterns: []string{"please report this issue on"},
 	},
 	{
 		kind:    ErrUnsupportedURL,

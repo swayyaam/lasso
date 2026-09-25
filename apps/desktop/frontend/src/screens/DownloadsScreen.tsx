@@ -146,6 +146,8 @@ function arrange(items: core.Item[]) {
 function FocusCard({ item }: { item: core.Item }) {
   const kind = kindOf(item.options?.pick);
   const title = item.title || item.options?.url;
+  const waiting = item.progress?.stage === "waiting";
+  const now = useNow(waiting);
 
   return (
     <div className="flex items-center gap-lg rounded-md border border-hairline bg-canvas p-lg shadow-layered">
@@ -159,9 +161,13 @@ function FocusCard({ item }: { item: core.Item }) {
             {[item.uploader, describePick(item.options?.pick)].filter(Boolean).join(" · ")}
           </span>
         </div>
-        <ProgressBar percent={barPercent(item)} tone={kind} size="md" label={title} />
+        {/* Grey while waiting: nothing is moving, and a coloured bar would say
+            otherwise. */}
+        <ProgressBar percent={barPercent(item)} tone={waiting ? "paused" : kind} size="md" label={title} />
         <div className="flex min-w-0 items-center gap-xs">
-          <span className="min-w-0 flex-1 truncate text-body-sm text-ink-muted tabular-nums">{transferLine(item)}</span>
+          <span className="min-w-0 flex-1 truncate text-body-sm text-ink-muted tabular-nums">
+            {transferLine(item, now)}
+          </span>
           <ItemControls item={item} labelled />
         </div>
       </div>
@@ -207,6 +213,7 @@ const GROUP_PREVIEW = 4;
  */
 function GroupCard({ group }: { group: Group }) {
   const [expanded, setExpanded] = useState(false);
+  const fix = useUpdateAndRetry();
   const items = group.items;
   const kind = kindOf(items[0]?.options?.pick);
   const Glyph = kind === "audio" ? Icon.Audio : Icon.Video;
@@ -258,6 +265,7 @@ function GroupCard({ group }: { group: Group }) {
             {group.title}
           </span>
           <span className="truncate text-body-sm text-ink-subtle">{summary}</span>
+          {fix.message && <span className="text-body-sm text-ink-muted">{fix.message}</span>}
         </div>
 
         {downloading.length > 0 && (
@@ -271,9 +279,15 @@ function GroupCard({ group }: { group: Group }) {
           </Button>
         )}
         {failed.length > 0 && !finished && (
-          <Button size="sm" variant="tertiary" onClick={() => failed.forEach((i) => void api.Retry(i.id))}>
-            Retry {failed.length === 1 ? "failed" : `${failed.length} failed`}
-          </Button>
+          failed.some((i) => i.errorKind === SITE_CHANGED) ? (
+            <Button size="sm" variant="tertiary" busy={fix.updating} onClick={() => void fix.run(failed.map((i) => i.id))}>
+              {fix.updating ? "Updating yt-dlp…" : "Update yt-dlp and retry"}
+            </Button>
+          ) : (
+            <Button size="sm" variant="tertiary" onClick={() => failed.forEach((i) => void api.Retry(i.id))}>
+              Retry {failed.length === 1 ? "failed" : `${failed.length} failed`}
+            </Button>
+          )
         )}
         {finished && (
           <Button size="sm" variant="tertiary" onClick={() => items.forEach((i) => void api.RemoveFromQueue(i.id))}>
@@ -366,11 +380,21 @@ function QueueLine({ item, flush = false }: { item: core.Item; /** First in its 
       ) : RUNNING.has(item.state) || item.state === "paused" ? (
         <>
           <div className="w-32 shrink-0">
-            <ProgressBar percent={barPercent(item)} tone={item.state === "paused" ? "paused" : kind} label={title} />
+            <ProgressBar
+              percent={barPercent(item)}
+              tone={item.state === "paused" || item.progress?.stage === "waiting" ? "paused" : kind}
+              label={title}
+            />
           </div>
-          <span className="w-10 shrink-0 text-right text-body-sm text-ink-muted tabular-nums">
-            {item.progress?.percent >= 0 ? `${Math.round(item.progress.percent)}%` : ""}
-          </span>
+          {item.progress?.stage === "waiting" ? (
+            <span className="shrink-0 text-body-sm text-ink-subtle" title={item.progress.detail}>
+              Reconnecting
+            </span>
+          ) : (
+            <span className="w-10 shrink-0 text-right text-body-sm text-ink-muted tabular-nums">
+              {item.progress?.percent >= 0 ? `${Math.round(item.progress.percent)}%` : ""}
+            </span>
+          )}
           <ItemControls item={item} />
         </>
       ) : (
@@ -467,6 +491,8 @@ function FailedCard({ item }: { item: core.Item }) {
   const suggests = useSuggestsDoctor(item.errorKind);
   const openDoctor = useDoctor();
   const title = item.title || item.options?.url;
+  const siteChanged = item.errorKind === SITE_CHANGED;
+  const fix = useUpdateAndRetry();
 
   return (
     <div className="flex gap-md rounded-md border border-danger/30 bg-danger-surface p-md">
@@ -478,6 +504,7 @@ function FailedCard({ item }: { item: core.Item }) {
         <p className="text-body-sm text-danger-strong" data-selectable>
           {item.message || "The download did not finish."}
         </p>
+        {fix.message && <p className="text-body-sm text-ink-muted">{fix.message}</p>}
         {item.detail && (
           <Details summary="What yt-dlp said">
             <MonoBlock text={item.detail} maxHeight="12rem" copyable />
@@ -486,9 +513,20 @@ function FailedCard({ item }: { item: core.Item }) {
       </div>
       <div className="flex shrink-0 flex-col items-end gap-xxs">
         <div className="flex items-center gap-hair">
+          {siteChanged && (
+            <Button
+              size="sm"
+              variant="primary"
+              busy={fix.updating}
+              icon={<Icon.Recheck className="size-3.5" strokeWidth={1.75} aria-hidden />}
+              onClick={() => void fix.run([item.id])}
+            >
+              {fix.updating ? "Updating yt-dlp…" : "Update yt-dlp and retry"}
+            </Button>
+          )}
           <Button
             size="sm"
-            variant="primary"
+            variant={siteChanged ? "tertiary" : "primary"}
             icon={<Icon.Retry className="size-3.5" strokeWidth={1.75} aria-hidden />}
             onClick={() => void api.Retry(item.id)}
           >
@@ -587,18 +625,45 @@ function FinishedRow({ item }: { item: core.Item }) {
  * honest percentage — the first has no size yet and the second is ffmpeg
  * working through a file — so both sweep rather than sit at a number.
  */
+/**
+ * waitingLine is a dropped download counting down to its next try. The detail
+ * carries which try it is; the countdown is worked out here, from when the
+ * backend said it would go again.
+ */
+function waitingLine(p: core.Progress, now: number): string {
+  const seconds = Math.max(0, Math.ceil((p.retryAt - now) / 1000));
+  const when = seconds > 0 ? `trying again in ${seconds} s` : "trying again";
+  return `${p.detail || "Connection lost"} · ${when}`;
+}
+
+/**
+ * useNow re-renders once a second while a countdown is showing, and not at
+ * all otherwise.
+ */
+function useNow(ticking: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!ticking) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [ticking]);
+  return now;
+}
+
 function barPercent(item: core.Item): number {
   if (item.state === "fetching" || item.state === "post-processing") return -1;
   return item.progress?.percent ?? -1;
 }
 
 /** transferLine is the moving sentence under the focus card's bar. */
-function transferLine(item: core.Item): string {
+function transferLine(item: core.Item, now: number): string {
   const p = item.progress;
   switch (item.state) {
     case "fetching":
       return "Getting ready…";
     case "downloading": {
+      if (p?.stage === "waiting") return waitingLine(p, now);
       const amount =
         p?.total > 0
           ? `${formatBytes(p.downloaded)} of ${formatBytes(p.total)}`
@@ -618,6 +683,40 @@ function transferLine(item: core.Item): string {
     default:
       return "";
   }
+}
+
+/** SITE_CHANGED is core.ErrSiteChanged: a failure a newer yt-dlp fixes. */
+const SITE_CHANGED = "site-changed";
+
+/**
+ * useUpdateAndRetry is the fix for a site that changed under yt-dlp: update
+ * yt-dlp, then retry. When yt-dlp is already the newest there is nothing to
+ * retry with, and it says so rather than failing the same way again.
+ */
+function useUpdateAndRetry() {
+  const [updating, setUpdating] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function run(ids: string[]) {
+    setUpdating(true);
+    setMessage("");
+    try {
+      const result = await api.UpdateYtDlp();
+      if (!result.updated) {
+        setMessage(
+          `yt-dlp ${result.versionAfter} is already the newest. This needs a fix in yt-dlp itself, which usually comes within days.`,
+        );
+        return;
+      }
+      for (const id of ids) await api.Retry(id);
+    } catch (e) {
+      setMessage(cleanError(e));
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  return { updating, message, run };
 }
 
 /**

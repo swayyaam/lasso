@@ -218,6 +218,7 @@ export namespace core {
 	    items: number;
 	    detail: string;
 	    filename: string;
+	    retryAt: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Progress(source);
@@ -237,6 +238,7 @@ export namespace core {
 	        this.items = source["items"];
 	        this.detail = source["detail"];
 	        this.filename = source["filename"];
+	        this.retryAt = source["retryAt"];
 	    }
 	}
 	export class Playback {
