@@ -393,7 +393,7 @@ function Tile({
         "transition-[background-color,border-color,box-shadow,color] duration-150 ease-standard",
         "disabled:cursor-not-allowed disabled:opacity-50",
         selected
-          ? cx("shadow-layered", video ? "border-accent-purple bg-accent-purple text-on-primary" : "border-accent-green bg-accent-green text-primary")
+          ? cx("shadow-layered", video ? "border-accent-purple bg-accent-purple text-on-fill" : "border-accent-green bg-accent-green text-on-green")
           : "border-hairline bg-canvas text-ink hover:border-hairline-strong hover:bg-surface-1",
       )}
     >
@@ -402,11 +402,11 @@ function Tile({
           "flex size-10 shrink-0 items-center justify-center rounded-pill",
           selected
             ? video
-              ? "bg-canvas text-accent-purple"
-              : "bg-primary text-accent-green"
+              ? "bg-on-fill text-accent-purple"
+              : "bg-on-green text-accent-green"
             : video
-              ? "bg-accent-purple text-on-primary"
-              : "bg-accent-green text-primary",
+              ? "bg-accent-purple text-on-fill"
+              : "bg-accent-green text-on-green",
         )}
       >
         <Glyph className="size-5" strokeWidth={1.75} aria-hidden />

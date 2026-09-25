@@ -15,6 +15,7 @@ import { FirstRun, InstallingOverlay } from "./components/FirstRun";
 import { DoctorProvider } from "./components/DoctorPanel";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { TitleBar } from "./components/TitleBar";
+import { setAppearance } from "./appearance";
 import { ChooseScreen } from "./screens/ChooseScreen";
 import { DownloadsScreen } from "./screens/DownloadsScreen";
 import { HistoryScreen } from "./screens/HistoryScreen";
@@ -41,6 +42,11 @@ export function App() {
   const { presets, refresh } = usePresets();
   const { settings, save, error: saveError } = useSettings();
   const link = useLink();
+
+  const appearance = settings?.appearance;
+  useEffect(() => {
+    if (appearance !== undefined) setAppearance(appearance);
+  }, [appearance]);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [place, setPlace] = useState<"home" | "history">("home");

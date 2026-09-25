@@ -684,6 +684,7 @@ func (a *App) SaveSettings(settings Settings) (Settings, error) {
 		queue.SetConcurrency(applied.Concurrency)
 	}
 	if a.ctx != nil {
+		setAppearance(applied.Appearance)
 		runtime.EventsEmit(a.ctx, EventSettingsChanged, applied)
 	}
 	return applied, nil

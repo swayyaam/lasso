@@ -30,7 +30,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Fatalf("NewSettingsStore: %v", err)
 	}
 
-	want := Settings{DownloadFolder: dir, Concurrency: 4, Cookies: core.BrowserFirefox}
+	want := Settings{DownloadFolder: dir, Concurrency: 4, Cookies: core.BrowserFirefox, Appearance: AppearanceDark}
 	if _, err := store.Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := reopened.Get()
-	if got.Concurrency != 4 || got.Cookies != core.BrowserFirefox || got.DownloadFolder != dir {
+	if got != want {
 		t.Errorf("reloaded settings = %+v, want %+v", got, want)
 	}
 }
@@ -75,6 +75,15 @@ func TestSettingsNormalisation(t *testing.T) {
 			check: func(t *testing.T, s Settings) {
 				if s.Cookies != core.BrowserNone {
 					t.Errorf("Cookies = %q, want it reset", s.Cookies)
+				}
+			},
+		},
+		{
+			name: "unknown appearance",
+			in:   Settings{Appearance: Appearance("sepia")},
+			check: func(t *testing.T, s Settings) {
+				if s.Appearance != AppearanceAuto {
+					t.Errorf("Appearance = %q, want Auto", s.Appearance)
 				}
 			},
 		},
@@ -201,5 +210,33 @@ func TestSettingsWritesAreAtomic(t *testing.T) {
 func TestNewSettingsStoreNeedsDirectory(t *testing.T) {
 	if _, err := NewSettingsStore(""); err == nil {
 		t.Error("NewSettingsStore accepted an empty directory")
+	}
+}
+
+func TestSavedAppearance(t *testing.T) {
+	dir := t.TempDir()
+	if got := savedAppearance(dir); got != AppearanceAuto {
+		t.Errorf("with no settings file = %q, want Auto", got)
+	}
+	// The window is created before startup opens the store, so reading the
+	// choice must not be what creates the file or the folder.
+	missing := filepath.Join(dir, "not-yet")
+	savedAppearance(missing)
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Errorf("reading the appearance created %s", missing)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, settingsFileName), []byte(`{"appearance":"dark"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := savedAppearance(dir); got != AppearanceDark {
+		t.Errorf("saved dark, read %q", got)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, settingsFileName), []byte(`{"appearance":"sepia"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := savedAppearance(dir); got != AppearanceAuto {
+		t.Errorf("an unknown appearance read as %q, want Auto", got)
 	}
 }

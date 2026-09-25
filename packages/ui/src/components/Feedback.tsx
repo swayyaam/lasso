@@ -30,11 +30,11 @@ export function EmptyState({
   className?: string;
 }) {
   const tiles: Record<string, string> = {
-    purple: "bg-accent-purple text-on-primary",
-    blue: "bg-accent-blue-deep text-on-primary",
-    pink: "bg-accent-pink text-on-primary",
-    orange: "bg-accent-orange text-on-primary",
-    green: "bg-accent-green text-primary",
+    purple: "bg-accent-purple text-on-fill",
+    blue: "bg-accent-blue-deep text-on-fill",
+    pink: "bg-accent-pink text-on-fill",
+    orange: "bg-accent-orange text-on-fill",
+    green: "bg-accent-green text-on-green",
   };
 
   return (

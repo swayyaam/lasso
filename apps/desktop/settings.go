@@ -25,7 +25,19 @@ type Settings struct {
 	Concurrency int `json:"concurrency"`
 	// Cookies is the browser to take cookies from, empty for none.
 	Cookies core.Browser `json:"cookies"`
+	// Appearance is light, dark, or empty to follow the Mac.
+	Appearance Appearance `json:"appearance"`
 }
+
+// Appearance is the window's light or dark choice.
+type Appearance string
+
+const (
+	// AppearanceAuto follows System Settings, and changes when it does.
+	AppearanceAuto  Appearance = ""
+	AppearanceLight Appearance = "light"
+	AppearanceDark  Appearance = "dark"
+)
 
 // SettingsStore persists Settings as JSON.
 type SettingsStore struct {
@@ -79,6 +91,13 @@ func (s *SettingsStore) load() Settings {
 	return normalise(settings)
 }
 
+// savedAppearance reads the appearance before the window exists, since the
+// window is created with it. It creates nothing: the store proper is opened
+// by startup, which can report a failure.
+func savedAppearance(dir string) Appearance {
+	return (&SettingsStore{path: filepath.Join(dir, settingsFileName)}).load().Appearance
+}
+
 // normalise repairs values that are out of range, so a hand-edited file cannot
 // put the app into a state the UI cannot represent.
 func normalise(s Settings) Settings {
@@ -96,6 +115,11 @@ func normalise(s Settings) Settings {
 		core.BrowserFirefox, core.BrowserBrave, core.BrowserArc:
 	default:
 		s.Cookies = core.BrowserNone
+	}
+	switch s.Appearance {
+	case AppearanceAuto, AppearanceLight, AppearanceDark:
+	default:
+		s.Appearance = AppearanceAuto
 	}
 	return s
 }

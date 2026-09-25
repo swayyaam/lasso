@@ -30,18 +30,22 @@ func main() {
 	//
 	// Not while generating bindings, which runs this same main to read the
 	// bound methods; see bindings_on.go.
-	if support, err := binaries.SupportDir(); err == nil && !generatingBindings {
-		lock, holder, err := acquireInstance(support)
-		if errors.Is(err, errInstanceHeld) {
-			activateInstance(holder)
-			return
+	appearance := AppearanceAuto
+	if support, err := binaries.SupportDir(); err == nil {
+		appearance = savedAppearance(support)
+		if !generatingBindings {
+			lock, holder, err := acquireInstance(support)
+			if errors.Is(err, errInstanceHeld) {
+				activateInstance(holder)
+				return
+			}
+			if err != nil {
+				// Not being able to lock is no reason not to run; it only
+				// loses the protection.
+				log.Printf("lasso: running without the single-instance lock: %v", err)
+			}
+			app.instance = lock
 		}
-		if err != nil {
-			// Not being able to lock is no reason not to run; it only loses
-			// the protection.
-			log.Printf("lasso: running without the single-instance lock: %v", err)
-		}
-		app.instance = lock
 	}
 
 	err := wails.Run(&options.App{
@@ -59,9 +63,9 @@ func main() {
 			// the Vite dev server would otherwise answer every unknown path.
 			Middleware: app.assetMiddleware,
 		},
-		// Matches --color-canvas. Anything else shows as a flash while the
-		// window paints.
-		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 1},
+		// Matches --color-canvas in the appearance the window opens in.
+		// Anything else shows as a flash while the page paints.
+		BackgroundColour: windowCanvas(appearance),
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		Menu:             app.appMenu(),
@@ -72,9 +76,9 @@ func main() {
 			// Traffic lights sit inside the app's own header bar: a stock
 			// title bar would show as a grey strip against the canvas.
 			TitleBar: mac.TitleBarHiddenInset(),
-			// Aqua, so the traffic lights and any native menu or dialog match
-			// the white canvas rather than sitting dark on it.
-			Appearance:           mac.NSAppearanceNameAqua,
+			// The saved choice, so the traffic lights and any native menu or
+			// dialog match the canvas from the first frame; none for Auto.
+			Appearance:           windowAppearance(appearance),
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			About: &mac.AboutInfo{

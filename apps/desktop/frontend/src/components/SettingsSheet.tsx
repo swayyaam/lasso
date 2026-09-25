@@ -8,6 +8,13 @@ import { UpdatePanel } from "./UpdatePanel";
 
 type Tab = "preferences" | "about";
 
+/** In the order System Settings lists them. Auto is the empty setting. */
+const APPEARANCES = [
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "", label: "Auto" },
+];
+
 /**
  * SettingsSheet covers the canvas rather than opening a second window.
  *
@@ -197,6 +204,24 @@ export function SettingsSheet({
                         onClick={() => setDraft({ ...draft, concurrency: n })}
                       >
                         {n}
+                      </Chip>
+                    ))}
+                  </div>
+                }
+              />
+
+              <Row
+                label="Appearance"
+                hint="Auto follows your Mac, and changes when it does."
+                control={
+                  <div className="flex gap-xxs">
+                    {APPEARANCES.map(({ value, label }) => (
+                      <Chip
+                        key={label}
+                        selected={(draft.appearance ?? "") === value}
+                        onClick={() => setDraft({ ...draft, appearance: value })}
+                      >
+                        {label}
                       </Chip>
                     ))}
                   </div>

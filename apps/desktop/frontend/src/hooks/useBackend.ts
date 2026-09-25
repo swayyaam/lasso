@@ -108,6 +108,7 @@ export function useBinaryStatus() {
 export function useSettings() {
   const [settings, setSettings] = useState<main.Settings | null>(null);
   const [error, setError] = useState("");
+  const names = useEventNames();
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +119,14 @@ export function useSettings() {
       cancelled = true;
     };
   }, []);
+
+  // Whatever saved them, the page shows what the backend applied — the
+  // appearance above all, which the window has already switched to.
+  useEffect(() => {
+    if (!names) return;
+    EventsOn(names.settingsChanged, (s: main.Settings) => setSettings(s));
+    return () => EventsOff(names.settingsChanged);
+  }, [names]);
 
   const save = useCallback(async (next: main.Settings) => {
     setError("");

@@ -254,7 +254,7 @@ function GroupCard({ group }: { group: Group }) {
         <span
           className={cx(
             "flex size-8 shrink-0 items-center justify-center rounded-pill",
-            kind === "audio" ? "bg-accent-green text-primary" : "bg-accent-purple text-on-primary",
+            kind === "audio" ? "bg-accent-green text-on-green" : "bg-accent-purple text-on-fill",
           )}
           aria-hidden
         >

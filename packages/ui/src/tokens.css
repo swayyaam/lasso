@@ -32,6 +32,11 @@
  *  4. Inter rather than WF Visual Sans, which is proprietary. The source names
  *     Inter as the closest substitute. It is listed first and falls back to
  *     the system stack — the app never fetches a font over the network.
+ *
+ *  5. A dark appearance. The source is a white page with one polarity-flipped
+ *     panel, and says of that panel that dark mode turns it into a light fill
+ *     with dark text. The dark set at the end of this file is that flip applied
+ *     to every token, derived by measurement rather than by eye.
  */
 
 @theme {
@@ -43,6 +48,9 @@
   --color-primary-hover: #222222;
   --color-primary-focus: #363636;
   --color-on-primary: #ffffff;
+  /* The top stop of the primary button's gradient: lighter than the fill, so
+     the button reads as lit from above. */
+  --color-primary-sheen: #222222;
 
   /* ---- Colour: surface ladder ----------------------------------------- */
   /* Derivation 1. Canvas is the anchor; each step moves toward hairline.
@@ -89,6 +97,15 @@
   --color-accent-orange: #ff6b00;
   --color-accent-green: #00d722;
 
+  /* Text on a fill that is the same in both appearances: the accents above,
+     the overlay, and a thumbnail's empty frame. Not on-primary, which flips
+     with the primary. Green is the one stop too light for white. */
+  --color-on-fill: #ffffff;
+  --color-on-green: #080808;
+  /* The frame a thumbnail loads into, dark in both appearances like the
+     picture it is waiting for. */
+  --color-letterbox: #222222;
+
   /* ---- Colour: semantic ------------------------------------------------ */
   /* Derivation 2. The -strong variants exist because the accent itself is a
      fill colour: #00d722 as 12px text on white is around 1.7:1. */
@@ -108,6 +125,8 @@
   --color-info-strong: #006acc;
   --color-info-surface: #e8f1fe;
 
+  /* Dims what is behind a sheet, and sits under text on a thumbnail. The same
+     in both appearances. */
   --color-overlay: #080808;
 
   /* ---- Type ------------------------------------------------------------ */
@@ -228,4 +247,76 @@
 
   /* ---- Motion ---------------------------------------------------------- */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/*
+ * Dark.
+ *
+ * Applied when <html> carries data-appearance="dark", which the page sets from
+ * the Appearance setting — or, under Auto, from prefers-color-scheme. Only the
+ * colours that flip are here; the accents, on-fill, on-green, letterbox and
+ * overlay are the same in both.
+ *
+ * Every value is measured, and scratch arithmetic is not kept, so the method
+ * is written down instead:
+ *
+ *  - The surface ladder mirrors the light ladder's CIE L* steps up from the
+ *    canvas, at 1.5 times their size. At 1.0 surface-1 is #0d0d0d, which no one
+ *    can tell from the canvas; at 1.5 surface-4 and the hairline land on the
+ *    source's own polarity-flipped stops, #222222 and #363636.
+ *  - Text keeps its light contrast with the canvas, except where that fails
+ *    AA on a surface. ink-tertiary is the darkest grey that passes 4.5:1 on
+ *    all five grounds — #898989, the source's Mute, which is too light to
+ *    pass on white and exactly right here.
+ *  - Ink is one step off white, as the light ink is one step off black: pure
+ *    white text on near-black blooms.
+ *  - The semantic -strong colours go back to the source's own stops where
+ *    those pass AA on every surface and their tint (success, warning), and
+ *    to the accent blue for info. Danger is its stop lifted a quarter of the
+ *    way to white, the least that passes. Tints are the stop at 16% over the
+ *    canvas.
+ *  - The primary fills flip to near-white with near-black text, the source's
+ *    rule for its flipped panel. The gradient still runs light to dark, so
+ *    the button stays lit from above.
+ */
+:root[data-appearance="dark"] {
+  --color-primary: #f2f2f2;
+  --color-primary-hover: #dcdcdc;
+  --color-primary-focus: #ebebeb;
+  --color-on-primary: #080808;
+  --color-primary-sheen: #ffffff;
+
+  --color-canvas: #080808;
+  --color-surface-1: #0f0f0f;
+  --color-surface-2: #161616;
+  --color-surface-3: #1d1d1d;
+  --color-surface-4: #222222;
+
+  --color-hairline: #363636;
+  --color-hairline-strong: #4f4f4f;
+  --color-hairline-tertiary: #707070;
+
+  --color-inverse-canvas: #ffffff;
+  --color-inverse-surface-1: #e8e8e8;
+  --color-inverse-surface-2: #d8d8d8;
+  --color-inverse-ink: #080808;
+
+  --color-ink: #f2f2f2;
+  --color-ink-strong: #e5e5e5;
+  --color-ink-muted: #c9c9c9;
+  --color-ink-subtle: #979797;
+  --color-ink-tertiary: #898989;
+  --color-ink-faint: #4b4b4b;
+
+  --color-danger-strong: #f25668;
+  --color-danger-surface: #2d0b0f;
+
+  --color-success-strong: #00d722;
+  --color-success-surface: #07290c;
+
+  --color-warning-strong: #ffae13;
+  --color-warning-surface: #30230a;
+
+  --color-info-strong: #3b89ff;
+  --color-info-surface: #0a182e;
 }

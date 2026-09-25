@@ -259,9 +259,26 @@ if the two disagree, this one wins.
 
 Decisions made on top of it, for this app:
 
-- **Light only.** The system is a white canvas with near-black ink. The window
-  and the webview are set to Aqua so the traffic lights and any native control
-  match it.
+- **Light, dark, or the Mac's.** Settings › Appearance is Light, Dark or Auto,
+  which is the default and an empty `appearance` in settings.json. The system
+  is a white canvas with near-black ink; dark is the document's own rule for
+  its polarity-flipped panel — light fill, dark text — applied to every token.
+  The dark values in `tokens.css` are measured, and the method is written
+  above them; re-derive rather than nudge one by eye.
+  - Components never ask which appearance is on. `appearance.ts` sets
+    `data-appearance` on `<html>` from the setting, or from
+    `prefers-color-scheme` under Auto, and the tokens flip under it.
+  - **Text on a fill that stays the same uses `on-fill` or `on-green`**, never
+    `on-primary` or `primary`, which flip. The accents, the overlay and a
+    thumbnail's empty frame (`letterbox`) are the same in both appearances;
+    `on-primary` on purple is near-black text on purple in dark.
+  - The window opens in the saved appearance, read before `wails.Run`, and
+    `setAppearance` changes it at runtime on both NSApp and each window:
+    Wails names the window's appearance when it creates it, and a window's
+    own outranks the app's. Auto clears it, and the webview's
+    `prefers-color-scheme` follows the window, so the page follows the Mac.
+  - The window's own background colour is kept the canvas's, from the token,
+    or a resize shows a white edge on a dark app. Its alpha is 0–255.
 - **A near-white surface ladder.** The source has no grey steps: a card is
   canvas plus a hairline border. An app needs fills for hover, selection and
   inset panels, so `surface-1..4` step from canvas toward hairline.
@@ -274,7 +291,8 @@ Decisions made on top of it, for this app:
   this size. `ink-tertiary` is `#686868`, the lightest grey that passes on the
   canvas and all four surfaces. `ink-faint` stays as documented because it is
   only ever used for disabled controls, which AA exempts; do not use it for
-  text someone needs to read.
+  text someone needs to read. In dark, Mute is exactly right: `#898989` is the
+  darkest grey that passes on the dark canvas and all four dark surfaces.
 - **Density with a display rung**: the document's weights, tracking and shape
   system exactly. Rows stay compact: 16 px card padding, `body-sm` 14 px as
   the workhorse, `caption` 12.8 px at the signature 550 weight for labels.
@@ -291,12 +309,13 @@ Decisions made on top of it, for this app:
   by side at half width each.
 - **The category colours carry the kind**: purple is video and green is
   audio, on the Choose cards, the thumbnail badges and the progress bars
-  alike. They stay surfaces: the button that acts is always near-black.
+  alike. They stay surfaces: the button that acts is always the primary,
+  near-black in light and near-white in dark.
 
 Two rules from the document are easy to break and worth restating. The five
 chromatic accents (purple / pink / blue / orange / green) are **surface fills,
 never button backgrounds** — the conversion hierarchy is two-colour, near-black
-for primary and white-on-hairline for secondary. And **nothing is a pill**:
+for primary and white-on-hairline for secondary, each flipped in dark. And **nothing is a pill**:
 buttons, chips and badges are 4 px, cards are 8 px, and full-round is reserved
 for circular icon containers and scrollbar tracks.
 

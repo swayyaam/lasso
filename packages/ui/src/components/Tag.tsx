@@ -24,11 +24,11 @@ import { cx } from "../cx";
 export type TagTone = "purple" | "blue" | "pink" | "orange" | "green" | "neutral";
 
 const TONES: Record<TagTone, string> = {
-  purple: "bg-accent-purple text-on-primary",
-  blue: "bg-accent-blue-deep text-on-primary",
-  pink: "bg-accent-pink text-on-primary",
-  orange: "bg-accent-orange text-on-primary",
-  green: "bg-accent-green text-primary",
+  purple: "bg-accent-purple text-on-fill",
+  blue: "bg-accent-blue-deep text-on-fill",
+  pink: "bg-accent-pink text-on-fill",
+  orange: "bg-accent-orange text-on-fill",
+  green: "bg-accent-green text-on-green",
   neutral: "bg-surface-3 text-ink-subtle",
 };
 

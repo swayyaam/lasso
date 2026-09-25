@@ -150,6 +150,11 @@ or your local network.
 | ⌘Y | History |
 | ⌘, | Settings |
 
+### Light or dark
+
+Lasso follows your Mac's appearance and changes when it does.
+**Settings → Appearance** keeps it light or dark whatever the Mac is set to.
+
 ### Signed-in downloads
 
 Some videos need you to be signed in: private and members-only ones, anything

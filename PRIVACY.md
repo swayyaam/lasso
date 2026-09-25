@@ -18,7 +18,7 @@ readable only by your macOS user account.
 
 | File | What it holds |
 |---|---|
-| `settings.json` | Your download folder, how many downloads run at once, and which browser (if any) to take cookies from. The browser's *name*, never its cookies. |
+| `settings.json` | Your download folder, how many downloads run at once, which browser (if any) to take cookies from, and whether Lasso is light, dark or follows your Mac. The browser's *name*, never its cookies. |
 | `history.json` | Each finished download: its title, link, channel, length, the file it produced and where, its size, the choices used, and when it finished. |
 | `queue.json` | Downloads not yet finished, so they carry on after Lasso quits. |
 | `presets.json` | Choices you have saved under a name. |

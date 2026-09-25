@@ -15,11 +15,21 @@
     height: 100%;
   }
 
-  /* Tells the engine to render native controls — a <select>'s popup, the
-     caret, form widgets — in their light variants. Without it the webview
-     inherits the system appearance and drops dark menus onto a white app. */
+  /* Tells the engine which variant of its native controls to draw — a
+     <select>'s popup, the caret, scrollbars, form widgets. It follows the
+     page's appearance rather than the system's, so a Mac set to dark does
+     not drop dark menus onto a light Lasso, or the reverse. */
   html {
     color-scheme: light;
+  }
+  html[data-appearance="dark"] {
+    color-scheme: dark;
+  }
+  /* Set for the frame in which the appearance changes; see appearance.ts. */
+  html.appearance-switching *,
+  html.appearance-switching *::before,
+  html.appearance-switching *::after {
+    transition: none !important;
   }
 
   body {

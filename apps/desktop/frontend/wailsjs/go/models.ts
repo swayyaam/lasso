@@ -794,6 +794,7 @@ export namespace main {
 	    downloadFolder: string;
 	    concurrency: number;
 	    cookies: string;
+	    appearance: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -804,6 +805,7 @@ export namespace main {
 	        this.downloadFolder = source["downloadFolder"];
 	        this.concurrency = source["concurrency"];
 	        this.cookies = source["cookies"];
+	        this.appearance = source["appearance"];
 	    }
 	}
 

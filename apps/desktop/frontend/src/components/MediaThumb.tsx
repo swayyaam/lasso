@@ -101,7 +101,7 @@ export function MediaThumb({
 
   return (
     <div
-      className={cx("relative shrink-0 overflow-hidden rounded-sm bg-inverse-surface-1", className)}
+      className={cx("relative shrink-0 overflow-hidden rounded-sm bg-letterbox", className)}
       style={{ width: spec.width, aspectRatio: "16 / 9" }}
       aria-hidden
     >
@@ -114,7 +114,7 @@ export function MediaThumb({
           className="absolute inset-0 size-full object-cover"
         />
       ) : (
-        <span className="absolute inset-0 flex items-center justify-center text-inverse-ink/50">
+        <span className="absolute inset-0 flex items-center justify-center text-on-fill/50">
           <Glyph className={size === "large" ? "size-6" : "size-4"} strokeWidth={1.75} />
         </span>
       )}
@@ -127,7 +127,7 @@ export function MediaThumb({
           className={cx(
             "absolute bottom-1.5 left-1.5 flex items-center justify-center rounded-pill",
             spec.badge,
-            kind === "audio" ? "bg-accent-green text-primary" : "bg-accent-purple text-on-primary",
+            kind === "audio" ? "bg-accent-green text-on-green" : "bg-accent-purple text-on-fill",
           )}
         >
           <Glyph className={spec.glyph} strokeWidth={2} />
@@ -135,7 +135,7 @@ export function MediaThumb({
       )}
 
       {length && (
-        <span className="absolute right-1 bottom-1 rounded-xs bg-overlay/80 px-1 py-0.5 text-caption leading-none text-inverse-ink tabular-nums">
+        <span className="absolute right-1 bottom-1 rounded-xs bg-overlay/80 px-1 py-0.5 text-caption leading-none text-on-fill tabular-nums">
           {length}
         </span>
       )}

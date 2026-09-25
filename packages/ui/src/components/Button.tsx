@@ -54,8 +54,8 @@ export function Button({
   const variants: Record<Variant, string> = {
     // The canonical near-black CTA.
     primary: cx(
-      "bg-primary bg-gradient-to-b from-ink-strong to-primary text-on-primary",
-      "shadow-layered hover:from-ink-muted hover:to-ink-strong hover:shadow-layered-strong",
+      "bg-primary bg-gradient-to-b from-primary-sheen to-primary text-on-primary",
+      "shadow-layered hover:from-primary-focus hover:to-primary-hover hover:shadow-layered-strong",
       "active:translate-y-px active:shadow-sm active:from-primary active:to-primary",
     ),
     // The white outline CTA: canvas fill, hairline border. Both the fill and
