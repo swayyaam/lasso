@@ -1,3 +1,5 @@
+<img src="apps/desktop/build/appicon.png" width="112" alt="">
+
 # Lasso
 
 A small macOS app for saving video and audio from the web. Paste a link, pick a

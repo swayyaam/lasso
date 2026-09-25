@@ -11,7 +11,7 @@ GOBIN := $(shell go env GOPATH)/bin
 endif
 WAILS := $(shell command -v wails 2>/dev/null || echo $(GOBIN)/wails)
 
-.PHONY: help setup doctor dev build dmg release-assets release-notes test test-go test-js lint lint-go lint-js lint-tokens lint-notices notices fetch-binaries clean
+.PHONY: help setup doctor dev build dmg release-assets release-notes test test-go test-js lint lint-go lint-js lint-tokens lint-notices notices icon fetch-binaries clean
 
 help: ## Show available targets
 	@echo "Lasso — make targets"
@@ -107,6 +107,10 @@ lint-tokens: ## Fail if any component hardcodes a colour
 
 lint-notices: ## Fail if THIRD_PARTY_NOTICES.md no longer matches what is built
 	@node scripts/third-party-notices.mjs --check
+
+icon: ## Redraw the app icon from scripts/icon (appicon.png, and appicon-small.png for 16-32px)
+	cd scripts/icon && GOWORK=off go run . -ring -out ../../apps/desktop/build/appicon.png
+	cd scripts/icon && GOWORK=off go run . -ring -band 0.14 -out ../../apps/desktop/build/appicon-small.png
 
 notices: ## Regenerate THIRD_PARTY_NOTICES.md from the app's real dependencies
 	@node scripts/third-party-notices.mjs

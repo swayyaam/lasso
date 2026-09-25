@@ -66,20 +66,61 @@ export function TitleBar({
   );
 }
 
-/** Wordmark is the lasso loop, drawn from an ellipse and a trailing stroke. */
+/**
+ * The mark's segments, clockwise from the one centred on the top: the five
+ * category accents, in the order scripts/icon/ring.go draws the app icon.
+ * Written out whole so Tailwind can see every class.
+ */
+const MARK = [
+  { stroke: "stroke-accent-purple", fill: "fill-accent-purple" },
+  { stroke: "stroke-accent-pink", fill: "fill-accent-pink" },
+  { stroke: "stroke-accent-blue", fill: "fill-accent-blue" },
+  { stroke: "stroke-accent-orange", fill: "fill-accent-orange" },
+  { stroke: "stroke-accent-green", fill: "fill-accent-green" },
+];
+
+// On an 18px ring the icon's band is 2.5px, which reads as a hairline beside
+// 14px type; 3px holds its own, as the icon's small sizes do.
+const MARK_SIZE = 18;
+const MARK_BAND = 3;
+
+function onRing(r: number, degrees: number) {
+  const a = (degrees * Math.PI) / 180;
+  const c = MARK_SIZE / 2;
+  return [c + r * Math.sin(a), c - r * Math.cos(a)] as const;
+}
+
+/**
+ * Mark is the app icon's ring without its tile. Each segment is a butted arc
+ * plus a disc at its clockwise end, laid over the next segment's start: the
+ * rounded ends that lap round the ring.
+ */
+function Mark() {
+  const r = (MARK_SIZE - MARK_BAND) / 2;
+  const step = 360 / MARK.length;
+  const start = -step / 2;
+  return (
+    <svg width={MARK_SIZE} height={MARK_SIZE} viewBox={`0 0 ${MARK_SIZE} ${MARK_SIZE}`} fill="none" aria-hidden>
+      {MARK.map(({ stroke }, i) => {
+        const [x0, y0] = onRing(r, start + i * step);
+        const [x1, y1] = onRing(r, start + (i + 1) * step);
+        return (
+          <path key={stroke} d={`M${x0} ${y0}A${r} ${r} 0 0 1 ${x1} ${y1}`} strokeWidth={MARK_BAND} className={stroke} />
+        );
+      })}
+      {MARK.map(({ fill }, i) => {
+        const [x, y] = onRing(r, start + (i + 1) * step);
+        return <circle key={fill} cx={x} cy={y} r={MARK_BAND / 2} className={fill} />;
+      })}
+    </svg>
+  );
+}
+
+/** Wordmark is the mark and the name. */
 function Wordmark() {
   return (
     <div className="flex items-center gap-xs">
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-        <ellipse cx="9" cy="6.5" rx="5.5" ry="4" stroke="currentColor" strokeWidth="1.6" className="text-primary" />
-        <path
-          d="M6.2 9.8C5.2 11.4 5.6 14 7.4 15.2"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          className="text-primary"
-        />
-      </svg>
+      <Mark />
       <span className="text-body-sm font-semibold text-ink">Lasso</span>
     </div>
   );

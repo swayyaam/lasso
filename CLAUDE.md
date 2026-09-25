@@ -224,14 +224,24 @@ make a string comparison.
 
 ## App icon
 
-`apps/desktop/build/appicon.png` is the only icon input. `make build` hands it
-to Wails, which regenerates `Contents/Resources/iconfile.icns` on every build,
-so swapping the icon means replacing that one PNG and rebuilding — nothing else
-to touch.
+The mark is the five category accents as one ring: purple centred at the top,
+then pink, blue, orange and green clockwise, each segment's rounded end lapping
+over the next. On the icon it sits on a near-black `#080808` tile; in the title
+bar (`Mark` in `TitleBar.tsx`) it stands alone, on white in light and on its own
+near-black in dark.
 
-Apple's template wants roughly 824px of artwork centred in a 1024x1024 canvas.
-Artwork that fills the canvas edge to edge renders slightly larger than its
-neighbours in the Dock and does not share the system corner radius.
+**The icon is drawn, not painted.** `scripts/icon/ring.go` renders it from
+geometry with the token colours, and `make icon` writes both inputs:
+`apps/desktop/build/appicon.png`, and `appicon-small.png` with a thicker band,
+which `make-icon.sh` uses for 16 and 32 px, where the regular band is a pixel
+and a half. `make build` then turns them into `iconfile.icns`. Changing the
+mark's colours or order means changing `ring.go` and `TitleBar.tsx` together.
+
+Apple's template wants roughly 824px of artwork centred in a 1024x1024 canvas,
+with a 185px corner radius. Artwork that fills the canvas edge to edge renders
+slightly larger than its neighbours in the Dock and does not share the system
+corner radius. `ring.go` follows it; for a painted icon, `scripts/icon -in`
+fits one onto the template without stretching it.
 
 ## Deferred: distribution
 

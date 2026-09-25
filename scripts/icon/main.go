@@ -9,6 +9,11 @@
 // aspect ratio and is centred, so nothing is distorted to make it square.
 //
 //	go run . -in artwork.png -out appicon.png
+//
+// With -ring it draws Lasso's own mark instead of fitting a picture; see
+// ring.go.
+//
+//	go run . -ring -out appicon.png
 package main
 
 import (
@@ -16,8 +21,8 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
-	"image/png"
 	_ "image/jpeg"
+	"image/png"
 	"os"
 
 	xdraw "golang.org/x/image/draw"
@@ -28,15 +33,25 @@ func main() {
 	out := flag.String("out", "", "destination PNG")
 	canvas := flag.Int("canvas", 1024, "output canvas size")
 	content := flag.Int("content", 824, "artwork size inside the canvas")
+	ring := flag.Bool("ring", false, "draw Lasso's mark instead of fitting -in")
+	band := flag.Float64("band", ringBandRatio, "with -ring, the band's width as a fraction of the tile")
 	flag.Parse()
 
-	if *in == "" || *out == "" {
+	if (*in == "" && !*ring) || *out == "" {
 		fmt.Fprintln(os.Stderr, "usage: icon -in artwork.png -out appicon.png")
+		fmt.Fprintln(os.Stderr, "       icon -ring -out appicon.png")
 		os.Exit(2)
 	}
 	if *content > *canvas {
 		fmt.Fprintln(os.Stderr, "content must fit inside the canvas")
 		os.Exit(2)
+	}
+
+	if *ring {
+		write(*out, drawRing(*canvas, *content, *band))
+		fmt.Printf("%s: the mark on a %dx%d tile, centred on a %dx%d transparent canvas\n",
+			*out, *content, *content, *canvas, *canvas)
+		return
 	}
 
 	src, err := load(*in)
@@ -60,23 +75,29 @@ func main() {
 	offY := (*canvas - h) / 2
 	target := image.Rect(offX, offY, offX+w, offY+h)
 	xdraw.CatmullRom.Scale(dst, target, src, b, xdraw.Over, nil)
-
-	f, err := os.Create(*out)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "creating %s: %v\n", *out, err)
-		os.Exit(1)
-	}
-	defer f.Close()
-
-	if err := png.Encode(f, dst); err != nil {
-		fmt.Fprintf(os.Stderr, "writing %s: %v\n", *out, err)
-		os.Exit(1)
-	}
+	write(*out, dst)
 
 	fmt.Printf("%s: %dx%d artwork centred on a %dx%d transparent canvas\n",
 		*out, w, h, *canvas, *canvas)
 	if b.Dx() != b.Dy() {
 		fmt.Printf("  source was %dx%d (not square) — fitted, not stretched\n", b.Dx(), b.Dy())
+	}
+}
+
+func write(path string, img image.Image) {
+	f, err := os.Create(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "creating %s: %v\n", path, err)
+		os.Exit(1)
+	}
+	if err := png.Encode(f, img); err != nil {
+		f.Close()
+		fmt.Fprintf(os.Stderr, "writing %s: %v\n", path, err)
+		os.Exit(1)
+	}
+	if err := f.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "writing %s: %v\n", path, err)
+		os.Exit(1)
 	}
 }
 
