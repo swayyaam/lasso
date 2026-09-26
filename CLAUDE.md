@@ -109,6 +109,13 @@ packages.
   typecheck without running Wails.
 - **Avoid `time.Time` in bound types.** Wails cannot model it and emits `any`.
   `core.Item.AddedAt` is Unix milliseconds for this reason.
+- **A yt-dlp failure crosses with its kind.** `formatError` (`errors.go`, set
+  as Wails' `ErrorFormatter`) sends a `*core.DownloadError` as JSON text —
+  `{kind, message, raw}` — and every other error as its plain text, as
+  before. Text, not an object: Wails' runtime rebuilds each rejection as
+  `new Error(value)`, which flattens an object to "[object Object]" (seen in
+  the running app). The page reads it with `failureOf` in `useLink.ts`, which
+  also rebuilds the old "message: raw" text so `explain()` works unchanged.
 - **Event names live in `events.go`** and reach the frontend through
   `App.Events()`. Never hardcode an event string in TypeScript.
 - **The interface names downloads, never paths.** `OpenFile` and

@@ -56,6 +56,9 @@ export function useLink() {
   const [metadata, setMetadata] = useState<core.Metadata | null>(null);
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState("");
+  // What kind of failure it was, when yt-dlp was the one that failed, so
+  // Choose can offer the doctor for a bot check and not for a typo.
+  const [errorKind, setErrorKind] = useState("");
   // A resolve in flight must not overwrite a newer one that already finished,
   // nor reopen a link the user has since cleared.
   const token = useRef(0);
@@ -67,6 +70,7 @@ export function useLink() {
     const mine = ++token.current;
     setUrl(trimmed);
     setError("");
+    setErrorKind("");
 
     const known = remembered(trimmed);
     if (known) {
@@ -83,7 +87,11 @@ export function useLink() {
       remember(trimmed, result);
       setMetadata(result);
     } catch (e) {
-      if (mine === token.current) setError(cleanError(e));
+      if (mine === token.current) {
+        const failure = failureOf(e);
+        setError(failure.text);
+        setErrorKind(failure.kind);
+      }
     } finally {
       if (mine === token.current) setResolving(false);
     }
@@ -94,6 +102,7 @@ export function useLink() {
     setUrl("");
     setMetadata(null);
     setError("");
+    setErrorKind("");
     setResolving(false);
   }, []);
 
@@ -102,11 +111,45 @@ export function useLink() {
     metadata,
     resolving,
     error,
+    errorKind,
     /** Whether a link is on screen: resolving, resolved or refused. */
     open: resolving || metadata !== null || error !== "",
     resolve,
     clear,
   };
+}
+
+/**
+ * A yt-dlp failure as it crosses from Go: core.DownloadError as JSON text, the
+ * Error's message (errors.go's formatError; Wails' runtime flattens objects,
+ * so it cannot cross as one). Every other error arrives as plain text.
+ */
+interface Failure {
+  kind: string;
+  message: string;
+  raw: string;
+}
+
+function parseFailure(text: string): Failure | null {
+  if (!text.startsWith("{")) return null;
+  try {
+    const value = JSON.parse(text);
+    return typeof value?.kind === "string" && typeof value?.message === "string" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * failureOf reads a rejected call: the text, as it always read (the sentence,
+ * then yt-dlp's own output, which explain() separates again), and the kind
+ * when there is one.
+ */
+export function failureOf(e: unknown): { text: string; kind: string } {
+  const text = cleanError(e);
+  const failure = parseFailure(text);
+  if (!failure) return { text, kind: "" };
+  return { text: failure.raw ? `${failure.message}: ${failure.raw}` : failure.message, kind: failure.kind };
 }
 
 /** cleanError strips Go's wrapping so the user sees the sentence, not a trace. */

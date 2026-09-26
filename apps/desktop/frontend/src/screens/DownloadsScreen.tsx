@@ -4,7 +4,7 @@ import { api, core } from "../bindings";
 import { describeFile, describePick, formatBytes, formatEta, formatSpeed, kindOf } from "../format";
 import { LinkField } from "../components/LinkField";
 import { MediaThumb } from "../components/MediaThumb";
-import { useDoctor } from "../components/DoctorPanel";
+import { useDoctor, useSuggestsDoctor } from "../components/DoctorPanel";
 import { cleanError } from "../hooks/useLink";
 
 const RUNNING = new Set(["fetching", "downloading", "post-processing"]);
@@ -719,28 +719,3 @@ function useUpdateAndRetry() {
   return { updating, message, run };
 }
 
-/**
- * useSuggestsDoctor asks the backend whether a failure is worth offering
- * diagnostics for. The rule lives in Go so it has one definition; the answer
- * per kind is remembered, since it cannot change while the app runs.
- */
-const suggestions = new Map<string, boolean>();
-function useSuggestsDoctor(kind: string): boolean {
-  const [suggests, setSuggests] = useState(() => suggestions.get(kind) ?? false);
-  useEffect(() => {
-    if (!kind) return;
-    if (suggestions.has(kind)) {
-      setSuggests(suggestions.get(kind)!);
-      return;
-    }
-    let cancelled = false;
-    api.ShouldSuggestDoctor(kind).then((answer) => {
-      suggestions.set(kind, answer);
-      if (!cancelled) setSuggests(answer);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [kind]);
-  return suggests;
-}

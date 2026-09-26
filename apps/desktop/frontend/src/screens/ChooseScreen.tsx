@@ -22,6 +22,7 @@ import { AdvancedDrawer } from "../components/AdvancedDrawer";
 import { MediaThumb, bestSource } from "../components/MediaThumb";
 import type { Link } from "../hooks/useLink";
 import { cleanError, explain, needsFullDiskAccess } from "../hooks/useLink";
+import { useDoctor, useSuggestsDoctor } from "../components/DoctorPanel";
 
 const EMPTY_OPTIONS = {
   url: "",
@@ -173,7 +174,7 @@ export function ChooseScreen({
           <LinkBar url={link.url} onClear={link.clear} />
 
           {error ? (
-            <ResolveError error={error} onRetry={() => void link.resolve(link.url)} />
+            <ResolveError error={error} kind={link.errorKind} onRetry={() => void link.resolve(link.url)} />
           ) : resolving || !metadata ? (
             <ChooseSkeleton />
           ) : (
@@ -713,9 +714,15 @@ function MoreOptions({
   );
 }
 
-/** ResolveError is a link that did not resolve, with the way forward. */
-function ResolveError({ error, onRetry }: { error: string; onRetry: () => void }) {
+/**
+ * ResolveError is a link that did not resolve, with the way forward. When the
+ * reason looks like Lasso's own setup rather than the site's answer, that
+ * includes the doctor, by the same rule a failed download uses.
+ */
+function ResolveError({ error, kind, onRetry }: { error: string; kind: string; onRetry: () => void }) {
   const { message, detail } = explain(error);
+  const suggests = useSuggestsDoctor(kind);
+  const openDoctor = useDoctor();
   return (
     <Banner
       title="That link did not work"
@@ -729,6 +736,15 @@ function ResolveError({ error, onRetry }: { error: string; onRetry: () => void }
               onClick={() => void api.OpenFullDiskAccessSettings()}
             >
               Open System Settings
+            </Button>
+          )}
+          {suggests && (
+            <Button
+              size="sm"
+              icon={<Icon.Doctor className="size-3.5" strokeWidth={1.75} aria-hidden />}
+              onClick={openDoctor}
+            >
+              Diagnose
             </Button>
           )}
           <Button

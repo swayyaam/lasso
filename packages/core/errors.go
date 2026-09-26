@@ -39,12 +39,15 @@ const (
 
 // DownloadError is a yt-dlp failure translated into something a person can act
 // on, with the original output kept for the details toggle.
+//
+// It crosses to the interface as JSON (apps/desktop's formatError), so a
+// failure arrives with its kind rather than as a sentence to be guessed at.
 type DownloadError struct {
-	Kind    ErrorKind
-	Message string
+	Kind    ErrorKind `json:"kind"`
+	Message string    `json:"message"`
 	// Raw is yt-dlp's own output, shown behind "details".
-	Raw string
-	Err error
+	Raw string `json:"raw"`
+	Err error  `json:"-"`
 }
 
 func (e *DownloadError) Error() string {

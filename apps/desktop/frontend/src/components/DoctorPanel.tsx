@@ -186,6 +186,32 @@ export function useDoctor() {
 }
 
 /**
+ * useSuggestsDoctor asks the backend whether a failure is worth offering
+ * diagnostics for. The rule lives in Go so it has one definition; the answer
+ * per kind is remembered, since it cannot change while the app runs.
+ */
+const suggestions = new Map<string, boolean>();
+export function useSuggestsDoctor(kind: string): boolean {
+  const [suggests, setSuggests] = useState(() => suggestions.get(kind) ?? false);
+  useEffect(() => {
+    if (!kind) return;
+    if (suggestions.has(kind)) {
+      setSuggests(suggestions.get(kind)!);
+      return;
+    }
+    let cancelled = false;
+    api.ShouldSuggestDoctor(kind).then((answer) => {
+      suggestions.set(kind, answer);
+      if (!cancelled) setSuggests(answer);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [kind]);
+  return suggests;
+}
+
+/**
  * DoctorProvider owns the sheet and hands its opener down.
  *
  * It renders the sheet itself, so a caller only ever has to say "open it".

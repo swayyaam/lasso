@@ -66,9 +66,11 @@ func main() {
 		// Matches --color-canvas in the appearance the window opens in.
 		// Anything else shows as a flash while the page paints.
 		BackgroundColour: windowCanvas(appearance),
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
-		Menu:             app.appMenu(),
+		// A yt-dlp failure reaches the page with its kind; see formatError.
+		ErrorFormatter: formatError,
+		OnStartup:      app.startup,
+		OnShutdown:     app.shutdown,
+		Menu:           app.appMenu(),
 		Bind: []any{
 			app,
 		},
