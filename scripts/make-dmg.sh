@@ -135,7 +135,15 @@ APPLESCRIPT
 sync
 sleep 2
 
-hdiutil detach "$mountpoint" -quiet || die "could not unmount the writable image"
+# The script above leaves the window open, and Finder can go on holding the
+# volume for a moment after it: 0.2.4's first build failed right here. Ask
+# again rather than fail the release, and never force it, which could cut off
+# the .DS_Store write the layout depends on.
+for attempt in 1 2 3 4 5; do
+	hdiutil detach "$mountpoint" -quiet && break
+	[ "$attempt" = 5 ] && die "could not unmount the writable image"
+	sleep 2
+done
 mountpoint=""
 
 rm -f "$OUT"
