@@ -12,6 +12,11 @@ type Problem struct {
 
 // Status is the result of bringing the sidecar binaries up at launch.
 type Status struct {
+	// Checked is false until the launch sequence has run. Before that, Ready
+	// false means "not known yet", not "failed": the window opens before the
+	// helpers have been checked, and reading the empty status as a failure
+	// showed "did not start" on a launch that was about to succeed.
+	Checked bool `json:"checked"`
 	// Ready is true when every required binary ran successfully.
 	Ready bool `json:"ready"`
 	// BinDir is where the binaries are executed from.
@@ -36,11 +41,12 @@ func Startup(ctx context.Context) (*Manager, Status, error) {
 	m, err := Discover()
 	if err != nil {
 		return nil, Status{
+			Checked:  true,
 			Problems: []Problem{{Message: UserMessage(err), Detail: err.Error()}},
 		}, err
 	}
 
-	status := Status{BinDir: m.paths.Bin, Versions: map[Name]string{}}
+	status := Status{Checked: true, BinDir: m.paths.Bin, Versions: map[Name]string{}}
 
 	report, err := m.Install(ctx)
 	if err != nil {

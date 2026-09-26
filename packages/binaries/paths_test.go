@@ -94,6 +94,9 @@ func TestStartupInstallsAndVerifies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Startup: %v", err)
 	}
+	if !status.Checked {
+		t.Error("Startup's status is not marked checked, so the window would wait for ever")
+	}
 	if !status.Ready {
 		t.Fatalf("not ready, problems: %+v", status.Problems)
 	}

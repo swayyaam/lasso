@@ -82,6 +82,14 @@ export function useQueue() {
 }
 
 /** useBinaryStatus tracks whether the helper programs are usable. */
+/**
+ * isSettled reports whether a status is an answer rather than "not checked
+ * yet": the helpers have been checked, or something already went wrong.
+ */
+export function isSettled(s: binaries.Status | null): s is binaries.Status {
+  return s !== null && (s.checked || (s.problems?.length ?? 0) > 0);
+}
+
 export function useBinaryStatus() {
   const [status, setStatus] = useState<binaries.Status | null>(null);
   const names = useEventNames();
@@ -89,14 +97,23 @@ export function useBinaryStatus() {
   useEffect(() => {
     if (!names) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
-    api.BinaryStatus().then((s) => {
-      if (!cancelled) setStatus(s);
-    });
     EventsOn(names.binaryStatus, (s: binaries.Status) => setStatus(s));
+    // The launch check can finish before this page is listening, and its one
+    // event is then gone; a page that had asked too early sat on "did not
+    // start". So it asks until the answer is final.
+    const ask = async () => {
+      const s = await api.BinaryStatus();
+      if (cancelled) return;
+      setStatus(s);
+      if (!isSettled(s)) timer = setTimeout(ask, 500);
+    };
+    void ask();
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
       EventsOff(names.binaryStatus);
     };
   }, [names]);

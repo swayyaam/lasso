@@ -263,6 +263,10 @@ func (a *App) BinaryStatus() binaries.Status {
 	defer a.mu.RUnlock()
 
 	status := a.status
+	if a.startupErr != nil {
+		// Startup stopped before reaching the helpers; that is its answer.
+		status.Checked = true
+	}
 	if a.startupErr != nil && len(status.Problems) == 0 {
 		status.Problems = []binaries.Problem{{
 			Message: binaries.UserMessage(a.startupErr),
@@ -999,6 +1003,7 @@ func (a *App) UpdateYtDlp() (binaries.UpdateResult, error) {
 		})
 	}
 	status.Ready = len(status.Problems) == 0
+	status.Checked = true
 
 	a.mu.Lock()
 	a.status = status

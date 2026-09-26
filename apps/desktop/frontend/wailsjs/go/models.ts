@@ -17,6 +17,7 @@ export namespace binaries {
 	    }
 	}
 	export class Status {
+	    checked: boolean;
 	    ready: boolean;
 	    binDir: string;
 	    firstRun: boolean;
@@ -29,6 +30,7 @@ export namespace binaries {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.checked = source["checked"];
 	        this.ready = source["ready"];
 	        this.binDir = source["binDir"];
 	        this.firstRun = source["firstRun"];

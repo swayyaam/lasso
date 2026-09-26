@@ -100,6 +100,21 @@ func TestBinaryStatusReportsStartupFailure(t *testing.T) {
 	if status.Problems[0].Message == "" {
 		t.Error("problem has no message for the UI")
 	}
+	if !status.Checked {
+		t.Error("a failed startup is a final answer, so it counts as checked")
+	}
+}
+
+func TestBinaryStatusBeforeStartupIsNotAFailure(t *testing.T) {
+	// The window asks before the helpers have been checked. Not ready, with no
+	// problems, used to read as "did not start" on a launch about to succeed.
+	status := NewApp().BinaryStatus()
+	if status.Checked {
+		t.Error("Checked = true before anything was checked")
+	}
+	if len(status.Problems) != 0 {
+		t.Errorf("problems before startup: %+v", status.Problems)
+	}
 }
 
 func TestOpenAndRevealTakeDownloadsNotPaths(t *testing.T) {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  isSettled,
   useBinaryStatus,
   useHistory,
   useLatest,
@@ -54,7 +55,8 @@ export function App() {
   const [downloadRequests, setDownloadRequests] = useState(0);
 
   const ready = status?.ready ?? false;
-  const starting = status === null;
+  // Not yet checked is starting, not failed.
+  const starting = !isSettled(status);
   const moving = items.filter((i) => MOVING.has(i.state)).length;
   const paused = items.filter((i) => i.state === "paused").length;
   const activity = moving > 0 ? `${moving} downloading` : paused > 0 ? `${paused} paused` : "";

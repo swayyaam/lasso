@@ -611,7 +611,7 @@ function QualityList({
             </span>
             <span
               className="shrink-0 text-body-sm text-ink-muted tabular-nums"
-              title={choice.estimate ? "An estimate: converted audio's size depends on the recording" : undefined}
+              title={choice.estimate ? "An estimate, not an exact size" : undefined}
             >
               {sizeText(choice)}
             </span>
@@ -1014,7 +1014,7 @@ function validPick(pick: string, quality?: core.QualityOptions): string {
 function sizeText(choice?: Choice): string {
   const text = choice ? formatBytes(choice.bytes) : "";
   if (!text) return "";
-  return choice?.estimate ? `about ${text}` : text;
+  return choice?.estimate ? `~${text}` : text;
 }
 
 function downloadLabel(playlist: boolean, count: number, current?: Choice): string {
