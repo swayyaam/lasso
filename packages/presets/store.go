@@ -81,6 +81,7 @@ func (s *Store) load() []Preset {
 		}
 		p.BuiltIn = false
 		p.Options.URL = ""
+		p.Options.Clip = core.Clip{}
 		out = append(out, p)
 	}
 	return out
@@ -119,9 +120,11 @@ func (s *Store) Save(name string, o core.Options) (Preset, error) {
 		return Preset{}, err
 	}
 
-	// A preset describes how to download, never what, so the URL is dropped.
-	// Validation would otherwise reject the empty URL a preset must have.
+	// A preset describes how to download, never what, so the URL is dropped,
+	// and so is a clip: its times belong to one video. Validation would
+	// otherwise reject the empty URL a preset must have.
 	o.URL = ""
+	o.Clip = core.Clip{}
 
 	id, err := newID()
 	if err != nil {
@@ -168,6 +171,7 @@ func (s *Store) Update(id string, o core.Options) error {
 		return ErrReadOnly
 	}
 	o.URL = ""
+	o.Clip = core.Clip{}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

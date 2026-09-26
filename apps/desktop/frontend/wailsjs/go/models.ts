@@ -93,6 +93,20 @@ export namespace core {
 	        this.estimate = source["estimate"];
 	    }
 	}
+	export class Clip {
+	    start: number;
+	    end: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Clip(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.start = source["start"];
+	        this.end = source["end"];
+	    }
+	}
 	export class Enhancements {
 	    sponsorBlock: string;
 	    sponsorBlockCategories: string[];
@@ -340,6 +354,7 @@ export namespace core {
 	    enhancements: Enhancements;
 	    playlist: Playlist;
 	    music: Music;
+	    clip: Clip;
 	    network: Network;
 	    output: Output;
 	    ffmpegLocation: string;
@@ -363,6 +378,7 @@ export namespace core {
 	        this.enhancements = this.convertValues(source["enhancements"], Enhancements);
 	        this.playlist = this.convertValues(source["playlist"], Playlist);
 	        this.music = this.convertValues(source["music"], Music);
+	        this.clip = this.convertValues(source["clip"], Clip);
 	        this.network = this.convertValues(source["network"], Network);
 	        this.output = this.convertValues(source["output"], Output);
 	        this.ffmpegLocation = source["ffmpegLocation"];

@@ -277,6 +277,13 @@ func (p *ProgressParser) across(id string, got, total int64) (int64, int64) {
 			break
 		}
 	}
+	if at < 0 && strings.Contains(id, "+") {
+		// ffmpeg fetching every stream at once — which is how a clip is cut —
+		// reports them together under the joined id. Its numbers are the whole
+		// download; the plan's sizes are the full streams', not the clip's.
+		p.streams = []stream{{id: id, got: got, total: total}}
+		return got, total
+	}
 	if at < 0 {
 		p.streams = append(p.streams, stream{id: id})
 		at = len(p.streams) - 1

@@ -652,6 +652,27 @@ Queue tests default to no network retries (`NetworkRetryDelays: []`): most use
 a network error only as a convenient failure, and would otherwise sit through
 real waits.
 
+## Clips
+
+`core.Clip` is part of a video by time; the zero Clip is the whole thing.
+
+- **yt-dlp hands the cut to ffmpeg**, which fetches the section over https
+  itself. The bundled ffmpeg's OpenSSL does not read the Keychain, so
+  `binaries.Manager.Environ` sets `SSL_CERT_FILE` (yt-dlp's own certifi
+  bundle, else `/etc/ssl/cert.pem`, never over one the person set). Without
+  it every clip failed with "certificate verify failed", exit code 251.
+- **`--force-keyframes-at-cuts` stays.** Without it the cut lands on the
+  nearest keyframe, which can be seconds from where the person asked.
+- **A clip is in its filename** (`clip 1m00s-2m30s`, no colons). yt-dlp skips
+  a download whose file exists, so a clip named like the whole video would
+  finish at once, pointing at the wrong file.
+- **A clip is "what", not "how".** Presets drop it, as they drop the link,
+  and playlist entries drop it: its times belong to one video.
+- **Progress is one joined line at the end.** ffmpeg reports the streams
+  together under `135+140` and only once it is done, so the parser treats a
+  joined id as the whole download (not a third stream on top of the plan's
+  full-length sizes), and the card says "Cutting the clip…" meanwhile.
+
 ## Links from outside the window
 
 A link reaches Lasso five ways: pasted anywhere in the window, dropped on it,

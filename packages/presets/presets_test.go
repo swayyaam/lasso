@@ -175,6 +175,29 @@ func TestSaveDropsURL(t *testing.T) {
 	}
 }
 
+func TestSaveAndUpdateDropTheClip(t *testing.T) {
+	s, _ := newStore(t)
+
+	// A clip's times belong to one video; saved into a preset they would cut
+	// every video it is applied to at the same place.
+	clip := core.Clip{Start: 60, End: 150}
+	saved, err := s.Save("Clipped", core.Options{Pick: core.PickBest, Clip: clip})
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if !saved.Options.Clip.IsWhole() {
+		t.Errorf("saved clip %+v, want it dropped", saved.Options.Clip)
+	}
+	if err := s.Update(saved.ID, core.Options{Pick: core.PickBest, Clip: clip}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	for _, p := range s.All() {
+		if p.ID == saved.ID && !p.Options.Clip.IsWhole() {
+			t.Errorf("updated clip %+v, want it dropped", p.Options.Clip)
+		}
+	}
+}
+
 func TestSaveRejectsBadNames(t *testing.T) {
 	s, _ := newStore(t)
 

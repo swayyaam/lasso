@@ -230,6 +230,17 @@ func (p QuickPick) defaultTemplate() string {
 	return DefaultTemplate
 }
 
+// defaultTemplate is DefaultTemplate for these options: the pick's, and the
+// clip's times when there is one, so a clip never shares a name with the
+// whole video or with a different clip.
+func (o Options) defaultTemplate() string {
+	template := o.Pick.defaultTemplate()
+	if o.Clip.IsWhole() {
+		return template
+	}
+	return strings.TrimSuffix(template, ".%(ext)s") + " " + o.Clip.fileLabel() + ".%(ext)s"
+}
+
 // Options is the complete description of one download request. It is the sole
 // input to BuildArgs, which is a pure function of it.
 type Options struct {
@@ -245,8 +256,10 @@ type Options struct {
 	Enhancements Enhancements `json:"enhancements"`
 	Playlist     Playlist     `json:"playlist"`
 	Music        Music        `json:"music"`
-	Network      Network      `json:"network"`
-	Output       Output       `json:"output"`
+	// Clip is part of the video to download instead of all of it.
+	Clip    Clip    `json:"clip"`
+	Network Network `json:"network"`
+	Output  Output  `json:"output"`
 
 	// FFmpegLocation is the directory holding the bundled ffmpeg and ffprobe.
 	// It lives here so BuildArgs stays a pure function and so the command shown

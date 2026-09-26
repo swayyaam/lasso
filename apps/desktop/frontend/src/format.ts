@@ -112,7 +112,7 @@ export function extensionOf(path: string): string {
  * nothing about what arrived, and a 1080p pick of a 720p video is a 720p file.
  */
 export function describeFile(d: {
-  options?: { pick?: string };
+  options?: { pick?: string; clip?: Clip };
   filePath: string;
   resolution?: string;
   bytes?: number;
@@ -126,7 +126,45 @@ export function describeFile(d: {
     .filter(Boolean)
     .join(" ");
 
-  return [kind === "audio" ? "Audio" : "Video", format, formatBytes(d.bytes ?? 0)].filter(Boolean).join(" · ");
+  return [kind === "audio" ? "Audio" : "Video", format, formatBytes(d.bytes ?? 0), describeClip(d.options?.clip)]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** A clip's times, as core.Clip carries them: seconds, End 0 for "to the end". */
+export interface Clip {
+  start: number;
+  end: number;
+}
+
+export function isWhole(clip?: Clip): boolean {
+  return !clip || (clip.start <= 0 && clip.end <= 0);
+}
+
+/** describeClip is "Clip 1:00–2:30", "Clip from 1:30", or "" for the whole thing. */
+export function describeClip(clip?: Clip): string {
+  if (!clip || isWhole(clip)) return "";
+  const from = formatDuration(clip.start) || "0:00";
+  return clip.end > 0 ? `Clip ${from}–${formatDuration(clip.end)}` : `Clip from ${from}`;
+}
+
+/**
+ * parseTime reads a time the way people type one — 90, 1:30, 1:02:03, 1:30.5 —
+ * into seconds, or NaN when it is not one. Only the last part may have a
+ * fraction, and a minutes or seconds part after the first stays under 60.
+ */
+export function parseTime(text: string): number {
+  const parts = text.trim().split(":");
+  if (parts.length > 3 || parts.some((p) => p === "")) return NaN;
+  let total = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const last = i === parts.length - 1;
+    if (!(last ? /^\d+(\.\d+)?$/ : /^\d+$/).test(parts[i])) return NaN;
+    const value = Number(parts[i]);
+    if (i > 0 && value >= 60) return NaN;
+    total = total * 60 + value;
+  }
+  return total;
 }
 
 /** describePick names what a download was asked to be, before it exists. */

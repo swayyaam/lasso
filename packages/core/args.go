@@ -29,6 +29,7 @@ func BuildArgs(o Options) []string {
 	args = append(args, "--continue")
 
 	args = append(args, formatArgs(o)...)
+	args = append(args, clipArgs(o)...)
 	args = append(args, sortArgs(o)...)
 	args = append(args, containerArgs(o)...)
 	args = append(args, subtitleArgs(o)...)
@@ -442,7 +443,7 @@ func outputArgs(o Options) []string {
 	}
 	template := o.Output.Template
 	if template == "" {
-		template = o.Pick.defaultTemplate()
+		template = o.defaultTemplate()
 	}
 	return append(args, "-o", template)
 }

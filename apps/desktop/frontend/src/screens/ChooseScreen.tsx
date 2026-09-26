@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   Banner,
   Button,
+  Chip,
   Details,
   Dropdown,
   Eyebrow,
@@ -16,8 +17,8 @@ import {
   cx,
 } from "@lasso/ui";
 import { api, core, presets as presetModels } from "../bindings";
-import { formatBytes, formatDuration, formatLength, kindOf, shortLink, siteOf } from "../format";
-import type { Kind } from "../format";
+import { formatBytes, formatDuration, formatLength, isWhole, kindOf, parseTime, shortLink, siteOf } from "../format";
+import type { Clip, Kind } from "../format";
 import { AdvancedDrawer } from "../components/AdvancedDrawer";
 import { MediaThumb, bestSource } from "../components/MediaThumb";
 import type { Link } from "../hooks/useLink";
@@ -36,6 +37,114 @@ const EMPTY_OPTIONS = {
   network: { rateLimit: "", cookies: "" },
   output: { folder: "", template: "" },
 } as unknown as core.Options;
+
+const WHOLE: Clip = { start: 0, end: 0 };
+
+/** clipFraction is how much of the video a clip is, 1 for all of it. */
+function clipFraction(clip: Clip, duration: number): number {
+  if (isWhole(clip) || duration <= 0) return 1;
+  const end = clip.end > 0 ? Math.min(clip.end, duration) : duration;
+  return Math.min(1, Math.max(0, (end - clip.start) / duration));
+}
+
+/**
+ * ClipSection takes part of the video instead of all of it. Whole is the
+ * default and asks for nothing; a part asks for two times, in the forms people
+ * type them. The download cuts exactly there, re-encoding around each edge,
+ * which is why it takes a little longer than its size suggests.
+ */
+function ClipSection({
+  duration,
+  clip,
+  problem,
+  onChange,
+}: {
+  duration: number;
+  clip: Clip;
+  problem: string;
+  /** The clip to download, and why its times cannot be cut ("" when they can). */
+  onChange: (clip: Clip, problem: string) => void;
+}) {
+  const [part, setPart] = useState(!isWhole(clip));
+  const [from, setFrom] = useState(clip.start > 0 ? formatDuration(clip.start) : "0:00");
+  const [to, setTo] = useState(formatDuration(clip.end > 0 ? clip.end : duration));
+
+  function cut(nextFrom: string, nextTo: string) {
+    setFrom(nextFrom);
+    setTo(nextTo);
+    const start = parseTime(nextFrom);
+    const end = parseTime(nextTo);
+    if (Number.isNaN(start) || Number.isNaN(end)) {
+      onChange(clip, "Times look like 1:30 or 1:02:03.");
+    } else if (end <= start) {
+      onChange(clip, "The clip ends before it starts.");
+    } else if (start >= duration || end > Math.ceil(duration)) {
+      onChange(clip, `The video is ${formatDuration(duration)} long.`);
+    } else {
+      // Running to the last second is the same as to the end, which yt-dlp
+      // cuts more simply.
+      onChange({ start, end: end >= Math.floor(duration) ? 0 : end }, "");
+    }
+  }
+
+  const start = parseTime(from);
+  const end = parseTime(to);
+  const length = !problem && end > start ? end - start : 0;
+
+  return (
+    <section className="flex flex-col gap-xs">
+      <Eyebrow>Length</Eyebrow>
+      <div className="flex flex-wrap items-center gap-sm">
+        <div className="flex gap-xxs">
+          <Chip
+            selected={!part}
+            onClick={() => {
+              setPart(false);
+              onChange(WHOLE, "");
+            }}
+          >
+            All of it · {formatDuration(duration)}
+          </Chip>
+          <Chip
+            selected={part}
+            onClick={() => {
+              setPart(true);
+              cut(from, to);
+            }}
+          >
+            Just a part
+          </Chip>
+        </div>
+        {part && (
+          <div className="flex items-center gap-xs text-body-sm text-ink-muted">
+            <span>From</span>
+            <Input
+              className="w-24"
+              value={from}
+              invalid={Boolean(problem) && Number.isNaN(start)}
+              aria-label="Clip starts at"
+              onChange={(e) => cut(e.target.value, to)}
+            />
+            <span>to</span>
+            <Input
+              className="w-24"
+              value={to}
+              invalid={Boolean(problem) && !Number.isNaN(start)}
+              aria-label="Clip ends at"
+              onChange={(e) => cut(from, e.target.value)}
+            />
+            {length > 0 && <span className="text-ink-subtle">{formatDuration(length)} long</span>}
+          </div>
+        )}
+      </div>
+      {part && (
+        <p className={cx("text-body-sm", problem ? "text-danger-strong" : "text-ink-subtle")} role={problem ? "alert" : undefined}>
+          {problem || "Cut at exactly these times. It takes a little longer, because the edges are re-encoded."}
+        </p>
+      )}
+    </section>
+  );
+}
 
 /** One row of the quality list. */
 type Choice = {
@@ -80,6 +189,8 @@ export function ChooseScreen({
   const [busy, setBusy] = useState(false);
   const [queueError, setQueueError] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // Why the clip's times cannot be cut, or "" when they can (or there is none).
+  const [clipProblem, setClipProblem] = useState("");
 
   const quality = metadata?.quality;
   const playlist = metadata?.kind === "playlist";
@@ -93,7 +204,9 @@ export function ChooseScreen({
     if (!metadata) return;
     setQueueError("");
     setSelected(new Set(entries.map((_, i) => i)));
-    setOptions((o) => ({ ...o, pick: validPick(o.pick as string, metadata.quality) }) as core.Options);
+    // A clip's times belong to the video they were chosen on.
+    setOptions((o) => ({ ...o, pick: validPick(o.pick as string, metadata.quality), clip: WHOLE }) as core.Options);
+    setClipProblem("");
     // Only a new link resets the choice; editing options must not.
   }, [metadata]);
 
@@ -133,7 +246,9 @@ export function ChooseScreen({
         await api.Enqueue(request, {
           title: metadata.title,
           uploader: metadata.uploader,
-          duration: metadata.duration,
+          // A clip's file is the clip's length, which is what its thumbnail
+          // says in the queue and in History.
+          duration: Math.round(metadata.duration * clipFraction(options.clip ?? WHOLE, metadata.duration)),
           thumbnail: bestSource(metadata.thumbnails, 320),
         });
       }
@@ -145,10 +260,17 @@ export function ChooseScreen({
     }
   }
 
-  const choices = useMemo(() => (kind === "audio" ? audioChoices(quality) : videoChoices(quality)), [kind, quality]);
+  const clip: Clip = options.clip ?? WHOLE;
+  const fraction = playlist ? 1 : clipFraction(clip, metadata?.duration ?? 0);
+  const choices = useMemo(() => {
+    const all = kind === "audio" ? audioChoices(quality) : videoChoices(quality);
+    // A clip costs its share of the whole, roughly: the edges are re-encoded.
+    return fraction < 1 ? all.map((c) => ({ ...c, bytes: Math.round(c.bytes * fraction), estimate: true })) : all;
+  }, [kind, quality, fraction]);
   const current = choices.find((c) => c.pick === options.pick);
   const count = playlist ? selected.size : 1;
-  const canDownload = Boolean(metadata) && !metadata?.blocked && !resolving && !disabled && !busy && count > 0;
+  const canDownload =
+    Boolean(metadata) && !metadata?.blocked && !resolving && !disabled && !busy && count > 0 && !clipProblem;
 
   // ⌘↩. Only presses made while this screen is open count: the counter's
   // value on arrival is where it starts.
@@ -200,6 +322,8 @@ export function ChooseScreen({
                             ...preset.options,
                             url: "",
                             pick: validPick(preset.options.pick as string, quality),
+                            // Saved choices say how to download, not what: the clip stays.
+                            clip: options.clip ?? WHOLE,
                           } as core.Options);
                           setActivePreset(preset.id);
                         }}
@@ -220,6 +344,20 @@ export function ChooseScreen({
                     <QualityList choices={choices} value={options.pick as string} onChange={choose} />
                     <p className="text-body-sm text-ink-subtle">{footnote(kind, options, quality, current)}</p>
                   </section>
+
+                  {!playlist && metadata.duration > 0 && (
+                    <ClipSection
+                      key={link.url}
+                      duration={metadata.duration}
+                      clip={clip}
+                      problem={clipProblem}
+                      onChange={(next, problem) => {
+                        setOptions((o) => ({ ...o, clip: next }) as core.Options);
+                        setClipProblem(problem);
+                        setQueueError("");
+                      }}
+                    />
+                  )}
 
                   {playlist && <PlaylistPicker entries={entries} selected={selected} onChange={setSelected} />}
                 </>

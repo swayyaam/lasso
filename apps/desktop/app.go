@@ -382,6 +382,9 @@ func (a *App) Enqueue(o core.Options, src core.Source) (core.Item, error) {
 	if queue == nil || manager == nil || settings == nil {
 		return core.Item{}, fmt.Errorf("Lasso cannot download yet: check Settings for details")
 	}
+	if err := o.Clip.Validate(); err != nil {
+		return core.Item{}, err
+	}
 
 	o = settings.Get().ApplyTo(fromInterface(o))
 	o.FFmpegLocation = manager.FFmpegLocation()

@@ -42,6 +42,8 @@ func (o Options) ForEntry(e Entry, playlistTitle string) (Options, error) {
 	out := o
 	out.URL = strings.TrimSpace(e.URL)
 	out.Playlist = Playlist{}
+	// A clip is times in one video; they mean nothing in another.
+	out.Clip = Clip{}
 
 	template := o.Output.Template
 	if template == "" {

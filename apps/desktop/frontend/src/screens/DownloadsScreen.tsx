@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Details, Eyebrow, Icon, MonoBlock, ProgressBar, Tooltip, VirtualList, cx } from "@lasso/ui";
 import { api, core } from "../bindings";
-import { describeFile, describePick, formatBytes, formatEta, formatSpeed, kindOf } from "../format";
+import { describeClip, describeFile, describePick, formatBytes, formatEta, formatSpeed, isWhole, kindOf } from "../format";
 import { LinkField } from "../components/LinkField";
 import { MediaThumb } from "../components/MediaThumb";
 import { useDoctor, useSuggestsDoctor } from "../components/DoctorPanel";
@@ -158,7 +158,7 @@ function FocusCard({ item }: { item: core.Item }) {
             {title}
           </span>
           <span className="truncate text-body-sm text-ink-subtle">
-            {[item.uploader, describePick(item.options?.pick)].filter(Boolean).join(" · ")}
+            {[item.uploader, describePick(item.options?.pick), describeClip(item.options?.clip)].filter(Boolean).join(" · ")}
           </span>
         </div>
         {/* Grey while waiting: nothing is moving, and a coloured bar would say
@@ -672,6 +672,9 @@ function transferLine(item: core.Item, now: number): string {
             : "";
       const position = p?.items > 1 ? `part ${p.item} of ${p.items}` : "";
       const parts = [amount, formatSpeed(p?.speed ?? 0), formatEta(p?.eta ?? 0), position].filter(Boolean);
+      // ffmpeg cuts a clip without reporting until it is done, so there are no
+      // bytes to show; say what it is doing instead of "Starting" throughout.
+      if (!parts.length && !isWhole(item.options?.clip)) return "Cutting the clip…";
       return parts.length ? parts.join(" · ") : "Starting…";
     }
     case "post-processing":

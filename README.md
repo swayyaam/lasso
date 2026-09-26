@@ -91,6 +91,15 @@ Two music options live under **More options → Music**:
 
 The **Music** and **Album** saved choices set these up for you.
 
+### Just part of it
+
+Under **Length**, choose **Just a part** and give a start and an end, the way
+you would say them: `1:30`, `1:02:03`, or just `90` for ninety seconds. Lasso
+saves only that stretch, cut at exactly those times, and the file's name says
+which part it is, so it never replaces the whole video or another clip. It takes
+a little longer than its size suggests, because the edges are re-encoded to
+land where you asked.
+
 ### Playlists
 
 A playlist opens as a list of its videos, all ticked. Untick the ones you do
