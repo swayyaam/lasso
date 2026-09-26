@@ -60,7 +60,12 @@ func BuildArgs(o Options) []string {
 // renders as a bare NA, which would make the line invalid JSON — total_bytes is
 // unavailable on fragmented downloads, and speed and eta are unavailable on the
 // final line of every download. Zero therefore means "not known yet".
+//
+// format names the stream the line is about. A download that joins video and
+// audio fetches them one after the other, each reporting its own bytes from
+// zero, and planTemplate is what lets the parser add them up.
 const progressTemplate = `download:{"stage":"downloading",` +
+	`"format":%(info.format_id|null)j,` +
 	`"downloaded":%(progress.downloaded_bytes|0)j,` +
 	`"total":%(progress.total_bytes|0)j,` +
 	`"estimate":%(progress.total_bytes_estimate|0)j,` +
@@ -68,6 +73,23 @@ const progressTemplate = `download:{"stage":"downloading",` +
 	`"eta":%(progress.eta|0)j,` +
 	`"fragment":%(progress.fragment_index|0)j,` +
 	`"fragments":%(progress.fragment_count|0)j}`
+
+// planTemplate names the streams a download is about to fetch, and their sizes,
+// before the first byte: the video and then the audio when they are joined,
+// or the one format otherwise. With it, progress is one total for the whole
+// download rather than a bar that fills for the video and starts again for
+// the audio.
+//
+// Each stream's size comes from its own entry and nowhere else. The top-level
+// size of a joined download is the sum of the streams yt-dlp knows, so falling
+// back to it for a stream it does not know (an HLS stream has no size) counted
+// the audio's size as the video's. A stream with no size is 0 here, and its
+// progress lines supply one once it starts. Two entries cover every selector
+// Lasso builds; a third stream would still be counted, from its first line.
+const planTemplate = `before_dl:{"stage":"plan","streams":[` +
+	`{"id":%(requested_formats.0.format_id|null)j,"size":%(requested_formats.0.filesize,requested_formats.0.filesize_approx|0)j},` +
+	`{"id":%(requested_formats.1.format_id|null)j,"size":%(requested_formats.1.filesize,requested_formats.1.filesize_approx|0)j}],` +
+	`"single":{"id":%(format_id|null)j,"size":%(filesize,filesize_approx|0)j}}`
 
 // completedTemplate asks yt-dlp to name the file it actually produced.
 //
@@ -94,17 +116,19 @@ func ExecArgs(o Options) []string {
 	// its backing array with the tail, so appending would overwrite it.
 	split := len(args) - 2
 
-	out := make([]string, 0, len(args)+6)
+	out := make([]string, 0, len(args)+8)
 	out = append(out, args[:split]...)
 	out = append(out,
 		"--newline",
 		"--no-colors",
 		"--progress-template", progressTemplate,
 		"--print", completedTemplate,
+		"--print", planTemplate,
 		// --print implies --quiet, which silences the progress template along
 		// with everything else. --no-quiet undoes that; it must come after.
-		// after_move is a late stage, so --print does not also imply
-		// --simulate here and the download still happens.
+		// before_dl and after_move are late stages, so --print does not also
+		// imply --simulate here and the download still happens (checked on a
+		// real download, which merged and landed).
 		"--no-quiet",
 	)
 	return append(out, args[split:]...)

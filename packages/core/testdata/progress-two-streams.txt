@@ -1,0 +1,29 @@
+[youtube] Extracting URL: https://www.youtube.com/watch?v=jNQXAC9IVRw
+[youtube] jNQXAC9IVRw: Downloading webpage
+[youtube] jNQXAC9IVRw: Downloading visionos player API JSON
+[youtube] jNQXAC9IVRw: Downloading m3u8 information
+[info] jNQXAC9IVRw: Downloading 1 format(s): 160+139-drc
+{"stage":"plan","streams":[{"id":"160","size":195278},{"id":"139-drc","size":117495}],"single":{"id":"160+139-drc","size":312773}}
+[download] Destination: /Users/someone/Downloads/jNQXAC9IVRw.f160.mp4
+{"stage":"downloading","format":"160","downloaded":1024,"total":195278,"estimate":0,"speed":22609.851000210572,"eta":8,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"160","downloaded":3072,"total":195278,"estimate":0,"speed":65757.41218498975,"eta":2,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"160","downloaded":7168,"total":195278,"estimate":0,"speed":152106.5440563403,"eta":1,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"160","downloaded":15360,"total":195278,"estimate":0,"speed":323668.06219699065,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"160","downloaded":31744,"total":195278,"estimate":0,"speed":370106.5648612211,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"160","downloaded":64512,"total":195278,"estimate":0,"speed":519905.8877347506,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"160","downloaded":130048,"total":195278,"estimate":0,"speed":773202.1180483006,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"160","downloaded":195278,"total":195278,"estimate":0,"speed":434996.01228103624,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"160","downloaded":195278,"total":195278,"estimate":0,"speed":98671.79105062701,"eta":0,"fragment":0,"fragments":0}
+[download] Destination: /Users/someone/Downloads/jNQXAC9IVRw.f139-drc.m4a
+{"stage":"downloading","format":"139-drc","downloaded":1024,"total":117495,"estimate":0,"speed":79127.60544593673,"eta":1,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"139-drc","downloaded":3072,"total":117495,"estimate":0,"speed":210352.00783622294,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"139-drc","downloaded":7168,"total":117495,"estimate":0,"speed":463890.9284369696,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"139-drc","downloaded":15360,"total":117495,"estimate":0,"speed":953744.8287909518,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"139-drc","downloaded":31744,"total":117495,"estimate":0,"speed":1138430.375840074,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"139-drc","downloaded":64512,"total":117495,"estimate":0,"speed":1132127.243259527,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"139-drc","downloaded":117495,"total":117495,"estimate":0,"speed":979085.0831152885,"eta":0,"fragment":0,"fragments":0}
+{"stage":"downloading","format":"139-drc","downloaded":117495,"total":117495,"estimate":0,"speed":203806.80608629194,"eta":0,"fragment":0,"fragments":0}
+[Merger] Merging formats into "/Users/someone/Downloads/jNQXAC9IVRw.mp4"
+Deleting original file /Users/someone/Downloads/jNQXAC9IVRw.f139-drc.m4a (pass -k to keep)
+Deleting original file /Users/someone/Downloads/jNQXAC9IVRw.f160.mp4 (pass -k to keep)
+{"stage":"complete","path":"/Users/someone/Downloads/jNQXAC9IVRw.mp4","width":192,"height":144}

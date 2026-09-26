@@ -336,3 +336,96 @@ func TestAlreadyDownloadedIsNoticed(t *testing.T) {
 		t.Error("yt-dlp skipping an existing file should be noticed")
 	}
 }
+
+// ---- one total across streams ------------------------------------------
+
+func TestProgressIsOneTotalAcrossStreams(t *testing.T) {
+	// A real run with Lasso's own templates: video 160 and audio 139-drc,
+	// fetched one after the other and joined. Each stream's lines count from
+	// zero; the download's progress must not.
+	raw, err := os.ReadFile("testdata/progress-two-streams.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const whole = 195278 + 117495
+
+	p := NewProgressParser()
+	var last Progress
+	lines := 0
+	for _, line := range strings.Split(string(raw), "\n") {
+		got, ok := p.Line(line)
+		if !ok || got.Stage != StageDownloading || got.Total == 0 {
+			continue
+		}
+		lines++
+		if got.Total != whole {
+			t.Errorf("line %d: total %d, want the whole download's %d from the first byte", lines, got.Total, whole)
+		}
+		if got.Percent < last.Percent || got.Downloaded < last.Downloaded {
+			t.Errorf("line %d went backwards: %d (%.1f%%) after %d (%.1f%%)", lines, got.Downloaded, got.Percent, last.Downloaded, last.Percent)
+		}
+		last = got
+	}
+	if lines == 0 {
+		t.Fatal("no progress came out of the transcript")
+	}
+	if last.Downloaded != whole || last.Percent != 100 {
+		t.Errorf("finished at %d (%.1f%%), want %d (100%%)", last.Downloaded, last.Percent, whole)
+	}
+}
+
+func TestTheSecondStreamStartsWhereTheFirstEnded(t *testing.T) {
+	p := NewProgressParser()
+	p.Line(`{"stage":"plan","streams":[{"id":"299","size":1000},{"id":"140","size":100}],"single":{"id":"299+140","size":1100}}`)
+	p.Line(`{"stage":"downloading","format":"299","downloaded":1000,"total":1000,"estimate":0,"speed":0,"eta":0,"fragment":0,"fragments":0}`)
+
+	got, _ := p.Line(`{"stage":"downloading","format":"140","downloaded":10,"total":100,"estimate":0,"speed":10,"eta":9,"fragment":0,"fragments":0}`)
+	if got.Downloaded != 1010 || got.Total != 1100 {
+		t.Errorf("audio's first line = %d of %d, want 1010 of 1100", got.Downloaded, got.Total)
+	}
+	if got.ETA != 9 {
+		t.Errorf("ETA = %d, want the 90 bytes left at 10 a second", got.ETA)
+	}
+}
+
+func TestAStreamWithNoPlannedSizeIsCountedFromItsLines(t *testing.T) {
+	// HLS video has no size until it starts; the audio's is known.
+	p := NewProgressParser()
+	p.Line(`{"stage":"plan","streams":[{"id":"269","size":0},{"id":"139","size":100}],"single":{"id":"269+139","size":100}}`)
+
+	got, _ := p.Line(`{"stage":"downloading","format":"269","downloaded":50,"total":0,"estimate":400,"speed":0,"eta":0,"fragment":1,"fragments":8}`)
+	if got.Total != 500 || got.Downloaded != 50 {
+		t.Errorf("= %d of %d, want 50 of the video's estimate plus the audio (500)", got.Downloaded, got.Total)
+	}
+}
+
+func TestASingleFormatIsPlannedToo(t *testing.T) {
+	p := NewProgressParser()
+	p.Line(`{"stage":"plan","streams":[{"id":null,"size":0},{"id":null,"size":0}],"single":{"id":"140","size":800}}`)
+	got, _ := p.Line(`{"stage":"downloading","format":"140","downloaded":200,"total":800,"estimate":0,"speed":0,"eta":0,"fragment":0,"fragments":0}`)
+	if got.Downloaded != 200 || got.Total != 800 || got.Percent != 25 {
+		t.Errorf("= %d of %d (%.0f%%), want 200 of 800 (25%%)", got.Downloaded, got.Total, got.Percent)
+	}
+}
+
+func TestAStreamAlreadyOnDiskStillCounts(t *testing.T) {
+	// yt-dlp skips a stream it finds already downloaded and reports nothing
+	// for it; the audio alone must not be the whole download.
+	p := NewProgressParser()
+	p.Line(`{"stage":"plan","streams":[{"id":"299","size":1000},{"id":"140","size":100}],"single":{"id":"299+140","size":1100}}`)
+	got, _ := p.Line(`{"stage":"downloading","format":"140","downloaded":50,"total":100,"estimate":0,"speed":0,"eta":0,"fragment":0,"fragments":0}`)
+	if got.Downloaded != 1050 || got.Total != 1100 {
+		t.Errorf("= %d of %d, want 1050 of 1100", got.Downloaded, got.Total)
+	}
+}
+
+func TestEachPlanStartsAfresh(t *testing.T) {
+	p := NewProgressParser()
+	p.Line(`{"stage":"plan","streams":[{"id":"299","size":1000},{"id":"140","size":100}],"single":{"id":"299+140","size":1100}}`)
+	p.Line(`{"stage":"downloading","format":"299","downloaded":1000,"total":1000,"estimate":0,"speed":0,"eta":0,"fragment":0,"fragments":0}`)
+	p.Line(`{"stage":"plan","streams":[{"id":"18","size":300},{"id":null,"size":0}],"single":{"id":"18","size":300}}`)
+	got, _ := p.Line(`{"stage":"downloading","format":"18","downloaded":30,"total":300,"estimate":0,"speed":0,"eta":0,"fragment":0,"fragments":0}`)
+	if got.Downloaded != 30 || got.Total != 300 {
+		t.Errorf("= %d of %d, want the new video's 30 of 300 alone", got.Downloaded, got.Total)
+	}
+}

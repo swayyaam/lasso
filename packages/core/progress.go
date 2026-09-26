@@ -49,7 +49,10 @@ type Progress struct {
 // finished file. Stage says which. Fields default to zero rather than null, so
 // zero means "not known".
 type progressLine struct {
-	Stage      string  `json:"stage"`
+	Stage string `json:"stage"`
+	// Format is the stream a transfer line is about, "" when yt-dlp did not
+	// say.
+	Format     *string `json:"format"`
 	Downloaded int64   `json:"downloaded"`
 	Total      int64   `json:"total"`
 	Estimate   int64   `json:"estimate"`
@@ -62,6 +65,39 @@ type progressLine struct {
 	// Width and Height are that file's dimensions, zero for audio.
 	Width  int `json:"width"`
 	Height int `json:"height"`
+	// Streams and Single are planTemplate's: the streams about to be fetched
+	// when video and audio are joined, or the one format when they are not.
+	Streams []plannedStream `json:"streams"`
+	Single  plannedStream   `json:"single"`
+}
+
+type plannedStream struct {
+	ID   *string `json:"id"`
+	Size int64   `json:"size"`
+}
+
+// stagePlan is the stage planTemplate reports, once per download, before any
+// bytes.
+const stagePlan = "plan"
+
+// stream is one of the files a download fetches, followed so that progress
+// can be one total across all of them.
+type stream struct {
+	id string
+	// planned is the size yt-dlp gave before starting, 0 when it did not know.
+	planned int64
+	// total is the latest size the stream's own progress lines gave.
+	total int64
+	// got is what has arrived so far; for a stream already fetched, all of it.
+	got int64
+}
+
+// size is the stream's best-known size.
+func (s stream) size() int64 {
+	if s.total > 0 {
+		return s.total
+	}
+	return s.planned
 }
 
 // stageComplete is the stage completedTemplate reports. It is not a Stage: a
@@ -110,6 +146,9 @@ type ProgressParser struct {
 	// chapters are the per-track files --split-chapters wrote. They need
 	// retagging afterwards, and this is the only place they are named.
 	chapters []ChapterFile
+	// streams are the files this download fetches, in the order it fetches
+	// them, from planTemplate and then from the progress lines themselves.
+	streams []stream
 }
 
 // NewProgressParser returns a parser positioned at the fetching stage.
@@ -180,23 +219,93 @@ func (p *ProgressParser) parseJSON(line string) (Progress, bool) {
 		return Progress{}, false
 	}
 
+	if raw.Stage == stagePlan {
+		p.plan(raw)
+		return Progress{}, false
+	}
+
 	total := raw.Total
 	if total == 0 {
 		// Fragmented downloads report an estimate instead of an exact size.
 		total = raw.Estimate
 	}
+	downloaded, eta := raw.Downloaded, raw.ETA
+	if raw.Format != nil && *raw.Format != "" {
+		downloaded, total = p.across(*raw.Format, raw.Downloaded, total)
+		// yt-dlp's estimate covers the stream it is on; what is left of the
+		// others arrives at the same speed.
+		if raw.Speed > 0 && total > downloaded {
+			eta = int(float64(total-downloaded) / raw.Speed)
+		}
+	}
 
 	p.stage = StageDownloading
 	return p.decorate(Progress{
 		Stage:      StageDownloading,
-		Percent:    percentOf(raw.Downloaded, total),
-		Downloaded: raw.Downloaded,
+		Percent:    percentOf(downloaded, total),
+		Downloaded: downloaded,
 		Total:      total,
 		Speed:      raw.Speed,
-		ETA:        raw.ETA,
+		ETA:        eta,
 		Fragment:   raw.Fragment,
 		Fragments:  raw.Fragments,
 	}), true
+}
+
+// plan records the streams a download is about to fetch. It starts afresh:
+// a run that downloads more than one video plans each in turn.
+func (p *ProgressParser) plan(raw progressLine) {
+	p.streams = nil
+	for _, s := range raw.Streams {
+		if s.ID != nil && *s.ID != "" {
+			p.streams = append(p.streams, stream{id: *s.ID, planned: s.Size})
+		}
+	}
+	if len(p.streams) == 0 && raw.Single.ID != nil && *raw.Single.ID != "" {
+		p.streams = []stream{{id: *raw.Single.ID, planned: raw.Single.Size}}
+	}
+}
+
+// across turns one stream's progress into the whole download's: every stream
+// before it counted in full, its own bytes, and the size of every stream still
+// to come. A stream the plan did not name is counted from its first line.
+func (p *ProgressParser) across(id string, got, total int64) (int64, int64) {
+	at := -1
+	for i, s := range p.streams {
+		if s.id == id {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		p.streams = append(p.streams, stream{id: id})
+		at = len(p.streams) - 1
+	}
+	p.streams[at].got = got
+	if total > 0 {
+		p.streams[at].total = total
+	}
+
+	var sumGot, sumTotal int64
+	for i, s := range p.streams {
+		switch {
+		case i < at:
+			// Finished. One skipped as already on disk reported nothing, so
+			// its planned size stands in for what it would have fetched.
+			done := s.got
+			if done == 0 {
+				done = s.size()
+			}
+			sumGot += done
+			sumTotal += done
+		case i == at:
+			sumGot += got
+			sumTotal += s.size()
+		default:
+			sumTotal += s.size()
+		}
+	}
+	return sumGot, sumTotal
 }
 
 func (p *ProgressParser) parseLogLine(line string) (Progress, bool) {

@@ -901,3 +901,45 @@ func TestCappedPicksNameTheirRung(t *testing.T) {
 		t.Errorf("-o = %q, want the user's own template untouched", got)
 	}
 }
+
+func TestExecArgsPlansTheStreamsBeforeTheFirstByte(t *testing.T) {
+	executed := ExecArgs(baseOptions())
+	var plan string
+	for i, a := range executed {
+		if a == "--print" && i+1 < len(executed) && strings.HasPrefix(executed[i+1], "before_dl:") {
+			plan = executed[i+1]
+		}
+	}
+	if plan == "" {
+		t.Fatal("ExecArgs does not ask for the streams before downloading, so progress cannot be one total")
+	}
+	// A stream's size must come from that stream alone. The top-level size of
+	// a joined download is the sum of the streams yt-dlp knows, and falling
+	// back to it counted the audio's size as the video's.
+	for _, entry := range []string{"requested_formats.0.", "requested_formats.1."} {
+		start := strings.Index(plan, `"size":%(`+entry)
+		if start < 0 {
+			t.Fatalf("plan has no size for %s*: %s", entry, plan)
+		}
+		field := plan[start:]
+		field = field[:strings.Index(field, ")")]
+		for _, alt := range strings.Split(strings.TrimPrefix(field, `"size":%(`), ",") {
+			if !strings.HasPrefix(alt, entry) {
+				t.Errorf("%s's size falls back to %q, which is not that stream's", entry, alt)
+			}
+		}
+	}
+	last := -1
+	for i, a := range executed {
+		if a == "--print" {
+			last = i
+		}
+	}
+	if indexOf(executed, "--no-quiet") < last {
+		t.Error("--no-quiet must follow every --print, or the progress lines are silenced")
+	}
+	progress, _ := argValue(executed, "--progress-template")
+	if !strings.Contains(progress, `"format":%(info.format_id|null)j`) {
+		t.Error("progress lines do not say which stream they are about")
+	}
+}
