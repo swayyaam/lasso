@@ -250,16 +250,28 @@ slightly larger than its neighbours in the Dock and does not share the system
 corner radius. `ring.go` follows it; for a painted icon, `scripts/icon -in`
 fits one onto the template without stretching it.
 
+## The bundle is thinned to arm64
+
+yt-dlp ships universal2: 107 of its files carry an x86_64 slice as well, 55 MB
+an Apple Silicon build never runs. `bundle-binaries.sh` thins them with
+`lipo -thin arm64` (the app goes from 339 MB to 280 MB), and three things in it
+are load-bearing:
+
+- **`lipo` strips signatures, so every thinned image is re-signed ad hoc.**
+  yt-dlp's own are ad hoc too, so nothing stronger is lost.
+- **Signed and checked away from its folder, then copied back.** In place,
+  codesign reads the three copies of libpython in yt-dlp's `Python.framework`
+  as the framework's — its links arrive flattened into copies — and refuses
+  to sign them or even to verify them untouched. The signature is the image's
+  own either way (yt-dlp's are the standalone `Python-<id>` kind).
+- **It proves yt-dlp still starts** before the build goes on.
+
+Only the bundled copy is thinned: a yt-dlp update brings the universal build
+back to the installed copy. The fetched copy in `build/bin/<platform>` stays as
+downloaded. ffmpeg, ffprobe and deno are arm64 already.
+
 ## Deferred: distribution
 
-- **Thin the universal slices.** yt-dlp ships universal2: 107 of its files
-  carry both arches, which is 55 MB of x86_64 that an arm64 build never runs.
-  `lipo -thin arm64` across them takes yt-dlp from 124 MB to 67 MB and the
-  bundle from 328 MB to 271 MB. Two catches: `lipo` strips code signatures, so
-  every thinned image needs ad-hoc re-signing afterwards, and an update
-  re-installs the universal build, so the saving applies to the shipped bundle
-  rather than the installed copy. ffmpeg, ffprobe and deno are already
-  arm64-only.
 - Code signing and notarisation are not set up. The build is ad-hoc signed
   only, so a downloaded copy is quarantined.
 
@@ -466,7 +478,7 @@ is quarantined and has to be let past Gatekeeper by hand every time. An update
 the app installs is never quarantined.
 
 The downloaded asset is **the app without its helper programs**. They are
-328 MB of the 329 MB bundle and change only when `binaries.lock.json` does, so
+268 MB of the 280 MB bundle and change only when `binaries.lock.json` does, so
 `Contents/Resources/bin` is emptied down to its `manifest.json` in
 `Lasso-app.zip` and the installed copies are carried across during the update.
 5.5 MB rather than 147.

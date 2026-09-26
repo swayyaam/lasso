@@ -33,6 +33,51 @@ cp -R "$SOURCE"/. "$DEST"/
 # The fetch stamps are build-time bookkeeping and have no place in the bundle.
 rm -rf "$DEST/.stamps"
 
+# Thin to arm64. yt-dlp ships universal2: 107 of its files carry an x86_64
+# slice as well, 55 MB that an Apple Silicon build never runs (ffmpeg, ffprobe
+# and deno are arm64 already). lipo strips each file's signature, so every
+# thinned image is re-signed ad hoc — yt-dlp's own are ad hoc too, so nothing
+# stronger is lost — the way the app's own install repairs one, and checked the
+# way it checks one. Nested images first and the launcher last: signing a
+# component invalidates a signature that covers it.
+#
+# Only the bundled copy is thinned. yt-dlp's own updates bring the universal
+# build back to the installed copy, so the saving is in the download.
+#
+# Each image is signed and checked away from its folder, then copied back over
+# the original, keeping its mode. In place, codesign reads the three copies of
+# libpython in yt-dlp's Python.framework as the framework's own — whose links
+# arrive flattened into copies, so it cannot tell app from framework — and
+# refuses to sign them ("bundle format is ambiguous") or to verify them, even
+# untouched. The signature is the image's own either way, and yt-dlp's are the
+# standalone kind (Python-<id>); what decides whether it works is yt-dlp
+# starting, which is checked below.
+thin() {
+	local f="$1" archs image
+	archs="$(lipo -archs "$f" 2>/dev/null)" || return 0 # not Mach-O
+	case " $archs " in *" arm64 "*) ;; *) return 0 ;; esac
+	[ "$archs" = "arm64" ] && return 0
+	image="$work/$(basename "$f")"
+	lipo "$f" -thin arm64 -output "$image" || die "could not thin $f"
+	codesign --force --sign - "$image" >/dev/null 2>&1 || die "could not re-sign $f"
+	codesign --verify --no-strict "$image" 2>/dev/null || die "$f does not verify after thinning"
+	cp "$image" "$f"
+	rm -f "$image"
+	thinned=$((thinned + 1))
+}
+if [ "$PLATFORM" = "darwin-arm64" ]; then
+	work="$(mktemp -d "${TMPDIR:-/tmp}/lasso-thin.XXXXXX")"
+	trap 'rm -rf "$work"' EXIT
+	before="$(du -sk "$DEST" | cut -f1)"
+	thinned=0
+	while IFS= read -r -d '' f; do thin "$f"; done < <(find "$DEST" -type f ! -name 'yt-dlp_macos' -print0)
+	while IFS= read -r -d '' f; do thin "$f"; done < <(find "$DEST" -type f -name 'yt-dlp_macos' -print0)
+	# Proof, not faith: the thinned yt-dlp has to start.
+	"$DEST/yt-dlp/yt-dlp_macos" --version >/dev/null 2>&1 || die "yt-dlp does not run after thinning"
+	after="$(du -sk "$DEST" | cut -f1)"
+	printf 'Thinned %d universal files to arm64, %d MB smaller\n' "$thinned" "$(((before - after) / 1024))"
+fi
+
 # The licences travel with every copy: most of what Lasso is built from may be
 # redistributed only with its notice, and the GPL programs only with directions
 # to their source. Outside bin/, so the update zip, which empties bin/, keeps
