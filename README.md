@@ -74,6 +74,12 @@ takes the site's own audio stream and only changes the container around it.
 Every other option re-encodes, and re-encoding audio that is already compressed
 loses a little more.
 
+Audio arrives tagged: title, artist and the cover art, so Music and your phone
+know what each file is. **Settings → Tag audio files** turns that off, and
+**More options** can skip it for one download. The one exception is an
+Original in a format that cannot hold a picture (a WAV, say), which gets its
+tags and no cover rather than failing over it.
+
 That is worth knowing before you pick **FLAC**. FLAC is a lossless *format*, but
 it cannot recover what a site already threw away — asking for it from YouTube
 gives you a much larger file of exactly the same sound. Lasso tells you when

@@ -240,3 +240,32 @@ func TestSavedAppearance(t *testing.T) {
 		t.Errorf("an unknown appearance read as %q, want Auto", got)
 	}
 }
+
+func TestAudioIsTaggedUnlessTurnedOff(t *testing.T) {
+	dir := t.TempDir()
+	// A settings file from before the setting existed keeps the default.
+	if err := os.WriteFile(filepath.Join(dir, settingsFileName), []byte(`{"cookies":"safari"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewSettingsStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !store.Get().TagAudio {
+		t.Error("TagAudio is off for someone who never chose; it should default on")
+	}
+
+	off := store.Get()
+	off.DownloadFolder = dir
+	off.TagAudio = false
+	if _, err := store.Save(off); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewSettingsStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Get().TagAudio {
+		t.Error("turning it off did not last")
+	}
+}

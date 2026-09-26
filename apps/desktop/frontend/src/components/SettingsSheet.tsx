@@ -229,6 +229,27 @@ export function SettingsSheet({
               />
 
               <Row
+                label="Tag audio files"
+                hint="Title, artist and cover art, so Music and your phone know what each file is."
+                control={
+                  <div className="flex gap-xxs">
+                    {[
+                      { value: true, label: "On" },
+                      { value: false, label: "Off" },
+                    ].map(({ value, label }) => (
+                      <Chip
+                        key={label}
+                        selected={(draft.tagAudio ?? true) === value}
+                        onClick={() => setDraft({ ...draft, tagAudio: value })}
+                      >
+                        {label}
+                      </Chip>
+                    ))}
+                  </div>
+                }
+              />
+
+              <Row
                 label="Cookies from browser"
                 hint={
                   draft.cookies

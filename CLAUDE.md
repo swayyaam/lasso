@@ -443,6 +443,15 @@ called "01 - Intro" survives. Change one and you change both.
 A tagging failure never fails the download. The tracks exist and play; losing
 them over a metadata rewrite would be a bad trade, so it lands as a notice.
 
+**Audio is tagged by default** (`Settings.TagAudio`): `--embed-metadata` and
+`--embed-thumbnail`, checked on real files in MP3, M4A, Opus (whose tags are
+per stream) and FLAC. The setting sets the two toggles when audio is chosen —
+the Audio tile, an audio pick, or a new link that stays on audio — never from
+an effect on the pick, which would override a saved choice. Back on video
+they go off: a WebM cannot take a cover, and yt-dlp fails the whole download
+over it. Original gets a cover only when its codec can carry one
+(`COVER_CODECS`); a WAV original gets tags and no picture.
+
 **Every audio pick but Original has its format in the filename**
 ("Title [id] MP3.mp3"). All of them fetch the same highest-bitrate stream
 first (`-S abr`), and yt-dlp deletes that intermediate after converting. Named

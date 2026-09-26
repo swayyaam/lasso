@@ -27,6 +27,11 @@ type Settings struct {
 	Cookies core.Browser `json:"cookies"`
 	// Appearance is light, dark, or empty to follow the Mac.
 	Appearance Appearance `json:"appearance"`
+	// TagAudio gives audio downloads their title, artist and cover art. On
+	// by default: a SoundCloud track used to arrive as a bare MP3 with none,
+	// which Music and a phone show as "Unknown Artist". It sets the two
+	// toggles in More options, so one download can still go without.
+	TagAudio bool `json:"tagAudio"`
 }
 
 // Appearance is the window's light or dark choice.
@@ -57,6 +62,7 @@ func defaultSettings() Settings {
 		DownloadFolder: folder,
 		Concurrency:    core.DefaultConcurrency,
 		Cookies:        core.BrowserNone,
+		TagAudio:       true,
 	}
 }
 

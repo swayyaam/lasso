@@ -40,6 +40,40 @@ const EMPTY_OPTIONS = {
 
 const WHOLE: Clip = { start: 0, end: 0 };
 
+/**
+ * Codecs whose files yt-dlp can put cover art into: MP3, M4A (AAC, ALAC),
+ * Ogg/Opus and FLAC. Anything else fails the whole download over the cover,
+ * which is not a trade worth making — a WAV original, which archive.org
+ * serves, gets its tags and no picture.
+ */
+const COVER_CODECS = new Set(["AAC", "ALAC", "MP3", "Opus", "Vorbis", "FLAC"]);
+
+/**
+ * canCarryCover says whether an audio pick's file can hold cover art. The
+ * converted picks always can; Original keeps the site's codec, which is known
+ * from the stream it will save, and an unknown one gets no cover.
+ */
+function canCarryCover(pick: string, quality?: core.QualityOptions): boolean {
+  if (pick !== "audio-original") return true;
+  return COVER_CODECS.has(quality?.originalAudio?.codec ?? "");
+}
+
+/** withAudioTags sets the tag toggles for an audio pick from the setting. */
+function withAudioTags(o: core.Options, pick: string, tagAudio: boolean, quality?: core.QualityOptions): core.Options {
+  return {
+    ...o,
+    enhancements: {
+      ...o.enhancements,
+      embedMetadata: tagAudio,
+      embedThumbnail: tagAudio && canCarryCover(pick, quality),
+    },
+  } as core.Options;
+}
+
+function withoutAudioTags(o: core.Options): core.Options {
+  return { ...o, enhancements: { ...o.enhancements, embedMetadata: false, embedThumbnail: false } } as core.Options;
+}
+
 /** clipFraction is how much of the video a clip is, 1 for all of it. */
 function clipFraction(clip: Clip, duration: number): number {
   if (isWhole(clip) || duration <= 0) return 1;
@@ -173,6 +207,7 @@ export function ChooseScreen({
   disabled,
   onQueued,
   downloadRequests,
+  tagAudio,
 }: {
   link: Link;
   presets: presetModels.Preset[] | null;
@@ -181,6 +216,8 @@ export function ChooseScreen({
   onQueued: () => void;
   /** Counts File › Download presses; a change is a request to download. */
   downloadRequests: number;
+  /** Settings' "Tag audio files": title, artist and cover art for audio. */
+  tagAudio: boolean;
 }) {
   const { metadata, resolving, error } = link;
   const [options, setOptions] = useState<core.Options>(EMPTY_OPTIONS);
@@ -205,7 +242,12 @@ export function ChooseScreen({
     setQueueError("");
     setSelected(new Set(entries.map((_, i) => i)));
     // A clip's times belong to the video they were chosen on.
-    setOptions((o) => ({ ...o, pick: validPick(o.pick as string, metadata.quality), clip: WHOLE }) as core.Options);
+    setOptions((o) => {
+      const pick = validPick(o.pick as string, metadata.quality);
+      const next = { ...o, pick, clip: WHOLE } as core.Options;
+      // Staying on audio for a new link: its Original may be a different codec.
+      return kindOf(pick) === "audio" ? withAudioTags(next, pick, tagAudio, metadata.quality) : next;
+    });
     setClipProblem("");
     // Only a new link resets the choice; editing options must not.
   }, [metadata]);
@@ -220,7 +262,14 @@ export function ChooseScreen({
   }, []);
 
   function choose(pick: string) {
-    setOptions((o) => ({ ...o, pick }) as core.Options);
+    setOptions((o) => {
+      const next = { ...o, pick } as core.Options;
+      if (kindOf(pick) === "audio") return withAudioTags(next, pick, tagAudio, quality);
+      // Back to video: its defaults are untagged, and a WebM cannot take a
+      // cover, which would fail the download at the very end.
+      if (kindOf(o.pick as string) === "audio") return withoutAudioTags(next);
+      return next;
+    });
     setActivePreset("");
     setQueueError("");
   }
