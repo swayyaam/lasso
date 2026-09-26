@@ -11,7 +11,7 @@ GOBIN := $(shell go env GOPATH)/bin
 endif
 WAILS := $(shell command -v wails 2>/dev/null || echo $(GOBIN)/wails)
 
-.PHONY: help setup doctor dev build dmg release-assets release-notes test test-go test-js lint lint-go lint-js lint-tokens lint-notices notices icon fetch-binaries clean
+.PHONY: help setup doctor dev build dmg release-assets release-notes test test-go test-js lint lint-go lint-js lint-tokens lint-notices notices icon hero hero-text fetch-binaries clean
 
 help: ## Show available targets
 	@echo "Lasso — make targets"
@@ -111,6 +111,13 @@ lint-notices: ## Fail if THIRD_PARTY_NOTICES.md no longer matches what is built
 icon: ## Redraw the app icon from scripts/icon (appicon.png, and appicon-small.png for 16-32px)
 	cd scripts/icon && GOWORK=off go run . -ring -out ../../apps/desktop/build/appicon.png
 	cd scripts/icon && GOWORK=off go run . -ring -band 0.14 -out ../../apps/desktop/build/appicon-small.png
+
+hero: ## Export docs/assets/hero.png from its source, docs/assets/hero.svg
+	swift scripts/hero/hero.swift render docs/assets/hero.svg docs/assets/hero.png
+
+hero-text: ## Re-set the hero's wordmark and tagline as outlines (needs Inter installed), then export
+	swift scripts/hero/hero.swift compose docs/assets/hero.svg
+	$(MAKE) hero
 
 notices: ## Regenerate THIRD_PARTY_NOTICES.md from the app's real dependencies
 	@node scripts/third-party-notices.mjs

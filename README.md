@@ -1,4 +1,4 @@
-<img src="apps/desktop/build/appicon.png" width="112" alt="">
+<p align="center"><img src="docs/assets/hero.png" width="1200" alt="Lasso: save video and audio from the web. No terminal."></p>
 
 # Lasso
 
@@ -10,7 +10,11 @@ its own copy — along with ffmpeg, ffprobe and deno. Nothing to install, nothin
 to keep up to date, no terminal.
 
 > **Apple Silicon Macs.** The app is not code-signed yet, so the first launch
-> needs one extra click. See [Installing](#installing).
+> needs one extra click. See [Install](#install).
+
+## What it looks like
+
+<p align="center"><img src="docs/assets/screenshot.png" width="880" alt="Lasso's Choose screen, with Big Buck Bunny ready to save as video or audio"></p>
 
 ## Install
 
