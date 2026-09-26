@@ -81,12 +81,15 @@ func (f Format) Size() int64 {
 // Entry is one item of a playlist, as returned by --flat-playlist. Entries are
 // deliberately shallow: yt-dlp has not visited the individual videos.
 type Entry struct {
-	ID         string      `json:"id"`
-	Title      string      `json:"title"`
-	URL        string      `json:"url"`
-	Duration   float64     `json:"duration"`
-	Uploader   string      `json:"uploader"`
-	Thumbnails []Thumbnail `json:"thumbnails"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// TitleGuessed is true when the site listed no title and Title was read
+	// off the link; the real one arrives later from LookUpEntries.
+	TitleGuessed bool        `json:"titleGuessed"`
+	URL          string      `json:"url"`
+	Duration     float64     `json:"duration"`
+	Uploader     string      `json:"uploader"`
+	Thumbnails   []Thumbnail `json:"thumbnails"`
 }
 
 // Metadata is what Lasso shows after resolving a link.
@@ -127,16 +130,17 @@ func (m Metadata) Count() int {
 // rawMetadata mirrors yt-dlp's -J document. It exists so the exported types can
 // use Lasso's own names and stay stable if yt-dlp's field names shift.
 type rawMetadata struct {
-	Type       string   `json:"_type"`
-	ID         string   `json:"id"`
-	Title      string   `json:"title"`
-	Uploader   string   `json:"uploader"`
-	Channel    string   `json:"channel"`
-	UploaderID string   `json:"uploader_id"`
-	WebpageURL string   `json:"webpage_url"`
-	Duration   *float64 `json:"duration"`
-	LiveStatus string   `json:"live_status"`
-	IsLive     *bool    `json:"is_live"`
+	Type         string   `json:"_type"`
+	ExtractorKey string   `json:"extractor_key"`
+	ID           string   `json:"id"`
+	Title        string   `json:"title"`
+	Uploader     string   `json:"uploader"`
+	Channel      string   `json:"channel"`
+	UploaderID   string   `json:"uploader_id"`
+	WebpageURL   string   `json:"webpage_url"`
+	Duration     *float64 `json:"duration"`
+	LiveStatus   string   `json:"live_status"`
+	IsLive       *bool    `json:"is_live"`
 
 	Thumbnails []rawThumbnail `json:"thumbnails"`
 	Formats    []rawFormat    `json:"formats"`
@@ -167,6 +171,7 @@ type rawFormat struct {
 }
 
 type rawEntry struct {
+	IEKey      string         `json:"ie_key"`
 	ID         string         `json:"id"`
 	Title      string         `json:"title"`
 	URL        string         `json:"url"`
@@ -206,19 +211,33 @@ func ParseMetadata(data []byte, playback Playback) (*Metadata, error) {
 		m.Kind = KindPlaylist
 		m.Entries = make([]Entry, 0, len(raw.Entries))
 		for _, e := range raw.Entries {
+			title, guessed := e.Title, false
+			if strings.TrimSpace(title) == "" {
+				// SoundCloud's flat set lists links and nothing else; a name
+				// read off the link beats a list of URLs until the real one
+				// is looked up (LookUpEntries).
+				title, guessed = TitleFromLink(e.URL), true
+			}
 			m.Entries = append(m.Entries, Entry{
-				ID:         e.ID,
-				Title:      e.Title,
-				URL:        e.URL,
-				Duration:   deref(e.Duration),
-				Uploader:   firstNonEmpty(e.Uploader, e.Channel),
-				Thumbnails: convertThumbnails(e.Thumbnails),
+				ID:           e.ID,
+				Title:        title,
+				TitleGuessed: guessed,
+				URL:          e.URL,
+				Duration:     deref(e.Duration),
+				Uploader:     firstNonEmpty(e.Uploader, e.Channel),
+				Thumbnails:   convertThumbnails(e.Thumbnails),
 			})
 		}
 		// A flat playlist has not visited its videos, so there are no formats
 		// to measure: offer the standard ladder and let yt-dlp fall back per
-		// item.
+		// item — unless the site has no video at all, when a set of songs
+		// opening on the video ladder was just wrong.
 		m.Quality = GenericQualityOptions()
+		if audioOnlySite(raw) {
+			// These sites serve MP3, AAC or Opus, every one of which takes a
+			// cover; a set has not looked at its tracks to say so itself.
+			m.Quality = QualityOptions{HasAudio: true, Approximate: true, OriginalTakesCover: true}
+		}
 		return m, nil
 	}
 
@@ -243,6 +262,7 @@ func ParseMetadata(data []byte, playback Playback) (*Metadata, error) {
 	m.Quality.AudioSizes = AudioSizes(m.Formats, m.Duration)
 	if original := originalAudio(raw.Formats); !original.IsZero() {
 		m.Quality.OriginalAudio = original
+		m.Quality.OriginalTakesCover = original.TakesCover()
 		// Original is that stream, so it weighs what that stream weighs, not
 		// what the largest one does.
 		if original.Bytes > 0 {

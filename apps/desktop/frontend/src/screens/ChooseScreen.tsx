@@ -24,6 +24,7 @@ import { MediaThumb, bestSource } from "../components/MediaThumb";
 import type { Link } from "../hooks/useLink";
 import { cleanError, explain, needsFullDiskAccess } from "../hooks/useLink";
 import { useDoctor, useSuggestsDoctor } from "../components/DoctorPanel";
+import { useEntryLookup } from "../hooks/useBackend";
 
 const EMPTY_OPTIONS = {
   url: "",
@@ -41,21 +42,13 @@ const EMPTY_OPTIONS = {
 const WHOLE: Clip = { start: 0, end: 0 };
 
 /**
- * Codecs whose files yt-dlp can put cover art into: MP3, M4A (AAC, ALAC),
- * Ogg/Opus and FLAC. Anything else fails the whole download over the cover,
- * which is not a trade worth making — a WAV original, which archive.org
- * serves, gets its tags and no picture.
- */
-const COVER_CODECS = new Set(["AAC", "ALAC", "MP3", "Opus", "Vorbis", "FLAC"]);
-
-/**
  * canCarryCover says whether an audio pick's file can hold cover art. The
- * converted picks always can; Original keeps the site's codec, which is known
- * from the stream it will save, and an unknown one gets no cover.
+ * converted picks always can; Original keeps the site's codec, and whether
+ * that takes a cover is the backend's call (core.AudioStream.TakesCover): a
+ * WAV original gets its tags and no picture rather than failing over it.
  */
 function canCarryCover(pick: string, quality?: core.QualityOptions): boolean {
-  if (pick !== "audio-original") return true;
-  return COVER_CODECS.has(quality?.originalAudio?.codec ?? "");
+  return pick !== "audio-original" || Boolean(quality?.originalTakesCover);
 }
 
 /** withAudioTags sets the tag toggles for an audio pick from the setting. */
@@ -231,7 +224,23 @@ export function ChooseScreen({
 
   const quality = metadata?.quality;
   const playlist = metadata?.kind === "playlist";
-  const entries = metadata?.entries ?? [];
+  // A set whose site listed no titles fills in as each is looked up.
+  const found = useEntryLookup(link.url, metadata);
+  const entries = useMemo(
+    () =>
+      (metadata?.entries ?? []).map((e) => {
+        const real = found[e.id];
+        if (!real) return e;
+        return {
+          ...e,
+          title: real.title,
+          titleGuessed: false,
+          duration: real.duration || e.duration,
+          uploader: real.uploader || e.uploader,
+        } as core.Entry;
+      }),
+    [metadata, found],
+  );
   const kind = kindOf(options.pick as string);
 
   // A new link keeps the choice made for the last one when it can be honoured
@@ -408,7 +417,14 @@ export function ChooseScreen({
                     />
                   )}
 
-                  {playlist && <PlaylistPicker entries={entries} selected={selected} onChange={setSelected} />}
+                  {playlist && (
+                    <PlaylistPicker
+                      entries={entries}
+                      tracks={!quality?.hasVideo}
+                      selected={selected}
+                      onChange={setSelected}
+                    />
+                  )}
                 </>
               )}
             </>
@@ -443,7 +459,7 @@ export function ChooseScreen({
             onClick={() => void download()}
             icon={<Icon.Download className="size-4" strokeWidth={1.75} aria-hidden />}
           >
-            {downloadLabel(playlist, count, current)}
+            {downloadLabel(playlist, count, current, quality?.hasVideo ?? true)}
           </Button>
         </div>
       </footer>
@@ -482,7 +498,7 @@ function Header({ metadata, url }: { metadata: core.Metadata; url: string }) {
   const playlist = metadata.kind === "playlist";
   const count = metadata.entries?.length ?? 0;
   const meta = playlist
-    ? ["Playlist", count === 1 ? "1 video" : `${count} videos`, metadata.uploader]
+    ? ["Playlist", countOf(count, metadata.quality?.hasVideo ?? true), metadata.uploader]
     : [metadata.uploader, formatLength(metadata.duration), siteOf(metadata.webpageUrl || url)];
 
   return (
@@ -761,10 +777,13 @@ const PLAYLIST_ROW_HEIGHT = 40;
 /** PlaylistPicker is the list of a playlist's videos, each one to tick. */
 function PlaylistPicker({
   entries,
+  tracks,
   selected,
   onChange,
 }: {
   entries: core.Entry[];
+  /** An audio-only set: its items are tracks, not videos. */
+  tracks: boolean;
   selected: Set<number>;
   onChange: (next: Set<number>) => void;
 }) {
@@ -781,7 +800,7 @@ function PlaylistPicker({
   return (
     <section className="flex flex-col gap-xs">
       <div className="flex items-center justify-between gap-sm">
-        <Eyebrow>Videos</Eyebrow>
+        <Eyebrow>{tracks ? "Tracks" : "Videos"}</Eyebrow>
         <div className="flex items-center gap-xs">
           <span className="text-body-sm text-ink-subtle tabular-nums">
             {selected.size} of {entries.length} chosen
@@ -814,11 +833,15 @@ function PlaylistPicker({
                 checked={selected.has(index)}
                 onChange={() => toggle(index)}
                 className="size-4 shrink-0 cursor-pointer accent-primary"
-                aria-label={entry.title || `Video ${index + 1}`}
+                aria-label={entry.title || `${tracks ? "Track" : "Video"} ${index + 1}`}
               />
               <span className="w-8 shrink-0 text-right text-body-sm text-ink-tertiary tabular-nums">{index + 1}</span>
-              <span className="min-w-0 flex-1 truncate text-body-sm text-ink" title={entry.title}>
-                {entry.title || entry.url}
+              <span
+                className={cx("min-w-0 flex-1 truncate text-body-sm", entry.titleGuessed ? "text-ink-subtle" : "text-ink")}
+                // A name read off the link, until the real one is looked up.
+                title={entry.titleGuessed ? `${entry.title} (looking up the name…)` : entry.title}
+              >
+                {entry.title || (tracks ? `Track ${index + 1}` : entry.url)}
               </span>
               <span className="shrink-0 text-body-sm text-ink-subtle tabular-nums">
                 {formatDuration(entry.duration)}
@@ -1079,8 +1102,14 @@ function sizeText(choice?: Choice): string {
   return choice?.estimate ? `~${text}` : text;
 }
 
-function downloadLabel(playlist: boolean, count: number, current?: Choice): string {
-  if (playlist) return count === 1 ? "Download 1 video" : `Download ${count} videos`;
+/** countOf is "11 videos", or "11 tracks" for a site with no video. */
+function countOf(count: number, video: boolean): string {
+  const noun = video ? "video" : "track";
+  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
+}
+
+function downloadLabel(playlist: boolean, count: number, current?: Choice, video = true): string {
+  if (playlist) return `Download ${countOf(count, video)}`;
   const size = sizeText(current);
   return size ? `Download · ${size}` : "Download";
 }

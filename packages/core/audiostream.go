@@ -30,6 +30,18 @@ func (a AudioStream) Label() string {
 	return a.Codec
 }
 
+// TakesCover reports whether a file of this codec can hold cover art. yt-dlp
+// embeds into MP3, M4A (AAC, ALAC), Ogg/Opus/Vorbis and FLAC, and fails the
+// whole download over anything else — a WAV original, which archive.org
+// serves, would fail over its picture.
+func (a AudioStream) TakesCover() bool {
+	switch a.Codec {
+	case "AAC", "ALAC", "MP3", "Opus", "Vorbis", "FLAC":
+		return true
+	}
+	return false
+}
+
 // CodecName turns yt-dlp's acodec into the name people know it by. yt-dlp
 // says "mp4a.40.2" for AAC and "none" for no audio at all.
 func CodecName(acodec string) string {

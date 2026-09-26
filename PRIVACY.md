@@ -40,7 +40,7 @@ something you did, not a timer.
 
 | When | To | What is sent |
 |---|---|---|
-| You paste a link, or a download runs | The site the link is on (YouTube, SoundCloud and so on), through yt-dlp | The requests a web browser would make to watch or listen. If you turned on cookies, the site sees them, so it knows the request is from your account. |
+| You paste a link, or a download runs | The site the link is on (YouTube, SoundCloud and so on), through yt-dlp | The requests a web browser would make to watch or listen. For a set or album from SoundCloud, Bandcamp, Mixcloud or Audiomack, one more request per track (the first 100) to learn its name. If you turned on cookies, the site sees them, so it knows the request is from your account. |
 | A link, download or history row is shown | The site's own image servers | A request for the picture. Only over https, and never to your own network. |
 | You open Settings › About & diagnostics, or press Check again | GitHub (`github.com/swayyaam/lasso/releases`) | A request for the newest version. At most every ten minutes unless you ask. The request names Lasso and its version. |
 | You press Update | GitHub (`github.com/swayyaam/lasso/releases`) | The same request again, so that what installs is the newest version, then the new version itself. |

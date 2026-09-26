@@ -114,6 +114,11 @@ one failure does not stop the rest, and they land together in a folder named
 after the playlist. On the downloads screen the playlist is one card with its
 own progress; **Show all** lists every video.
 
+A set or album from SoundCloud, Bandcamp, Mixcloud or Audiomack opens on
+**Audio only**, since there is no video to have, and lists its tracks. When a
+site gives only links, the names start as a guess read from each link and fill
+in with the real ones as Lasso looks them up.
+
 ### Saved choices
 
 Five come built in: Best quality, Archive (MKV), Podcast audio, Music and

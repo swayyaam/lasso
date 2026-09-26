@@ -102,3 +102,11 @@ func TestExecArgsAskWhichAudioArrived(t *testing.T) {
 		}
 	}
 }
+
+func TestWhichCodecsTakeACover(t *testing.T) {
+	for codec, want := range map[string]bool{"AAC": true, "MP3": true, "Opus": true, "Vorbis": true, "FLAC": true, "ALAC": true, "PCM": false, "AC-3": false, "": false} {
+		if got := (AudioStream{Codec: codec}).TakesCover(); got != want {
+			t.Errorf("%q TakesCover = %v, want %v", codec, got, want)
+		}
+	}
+}

@@ -450,7 +450,10 @@ the Audio tile, an audio pick, or a new link that stays on audio — never from
 an effect on the pick, which would override a saved choice. Back on video
 they go off: a WebM cannot take a cover, and yt-dlp fails the whole download
 over it. Original gets a cover only when its codec can carry one
-(`COVER_CODECS`); a WAV original gets tags and no picture.
+(`QualityOptions.OriginalTakesCover`, from `AudioStream.TakesCover`); a WAV
+original gets tags and no picture. A set has not looked at its tracks' formats,
+so for the audio-only sites (below) it is true from the site: they serve MP3,
+AAC or Opus.
 
 **Every audio pick but Original has its format in the filename**
 ("Title [id] MP3.mp3"). All of them fetch the same highest-bitrate stream
@@ -465,6 +468,19 @@ ranks codec first: on YouTube that is Opus 106 kbps while Original saves AAC
 130. Finished files record the stream they came from (`Item.Audio`); after a
 conversion yt-dlp still names the source, so History says "MP3 from AAC 130
 kbps", which is also the honest thing to say.
+
+**Sets from audio-only sites open on Audio.** A flat playlist has no formats,
+so it used to get the video ladder. It does name its extractor — the playlist's
+`extractor_key` and each entry's `ie_key` — and SoundCloud, Bandcamp, Mixcloud
+and Audiomack (`audioOnlyExtractors`) set `Quality` to audio only. SoundCloud's
+flat set lists its first few tracks as page links and the rest as API links
+with no title at all, so names come in two steps: `TitleFromLink` guesses one
+from the link at once (`Entry.TitleGuessed`, shown dimmer; a link ending in a
+bare number gets no guess, and the list says "Track 6"), and `LookUpEntries`
+asks yt-dlp for the real ones, one request per track (~2.5 s each on
+SoundCloud), emitting `entries:found` for each as it arrives. It covers the
+first `MaxEntryLookup` (100) tracks, is cancelled when the link changes, and
+goes through `IncomingLink` like any link the page hands over.
 
 **Audio quality.** `PickAudioOriginal` extracts the site's own stream and
 changes only its container. Every other audio pick re-encodes, and re-encoding

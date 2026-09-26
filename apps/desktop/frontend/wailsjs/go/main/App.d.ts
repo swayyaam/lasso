@@ -46,6 +46,8 @@ export function History():Promise<Array<history.Entry>>;
 
 export function InstallUpdate():Promise<updater.Result>;
 
+export function LookUpEntries(arg1:string):Promise<void>;
+
 export function OpenDocument(arg1:string):Promise<void>;
 
 export function OpenFile(arg1:string):Promise<void>;
@@ -79,6 +81,8 @@ export function Settings():Promise<main.Settings>;
 export function ShouldSuggestDoctor(arg1:core.ErrorKind):Promise<boolean>;
 
 export function ShowCommand(arg1:core.Options):Promise<string>;
+
+export function StopLookingUpEntries():Promise<void>;
 
 export function TakeIncomingLink():Promise<string>;
 

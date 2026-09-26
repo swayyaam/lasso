@@ -78,6 +78,10 @@ export function InstallUpdate() {
   return window['go']['main']['App']['InstallUpdate']();
 }
 
+export function LookUpEntries(arg1) {
+  return window['go']['main']['App']['LookUpEntries'](arg1);
+}
+
 export function OpenDocument(arg1) {
   return window['go']['main']['App']['OpenDocument'](arg1);
 }
@@ -144,6 +148,10 @@ export function ShouldSuggestDoctor(arg1) {
 
 export function ShowCommand(arg1) {
   return window['go']['main']['App']['ShowCommand'](arg1);
+}
+
+export function StopLookingUpEntries() {
+  return window['go']['main']['App']['StopLookingUpEntries']();
 }
 
 export function TakeIncomingLink() {

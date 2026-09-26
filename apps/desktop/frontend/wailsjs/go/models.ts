@@ -166,6 +166,7 @@ export namespace core {
 	export class Entry {
 	    id: string;
 	    title: string;
+	    titleGuessed: boolean;
 	    url: string;
 	    duration: number;
 	    uploader: string;
@@ -179,6 +180,7 @@ export namespace core {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.title = source["title"];
+	        this.titleGuessed = source["titleGuessed"];
 	        this.url = source["url"];
 	        this.duration = source["duration"];
 	        this.uploader = source["uploader"];
@@ -523,6 +525,7 @@ export namespace core {
 	    bestPlayable: boolean;
 	    audioSizes: Record<string, AudioSize>;
 	    originalAudio: AudioStream;
+	    originalTakesCover: boolean;
 	    bestLabel: string;
 	    approximate: boolean;
 	    countedFormats: number;
@@ -544,6 +547,7 @@ export namespace core {
 	        this.bestPlayable = source["bestPlayable"];
 	        this.audioSizes = this.convertValues(source["audioSizes"], AudioSize, true);
 	        this.originalAudio = this.convertValues(source["originalAudio"], AudioStream);
+	        this.originalTakesCover = source["originalTakesCover"];
 	        this.bestLabel = source["bestLabel"];
 	        this.approximate = source["approximate"];
 	        this.countedFormats = source["countedFormats"];
@@ -795,6 +799,7 @@ export namespace main {
 	    historyChanged: string;
 	    menu: string;
 	    linkWaiting: string;
+	    entryFound: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new EventNames(source);
@@ -810,6 +815,7 @@ export namespace main {
 	        this.historyChanged = source["historyChanged"];
 	        this.menu = source["menu"];
 	        this.linkWaiting = source["linkWaiting"];
+	        this.entryFound = source["entryFound"];
 	    }
 	}
 	export class MenuCommands {

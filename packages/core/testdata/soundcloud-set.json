@@ -1,0 +1,36 @@
+{
+ "_type": "playlist",
+ "id": "4892419",
+ "title": "Revitalize Music Contest: Public Domain Recordings of Public Domain Music",
+ "uploader": "freemusicarchive",
+ "extractor": "soundcloud:set",
+ "extractor_key": "SoundcloudSet",
+ "webpage_url": "https://soundcloud.com/freemusicarchive/sets/revitalize-music-contest",
+ "playlist_count": 11,
+ "entries": [
+  {
+   "_type": "url_transparent",
+   "ie_key": "Soundcloud",
+   "id": "90306532",
+   "url": "https://soundcloud.com/freemusicarchive/crown-the-invisible-the",
+   "title": null,
+   "duration": null
+  },
+  {
+   "_type": "url_transparent",
+   "ie_key": "Soundcloud",
+   "id": "90306533",
+   "url": "https://soundcloud.com/freemusicarchive/chips-and-salsa-jedva-cekam-da",
+   "title": null,
+   "duration": null
+  },
+  {
+   "_type": "url_transparent",
+   "ie_key": "Soundcloud",
+   "id": "90306534",
+   "url": "https://soundcloud.com/freemusicarchive/the-procedure-club-let-us",
+   "title": null,
+   "duration": null
+  }
+ ]
+}

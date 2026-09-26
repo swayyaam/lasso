@@ -121,6 +121,65 @@ export function useBinaryStatus() {
   return status;
 }
 
+/**
+ * One looked-up track, as core.EntryInfo carries it. Typed here as the
+ * progress event's payload is: Wails generates only what a bound method
+ * mentions, and events are not bound methods.
+ */
+export interface EntryInfo {
+  id: string;
+  title: string;
+  duration: number;
+  uploader: string;
+}
+
+/** Track names already found, by set link, so reopening a set does not ask again. */
+const foundEntries = new Map<string, Record<string, EntryInfo>>();
+const finishedLookups = new Set<string>();
+
+/**
+ * useEntryLookup fills in a set whose site listed no titles. The list is
+ * shown at once with names read off the links (core.TitleFromLink); this asks
+ * the backend to look up each track, a request apiece and about two and a
+ * half seconds each on SoundCloud, and returns what has arrived so far by
+ * entry id. It stops when the set leaves the screen. The backend caps how many
+ * it looks up (core.MaxEntryLookup).
+ */
+export function useEntryLookup(url: string, metadata: core.Metadata | null): Record<string, EntryInfo> {
+  const names = useEventNames();
+  const [found, setFound] = useState<Record<string, EntryInfo>>({});
+
+  useEffect(() => {
+    setFound(foundEntries.get(url) ?? {});
+    if (!names || !metadata || metadata.kind !== "playlist") return;
+    if (!(metadata.entries ?? []).some((e) => e.titleGuessed)) return;
+
+    // main.EntryFound: the set's link and the track.
+    EventsOn(names.entryFound, (e: { url: string; entry: EntryInfo }) => {
+      if (e.url !== url) return;
+      setFound((current) => {
+        const next = { ...current, [e.entry.id]: e.entry };
+        foundEntries.set(url, next);
+        return next;
+      });
+    });
+    if (!finishedLookups.has(url)) {
+      api
+        .LookUpEntries(url)
+        .then(() => finishedLookups.add(url))
+        // A lookup that fails leaves the names read off the links, which
+        // were always the fallback.
+        .catch(() => {});
+    }
+    return () => {
+      EventsOff(names.entryFound);
+      void api.StopLookingUpEntries();
+    };
+  }, [names, url, metadata]);
+
+  return found;
+}
+
 /** useSettings exposes the preferences and a saver that reports failures. */
 export function useSettings() {
   const [settings, setSettings] = useState<main.Settings | null>(null);

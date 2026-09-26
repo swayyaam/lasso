@@ -60,6 +60,9 @@ type App struct {
 	// reports. Fed by every resolve and every finished download.
 	botChecks doctor.BotChecks
 
+	// stopLookup cancels the running LookUpEntries, if any.
+	stopLookup context.CancelFunc
+
 	// incoming is a link from outside the window, waiting to be collected.
 	incoming incoming
 
@@ -249,6 +252,7 @@ func (a *App) Events() EventNames {
 		HistoryChanged:  EventHistoryChanged,
 		Menu:            EventMenu,
 		LinkWaiting:     EventLinkWaiting,
+		EntryFound:      EventEntryFound,
 	}
 }
 
@@ -308,6 +312,51 @@ func (a *App) FetchMetadata(url string) (*core.Metadata, error) {
 	}
 	a.botChecks.Observe(url, kind, err == nil)
 	return metadata, err
+}
+
+// LookUpEntries looks up the real names of a set's tracks, one request each,
+// and sends each as EventEntryFound as it arrives. The list is already on
+// screen with names read off the links; this fills it in. It returns when the
+// lookup is done or superseded: a second call, or StopLookingUpEntries,
+// cancels the one before.
+func (a *App) LookUpEntries(url string) error {
+	runner, settings, err := a.runnerAndSettings()
+	if err != nil {
+		return err
+	}
+	if _, err := core.IncomingLink(url); err != nil {
+		// Only ever a link the page already resolved; nothing else is fetched.
+		return err
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.mu.Lock()
+	if a.stopLookup != nil {
+		a.stopLookup()
+	}
+	a.stopLookup = cancel
+	a.mu.Unlock()
+	defer cancel()
+
+	o := settings.ApplyTo(core.Options{URL: url})
+	o.DenoPath = a.denoPath()
+	err = core.LookUpEntries(ctx, runner, o, func(e core.EntryInfo) {
+		runtime.EventsEmit(a.ctx, EventEntryFound, EntryFound{URL: url, Entry: e})
+	})
+	if ctx.Err() != nil {
+		return nil // moved on; nothing went wrong
+	}
+	return err
+}
+
+// StopLookingUpEntries cancels a lookup in progress, when the set leaves the
+// screen.
+func (a *App) StopLookingUpEntries() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.stopLookup != nil {
+		a.stopLookup()
+		a.stopLookup = nil
+	}
 }
 
 // Thumbnail returns a URL for a preview image, downloading and downscaling it

@@ -29,7 +29,17 @@ const (
 	// nothing: the interface collects it with TakeIncomingLink, which is also
 	// how it finds one that arrived before it was listening.
 	EventLinkWaiting = "link:waiting"
+	// EventEntryFound carries an EntryFound: one track of a set whose real
+	// name has just been looked up (LookUpEntries).
+	EventEntryFound = "entries:found"
 )
+
+// EntryFound is one looked-up track, with the set it belongs to so a page
+// that has moved to another link can ignore a late one.
+type EntryFound struct {
+	URL   string         `json:"url"`
+	Entry core.EntryInfo `json:"entry"`
+}
 
 // EventNames is the set of event names, exposed so TypeScript can subscribe
 // using the same strings the backend emits rather than its own copies.
@@ -42,6 +52,7 @@ type EventNames struct {
 	HistoryChanged  string `json:"historyChanged"`
 	Menu            string `json:"menu"`
 	LinkWaiting     string `json:"linkWaiting"`
+	EntryFound      string `json:"entryFound"`
 }
 
 // MenuCommands names what EventMenu can carry, handed over for the same reason
