@@ -223,9 +223,19 @@ const DefaultTemplate = "%(title)s [%(id)s].%(ext)s"
 // 480p copy of something already saved in 4K had the same name — so it
 // finished at once, pointing at the 4K file. The label is Lasso's own rather
 // than yt-dlp's height field, which is the long side of a vertical video.
+//
+// A converted audio pick carries its format the same way: "Title [id] MP3.mp3".
+// Every audio pick fetches the same highest-bitrate stream first (-S abr), so
+// without it an MP3's source file had the very name of an Original saved
+// earlier — "Title [id].m4a" — and yt-dlp, finding it, converted it and then
+// deleted it as its own intermediate. Downloading an MP3 destroyed the
+// Original. Only Original keeps the plain name.
 func (p QuickPick) defaultTemplate() string {
 	if height := p.maxHeight(); height > 0 {
 		return "%(title)s [%(id)s] " + ResolutionLabel(height) + ".%(ext)s"
+	}
+	if format := p.audioFormat(); format != "" && format != "best" {
+		return "%(title)s [%(id)s] " + strings.ToUpper(format) + ".%(ext)s"
 	}
 	return DefaultTemplate
 }

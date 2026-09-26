@@ -139,3 +139,28 @@ func TestAClipsProgressIsTheClipsNotTheVideos(t *testing.T) {
 		t.Errorf("finished at %d of %d (%.1f%%), want the clip's 1063663 bytes at 100%%", last.Downloaded, last.Total, last.Percent)
 	}
 }
+
+func TestAConvertedAudioPickNeverTakesTheOriginalsName(t *testing.T) {
+	// Every audio pick fetches the same highest-bitrate stream. Named alike,
+	// an MP3 run found a saved Original as "its" source, converted it and
+	// deleted it (seen with Lasso's own arguments).
+	name := func(pick QuickPick) string {
+		o := baseOptions()
+		o.Pick = pick
+		template, _ := argValue(BuildArgs(o), "-o")
+		return template
+	}
+	original := name(PickAudioOriginal)
+	if original != DefaultTemplate {
+		t.Errorf("Original = %q, want the plain name", original)
+	}
+	for _, pick := range []QuickPick{PickAudioMP3, PickAudioM4A, PickAudioOpus, PickAudioFLAC} {
+		got := name(pick)
+		if got == original {
+			t.Errorf("%s shares Original's name %q", pick, got)
+		}
+		if !strings.HasSuffix(got, " "+strings.ToUpper(pick.audioFormat())+".%(ext)s") {
+			t.Errorf("%s template = %q, want its format in the name", pick, got)
+		}
+	}
+}
