@@ -69,10 +69,12 @@ const (
 	AppAsset = "Lasso-app.zip"
 
 	// CheckMaxAge is how long a check is reused — across relaunches too, since
-	// the cache lives on disk. Long enough that opening Settings costs
-	// nothing, short enough that a release published this morning is offered
-	// this afternoon.
-	CheckMaxAge = 6 * time.Hour
+	// the cache lives on disk — so going back and forth in Settings asks once.
+	// It is short because an offer is only as good as its age: at six hours,
+	// Settings went on offering a release for hours after a newer one was out.
+	// Asking again is cheap, because the manifest comes from GitHub's download
+	// servers rather than its API, and an unchanged one is a 304 with no body.
+	CheckMaxAge = 10 * time.Minute
 
 	checkTimeout    = 30 * time.Second
 	installTimeout  = 15 * time.Minute
@@ -265,7 +267,8 @@ func (u *Updater) assetURL(version, name string) string {
 	return u.cfg.ReleasesURL + "/download/v" + version + "/" + name
 }
 
-// Install downloads the newest release and puts it in place.
+// Install downloads the newest release and puts it in place: the newest when
+// it runs, which may be newer than the one Check offered.
 //
 // The old bundle is moved aside rather than deleted, and moved back if
 // anything after that point fails. The caller restarts the app; this cannot,
@@ -276,10 +279,12 @@ func (u *Updater) Install(ctx context.Context) (Result, error) {
 
 	u.log = nil
 
-	// The check that offered this update is usually seconds old, so the
-	// manifest comes from the cache: installing exactly what was offered, and
-	// costing no extra request to do it.
-	m, err := u.manifest(ctx, CheckMaxAge)
+	// Always the newest release, whatever was offered. An offer can be minutes
+	// old, and installing what it named once meant going through every
+	// release in between, one update at a time. Asking again costs a 304 when
+	// nothing has changed, and an offer made seconds ago is reused anyway,
+	// because the client spaces requests for the same file.
+	m, err := u.manifest(ctx, 0)
 	if err != nil {
 		return Result{}, err
 	}

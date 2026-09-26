@@ -519,9 +519,17 @@ still behaves as a good client, and both updaters go through it rather than
 around it:
 
 - **Answers are cached on disk** (`github.json` in Application Support). A
-  check younger than `updater.CheckMaxAge` (six hours) is answered without
+  check younger than `updater.CheckMaxAge` (ten minutes) is answered without
   asking, including after a relaunch — a fresh process used to mean a fresh
   request, which is how relaunching during development ran the quota down.
+- **An offer is only as good as its age, so Install always asks again.** At
+  six hours, set when checks used the API, Settings went on offering a
+  release long after a newer one was out, and Install took the same cached
+  answer — so 0.2.1 went to 0.2.2 and only then to 0.2.3, one update at a
+  time. Install now fetches the manifest with no max age (a 304 when nothing
+  changed; an offer seconds old is reused through the spacing below) and
+  installs whatever is newest, which the interface then names. Copies up to
+  0.2.3 still carry the old behaviour; Check again gets them the newest.
 - **Expired copies revalidate** with `If-None-Match`, so an unchanged file
   comes back as a 304 with no body.
 - **A refusal is honoured until it expires, across relaunches too.** A 429, or

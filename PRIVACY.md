@@ -42,7 +42,8 @@ something you did, not a timer.
 |---|---|---|
 | You paste a link, or a download runs | The site the link is on (YouTube, SoundCloud and so on), through yt-dlp | The requests a web browser would make to watch or listen. If you turned on cookies, the site sees them, so it knows the request is from your account. |
 | A link, download or history row is shown | The site's own image servers | A request for the picture. Only over https, and never to your own network. |
-| You open Settings › About & diagnostics, or press Check again | GitHub (`github.com/swayyaam/lasso/releases`) | A request for the newest version. At most every six hours unless you ask. The request names Lasso and its version. |
+| You open Settings › About & diagnostics, or press Check again | GitHub (`github.com/swayyaam/lasso/releases`) | A request for the newest version. At most every ten minutes unless you ask. The request names Lasso and its version. |
+| You press Update | GitHub (`github.com/swayyaam/lasso/releases`) | The same request again, so that what installs is the newest version, then the new version itself. |
 | You press Update yt-dlp: in Settings, in the doctor, or on a download that failed because a site changed | GitHub (`github.com/yt-dlp/yt-dlp/releases`) | Requests for yt-dlp's newest version, its checksums and signature, and the release itself. |
 | You run the doctor with cookies turned on | YouTube | One request for a public video using your browser's cookies, to check they can be read. |
 

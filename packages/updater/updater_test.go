@@ -13,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/swayyaam/lasso/packages/ghrelease"
 )
 
 // ---- fixtures ---------------------------------------------------------
@@ -108,6 +111,7 @@ func (rs *releaseServer) serve(w http.ResponseWriter, r *http.Request) {
 	rs.mu.Lock()
 	rs.hits[r.URL.Path]++
 	rs.agents = append(rs.agents, r.Header.Get("User-Agent"))
+	version := rs.version
 	rs.mu.Unlock()
 
 	if !strings.HasPrefix(r.URL.Path, "/releases/") {
@@ -129,9 +133,9 @@ func (rs *releaseServer) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		m := Manifest{
 			SchemaVersion: ManifestSchema,
-			Version:       rs.version,
+			Version:       version,
 			Published:     "2026-09-23T00:00:00Z",
-			Notes:         "notes for " + rs.version,
+			Notes:         "notes for " + version,
 			Assets:        map[string]AssetInfo{},
 		}
 		if !rs.omitApp {
@@ -146,11 +150,18 @@ func (rs *releaseServer) serve(w http.ResponseWriter, r *http.Request) {
 			m.Assets[AppAsset] = AssetInfo{Size: size, SHA256: digest}
 		}
 		json.NewEncoder(w).Encode(m)
-	case "/releases/download/v" + rs.version + "/" + AppAsset:
+	case "/releases/download/v" + version + "/" + AppAsset:
 		w.Write(rs.archive)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// publish makes tag the latest release, as a new release on GitHub would.
+func (rs *releaseServer) publish(tag string) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	rs.version = strings.TrimPrefix(tag, "v")
 }
 
 func (rs *releaseServer) count(path string) int {
@@ -508,6 +519,70 @@ func TestInstallRefusesWhenHelpersChanged(t *testing.T) {
 		t.Errorf("error = %v, want it to be ErrHelpersChanged so the UI can explain", err)
 	}
 	assertUntouched(t, h.bundle, "0.1.0")
+}
+
+func TestInstallTakesTheNewestReleaseNotTheOneOffered(t *testing.T) {
+	// Settings offered 0.2.2, and by the time Update was pressed 0.2.3 was
+	// out. Installing the offer left a second update to go through at once:
+	// that is how 0.2.1 stepped to 0.2.2 and only then reached 0.2.3.
+	helpers := map[string]string{"yt-dlp": "1"}
+	bundle := filepath.Join(t.TempDir(), "Lasso.app")
+	makeBundle(t, bundle, "0.2.1", helpers)
+	server := newReleaseServer(t, "v0.2.2", []byte("pretend-zip"))
+	runner := &fakeRunner{t: t, stagedVersion: "0.2.2", stagedHelpers: helpers}
+
+	now := time.Date(2026, 9, 26, 5, 0, 0, 0, time.UTC)
+	u, err := New(Config{
+		BundlePath:     bundle,
+		CurrentVersion: "0.2.1",
+		ReleasesURL:    server.URL + "/releases",
+		Releases:       ghrelease.New(ghrelease.Config{UserAgent: "Lasso/test", Now: func() time.Time { return now }}),
+		Run:            runner.run,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	offer, err := u.Check(context.Background(), CheckMaxAge)
+	if err != nil || !offer.Available || offer.Version != "0.2.2" {
+		t.Fatalf("Check = %+v, %v; want 0.2.2 offered", offer, err)
+	}
+
+	server.publish("v0.2.3")
+	runner.stagedVersion = "0.2.3"
+	// Long enough that asking again is allowed; well inside the time a check
+	// is reused, so the offer on screen still names 0.2.2.
+	now = now.Add(time.Minute)
+
+	result, err := u.Install(context.Background())
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if result.Version != "0.2.3" {
+		t.Errorf("installed %q, want 0.2.3: the newest release, not the one offered", result.Version)
+	}
+	binary, err := os.ReadFile(filepath.Join(bundle, "Contents", "MacOS", "Lasso"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(binary) != "binary-0.2.3" {
+		t.Errorf("installed binary is %q, want 0.2.3's", binary)
+	}
+}
+
+func TestAnOfferOlderThanCheckMaxAgeIsAskedAgain(t *testing.T) {
+	h := newHarness(t, "0.2.1", "v0.2.2", map[string]string{"yt-dlp": "1"})
+	now := time.Date(2026, 9, 26, 5, 0, 0, 0, time.UTC)
+	h.u.cfg.Releases = ghrelease.New(ghrelease.Config{UserAgent: "Lasso/test", Now: func() time.Time { return now }})
+
+	if offer, _ := h.u.Check(context.Background(), CheckMaxAge); offer.Version != "0.2.2" {
+		t.Fatalf("first offer = %q, want 0.2.2", offer.Version)
+	}
+	h.server.publish("v0.2.3")
+	now = now.Add(CheckMaxAge + time.Second)
+	if offer, _ := h.u.Check(context.Background(), CheckMaxAge); offer.Version != "0.2.3" {
+		t.Errorf("offer after CheckMaxAge = %q, want 0.2.3", offer.Version)
+	}
 }
 
 func TestInstallDoesNothingWhenCurrent(t *testing.T) {

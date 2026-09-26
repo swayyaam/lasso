@@ -207,8 +207,8 @@ update leaves your working copy alone.
 
 Lasso makes four kinds of network request and no others: yt-dlp's own traffic,
 the yt-dlp updater, Lasso's own updater, and fetching thumbnails to show you.
-Both updaters read GitHub's release files rather than its API, at most once
-every few hours unless you ask. There is no telemetry and no analytics, and
+Both updaters read GitHub's release files rather than its API, and only when
+you open Settings or ask. There is no telemetry and no analytics, and
 nothing is sent anywhere about what you download.
 
 The [privacy policy](PRIVACY.md) lists every file Lasso keeps and every

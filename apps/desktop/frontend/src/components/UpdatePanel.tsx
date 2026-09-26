@@ -27,9 +27,12 @@ export function UpdatePanel() {
   // a note; a failed install is the app not being replaced, which is not.
   const [error, setError] = useState<Problem | null>(null);
   const [log, setLog] = useState("");
+  // What Install put on disk, which can be newer than the version offered: it
+  // always takes the newest release, and one may have come out since.
+  const [installed, setInstalled] = useState("");
 
-  // force is false on open, so reopening Settings reuses the cached answer
-  // rather than spending the hour's allowance of unauthenticated calls.
+  // force is false on open, so going back and forth in Settings reuses a
+  // recent answer (updater.CheckMaxAge) instead of asking every time.
   const check = useCallback(async (force: boolean) => {
     setPhase("checking");
     setError(null);
@@ -53,6 +56,7 @@ export function UpdatePanel() {
     try {
       const result = await api.InstallUpdate();
       setLog(result.output ?? "");
+      setInstalled(result.version);
       setPhase(result.needsRestart ? "installed" : "idle");
       if (!result.needsRestart) await check(true);
     } catch (e) {
@@ -77,7 +81,7 @@ export function UpdatePanel() {
       <div className="flex flex-col gap-xs">
         <p className="flex items-center gap-xs text-body-sm font-medium text-success-strong">
           <Icon.Ok className="size-4" strokeWidth={1.75} aria-hidden />
-          Version {update?.version} is installed.
+          Version {installed} is installed.
         </p>
         <p className="text-caption text-ink-subtle">
           Lasso needs to restart to start running it.
