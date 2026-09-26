@@ -84,3 +84,68 @@ func TestNewRejectsSourceWithoutManifest(t *testing.T) {
 		t.Errorf("error = %q, want actionable guidance", err)
 	}
 }
+
+func certsIn(env []string) (string, int) {
+	value, n := "", 0
+	for _, kv := range env {
+		if name, v, ok := strings.Cut(kv, "="); ok && name == "SSL_CERT_FILE" {
+			value, n = v, n+1
+		}
+	}
+	return value, n
+}
+
+func TestEnvironGivesFFmpegYtDlpsCertificates(t *testing.T) {
+	// ffmpeg's OpenSSL does not read the Keychain: without a bundle every clip
+	// failed with "certificate verify failed".
+	t.Setenv("SSL_CERT_FILE", "")
+	m, _ := newFakeManager(t)
+	bundle := filepath.Join(filepath.Dir(m.Path(YtDlp)), "_internal", "certifi", "cacert.pem")
+	if err := os.MkdirAll(filepath.Dir(bundle), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bundle, []byte("-----BEGIN CERTIFICATE-----\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, n := certsIn(m.Environ())
+	if got != bundle || n != 1 {
+		t.Errorf("SSL_CERT_FILE = %q (%d times), want yt-dlp's bundle %q once", got, n, bundle)
+	}
+}
+
+func TestEnvironFallsBackToTheSystemCertificates(t *testing.T) {
+	t.Setenv("SSL_CERT_FILE", "")
+	system := filepath.Join(t.TempDir(), "cert.pem")
+	if err := os.WriteFile(system, []byte("roots"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := systemCertificates
+	systemCertificates = system
+	t.Cleanup(func() { systemCertificates = old })
+
+	m, _ := newFakeManager(t)
+	if got, _ := certsIn(m.Environ()); got != system {
+		t.Errorf("SSL_CERT_FILE = %q, want the system bundle when yt-dlp has none", got)
+	}
+}
+
+func TestEnvironKeepsCertificatesThePersonChose(t *testing.T) {
+	t.Setenv("SSL_CERT_FILE", "/Users/someone/corporate-roots.pem")
+	m, _ := newFakeManager(t)
+	got, n := certsIn(m.Environ())
+	if got != "/Users/someone/corporate-roots.pem" || n != 1 {
+		t.Errorf("SSL_CERT_FILE = %q (%d times), want theirs, untouched", got, n)
+	}
+}
+
+func TestEnvironSetsNoBundleThatDoesNotExist(t *testing.T) {
+	t.Setenv("SSL_CERT_FILE", "")
+	old := systemCertificates
+	systemCertificates = filepath.Join(t.TempDir(), "missing.pem")
+	t.Cleanup(func() { systemCertificates = old })
+
+	m, _ := newFakeManager(t)
+	if got, n := certsIn(m.Environ()); n != 0 {
+		t.Errorf("SSL_CERT_FILE = %q with nothing to point at; an empty or wrong one breaks OpenSSL's own defaults", got)
+	}
+}

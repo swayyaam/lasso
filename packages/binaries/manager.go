@@ -75,25 +75,64 @@ func (m *Manager) Path(name Name) string {
 // accepts a directory and finds both ffmpeg and ffprobe inside it.
 func (m *Manager) FFmpegLocation() string { return m.paths.Bin }
 
+// systemCertificates is macOS's own CA bundle, kept current by system updates.
+// A variable so tests can take it away.
+var systemCertificates = "/etc/ssl/cert.pem"
+
 // Environ is the environment for a yt-dlp subprocess.
 //
 // The install directory goes on the front of PATH so yt-dlp finds the bundled
 // deno — which it needs for YouTube's JavaScript challenges — without ever
 // reaching a system-installed copy of anything.
+//
+// SSL_CERT_FILE is for ffmpeg. The bundled build does its own https through
+// OpenSSL, which does not read the macOS Keychain, so whenever yt-dlp has
+// ffmpeg fetch a stream itself — every clip (--download-sections), and some
+// sites always — it failed with "certificate verify failed" and exit code
+// 251. It gets the bundle yt-dlp itself trusts (certifi, inside the onedir
+// build), or the system's. One the person set themselves is left alone.
 func (m *Manager) Environ() []string {
 	env := os.Environ()
-	out := make([]string, 0, len(env)+1)
-	replaced := false
+	out := make([]string, 0, len(env)+2)
+	replaced, haveCerts := false, false
 	for _, kv := range env {
-		if name, value, ok := strings.Cut(kv, "="); ok && name == "PATH" {
+		name, value, ok := strings.Cut(kv, "=")
+		if ok && name == "PATH" {
 			out = append(out, "PATH="+m.paths.Bin+string(os.PathListSeparator)+value)
 			replaced = true
 			continue
+		}
+		if ok && name == "SSL_CERT_FILE" {
+			if value == "" {
+				// Set but empty points OpenSSL at nothing; drop it.
+				continue
+			}
+			haveCerts = true
 		}
 		out = append(out, kv)
 	}
 	if !replaced {
 		out = append(out, "PATH="+m.paths.Bin)
 	}
+	if !haveCerts {
+		if bundle := m.certificates(); bundle != "" {
+			out = append(out, "SSL_CERT_FILE="+bundle)
+		}
+	}
 	return out
+}
+
+// certificates is the CA bundle to hand ffmpeg, or "" when there is none.
+func (m *Manager) certificates() string {
+	candidates := []string{systemCertificates}
+	if ytdlp := m.Path(YtDlp); ytdlp != "" {
+		// The same roots yt-dlp's own requests use, and updated with it.
+		candidates = append([]string{filepath.Join(filepath.Dir(ytdlp), "_internal", "certifi", "cacert.pem")}, candidates...)
+	}
+	for _, path := range candidates {
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			return path
+		}
+	}
+	return ""
 }
