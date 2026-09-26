@@ -443,6 +443,20 @@ called "01 - Intro" survives. Change one and you change both.
 A tagging failure never fails the download. The tracks exist and play; losing
 them over a metadata rewrite would be a bad trade, so it lands as a notice.
 
+**Every audio pick but Original has its format in the filename**
+("Title [id] MP3.mp3"). All of them fetch the same highest-bitrate stream
+first (`-S abr`), and yt-dlp deletes that intermediate after converting. Named
+alike, an MP3 run found a saved Original — "Title [id].m4a" — took it for its
+own source, converted it, and deleted it. Shipped up to 0.2.5, seen in the
+running app, and pinned by a test.
+
+**Original's label is the stream `-S abr` picks**, the audio-only format with
+the highest bitrate (`originalAudio`), not yt-dlp's default choice, which
+ranks codec first: on YouTube that is Opus 106 kbps while Original saves AAC
+130. Finished files record the stream they came from (`Item.Audio`); after a
+conversion yt-dlp still names the source, so History says "MP3 from AAC 130
+kbps", which is also the honest thing to say.
+
 **Audio quality.** `PickAudioOriginal` extracts the site's own stream and
 changes only its container. Every other audio pick re-encodes, and re-encoding
 a lossy stream loses a second time — asking for FLAC from a source that serves

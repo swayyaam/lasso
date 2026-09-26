@@ -969,7 +969,14 @@ function audioChoices(quality?: core.QualityOptions): Choice[] {
   const size = (pick: string) => quality?.audioSizes?.[pick];
 
   const list: Array<Omit<Choice, "bytes" | "estimate">> = [
-    { pick: "audio-original", label: "Original", note: "Recommended", hint: "The site's own audio, untouched." },
+    {
+      pick: "audio-original",
+      label: "Original",
+      // The stream yt-dlp would actually save, as it chose it: "Opus 129 kbps".
+      detail: audioLabel(quality?.originalAudio),
+      note: "Recommended",
+      hint: "The site's own audio, untouched.",
+    },
     { pick: "audio-m4a", label: "M4A", hint: "What Music and iPhone use." },
     { pick: "audio-mp3", label: "MP3", hint: "Plays anywhere. Converted, so a little is lost." },
     { pick: "audio-opus", label: "Opus", hint: "Smallest for the same sound; not every player opens it." },
@@ -982,6 +989,12 @@ function audioChoices(quality?: core.QualityOptions): Choice[] {
     },
   ];
   return list.map((c) => ({ ...c, bytes: size(c.pick)?.bytes ?? 0, estimate: size(c.pick)?.estimate ?? false }));
+}
+
+/** audioLabel is "Opus 129 kbps", "MP3", or "" when the stream is unknown. */
+function audioLabel(stream?: core.AudioStream): string {
+  if (!stream?.codec) return "";
+  return stream.kbps > 0 ? `${stream.codec} ${stream.kbps} kbps` : stream.codec;
 }
 
 function TierTags({ tier }: { tier: core.ResolutionTier }) {

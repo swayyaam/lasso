@@ -1254,7 +1254,7 @@ func TestFinishedItemRecordsWhatCameOut(t *testing.T) {
 			return nil
 		}
 		stdout(`{"stage":"downloading","downloaded":1000,"total":1000,"estimate":0,"speed":0,"eta":0,"fragment":0,"fragments":0}`)
-		stdout(`{"stage":"complete","path":"` + path + `","width":1920,"height":1080}`)
+		stdout(`{"stage":"complete","path":"` + path + `","width":1920,"height":1080,"acodec":"mp4a.40.2","abr":129.481}`)
 		return nil
 	}}
 
@@ -1275,6 +1275,9 @@ func TestFinishedItemRecordsWhatCameOut(t *testing.T) {
 	}
 	if done.Bytes != 4096 {
 		t.Errorf("Bytes = %d, want the file's 4096 rather than the transfer's 1000", done.Bytes)
+	}
+	if done.Audio != "AAC 129 kbps" {
+		t.Errorf("Audio = %q, want the stream yt-dlp reported", done.Audio)
 	}
 
 	// A retry must not carry the old result into a run that has not finished.

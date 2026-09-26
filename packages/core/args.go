@@ -103,7 +103,12 @@ const planTemplate = `before_dl:{"stage":"plan","streams":[` +
 //
 // after_move runs once per finished file, after every post-processor and after
 // the final move into place, so %(filepath)s is the file on disk.
-const completedTemplate = `after_move:{"stage":"complete","path":%(filepath)j,"width":%(width|0)j,"height":%(height|0)j}`
+//
+// acodec and abr name the audio stream the file came from. After a conversion
+// they still describe the source (checked: an MP3 made from Opus reports
+// "opus"), which is what the interface says: "MP3 · from Opus 106 kbps".
+const completedTemplate = `after_move:{"stage":"complete","path":%(filepath)j,"width":%(width|0)j,"height":%(height|0)j,` +
+	`"acodec":%(acodec|null)j,"abr":%(abr|0)j}`
 
 // ExecArgs is BuildArgs plus the flags that make progress machine-readable.
 //

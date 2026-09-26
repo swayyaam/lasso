@@ -115,16 +115,23 @@ export function describeFile(d: {
   options?: { pick?: string; clip?: Clip };
   filePath: string;
   resolution?: string;
+  /** The audio stream it came from, "Opus 129 kbps"; see core.Item.Audio. */
+  audio?: string;
   bytes?: number;
 }): string {
   const kind = kindOf(d.options?.pick);
-  const format = [
-    kind === "audio" && d.options?.pick === "audio-original" ? "Original" : "",
-    kind === "video" ? d.resolution ?? "" : "",
-    extensionOf(d.filePath),
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const original = d.options?.pick === "audio-original";
+  const ext = extensionOf(d.filePath);
+  let format: string;
+  if (kind === "audio" && d.audio) {
+    // What arrived, not what was asked for. A conversion names its source,
+    // because converting cannot add back what the source did not have.
+    format = original ? d.audio : `${ext} from ${d.audio}`;
+  } else {
+    format = [kind === "audio" && original ? "Original" : "", kind === "video" ? d.resolution ?? "" : "", ext]
+      .filter(Boolean)
+      .join(" ");
+  }
 
   return [kind === "audio" ? "Audio" : "Video", format, formatBytes(d.bytes ?? 0), describeClip(d.options?.clip)]
     .filter(Boolean)

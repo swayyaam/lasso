@@ -65,6 +65,9 @@ type progressLine struct {
 	// Width and Height are that file's dimensions, zero for audio.
 	Width  int `json:"width"`
 	Height int `json:"height"`
+	// ACodec and ABR are the audio stream it came from.
+	ACodec *string `json:"acodec"`
+	ABR    float64 `json:"abr"`
 	// Streams and Single are planTemplate's: the streams about to be fetched
 	// when video and audio are joined, or the one format when they are not.
 	Streams []plannedStream `json:"streams"`
@@ -141,6 +144,7 @@ type ProgressParser struct {
 	// survives post-processing, because yt-dlp reports it after the fact.
 	output                    string
 	outputWidth, outputHeight int
+	outputAudio               AudioStream
 	// existing is yt-dlp finding the file already there and skipping it.
 	existing bool
 	// chapters are the per-track files --split-chapters wrote. They need
@@ -178,6 +182,10 @@ func (p *ProgressParser) OutputResolution() string {
 	return ResolutionLabel(short)
 }
 
+// OutputAudio is the audio stream the finished file came from, zero when
+// yt-dlp did not say or the file has no audio.
+func (p *ProgressParser) OutputAudio() AudioStream { return p.outputAudio }
+
 // ChapterFiles are the per-track files --split-chapters wrote, in the order
 // yt-dlp wrote them.
 func (p *ProgressParser) ChapterFiles() []ChapterFile { return p.chapters }
@@ -212,6 +220,9 @@ func (p *ProgressParser) parseJSON(line string) (Progress, bool) {
 		if raw.Path != "" {
 			p.output = raw.Path
 			p.outputWidth, p.outputHeight = raw.Width, raw.Height
+			if raw.ACodec != nil {
+				p.outputAudio = audioStream(*raw.ACodec, raw.ABR, 0)
+			}
 			// The in-flight display should stop naming a file that has just
 			// been replaced by this one.
 			p.filename = raw.Path

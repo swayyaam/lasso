@@ -95,6 +95,22 @@ export namespace core {
 	        this.estimate = source["estimate"];
 	    }
 	}
+	export class AudioStream {
+	    codec: string;
+	    kbps: number;
+	    bytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AudioStream(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.codec = source["codec"];
+	        this.kbps = source["kbps"];
+	        this.bytes = source["bytes"];
+	    }
+	}
 	export class Clip {
 	    start: number;
 	    end: number;
@@ -423,6 +439,7 @@ export namespace core {
 	    notice: string;
 	    filePath: string;
 	    resolution: string;
+	    audio: string;
 	    bytes: number;
 	    group: string;
 	    groupTitle: string;
@@ -448,6 +465,7 @@ export namespace core {
 	        this.notice = source["notice"];
 	        this.filePath = source["filePath"];
 	        this.resolution = source["resolution"];
+	        this.audio = source["audio"];
 	        this.bytes = source["bytes"];
 	        this.group = source["group"];
 	        this.groupTitle = source["groupTitle"];
@@ -504,6 +522,7 @@ export namespace core {
 	    bestHeight: number;
 	    bestPlayable: boolean;
 	    audioSizes: Record<string, AudioSize>;
+	    originalAudio: AudioStream;
 	    bestLabel: string;
 	    approximate: boolean;
 	    countedFormats: number;
@@ -524,6 +543,7 @@ export namespace core {
 	        this.bestHeight = source["bestHeight"];
 	        this.bestPlayable = source["bestPlayable"];
 	        this.audioSizes = this.convertValues(source["audioSizes"], AudioSize, true);
+	        this.originalAudio = this.convertValues(source["originalAudio"], AudioStream);
 	        this.bestLabel = source["bestLabel"];
 	        this.approximate = source["approximate"];
 	        this.countedFormats = source["countedFormats"];
@@ -716,6 +736,7 @@ export namespace history {
 	    duration: number;
 	    thumbnail: string;
 	    resolution: string;
+	    audio: string;
 	    finishedAt: number;
 	
 	    static createFrom(source: any = {}) {
@@ -738,6 +759,7 @@ export namespace history {
 	        this.duration = source["duration"];
 	        this.thumbnail = source["thumbnail"];
 	        this.resolution = source["resolution"];
+	        this.audio = source["audio"];
 	        this.finishedAt = source["finishedAt"];
 	    }
 	

@@ -162,6 +162,7 @@ type rawFormat struct {
 	Filesize       *int64   `json:"filesize"`
 	FilesizeApprox *int64   `json:"filesize_approx"`
 	TBR            *float64 `json:"tbr"`
+	ABR            *float64 `json:"abr"`
 	DynamicRange   string   `json:"dynamic_range"`
 }
 
@@ -240,6 +241,18 @@ func ParseMetadata(data []byte, playback Playback) (*Metadata, error) {
 	}
 	m.Quality = AnalyseFormats(m.Formats, playback)
 	m.Quality.AudioSizes = AudioSizes(m.Formats, m.Duration)
+	if original := originalAudio(raw.Formats); !original.IsZero() {
+		m.Quality.OriginalAudio = original
+		// Original is that stream, so it weighs what that stream weighs, not
+		// what the largest one does.
+		if original.Bytes > 0 {
+			if m.Quality.AudioSizes == nil {
+				m.Quality.AudioSizes = map[QuickPick]AudioSize{}
+			}
+			m.Quality.AudioSizes[PickAudioOriginal] = AudioSize{Bytes: original.Bytes}
+			m.Quality.AudioBytes = original.Bytes
+		}
+	}
 	return m, nil
 }
 

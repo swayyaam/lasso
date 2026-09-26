@@ -45,6 +45,8 @@ type QualityOptions struct {
 	BestPlayable bool `json:"bestPlayable"`
 	// AudioSizes is what each audio pick would produce; see AudioSizes.
 	AudioSizes map[QuickPick]AudioSize `json:"audioSizes"`
+	// OriginalAudio is the stream "Original" would save, as yt-dlp chose it.
+	OriginalAudio AudioStream `json:"originalAudio"`
 	// BestLabel is the label for that resolution, e.g. "8K".
 	BestLabel string `json:"bestLabel"`
 	// Approximate is true when the tiers are a generic ladder rather than

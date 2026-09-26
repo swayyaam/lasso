@@ -44,6 +44,8 @@ type Entry struct {
 	Thumbnail string  `json:"thumbnail"`
 	// Resolution labels the finished file, e.g. "1080p", empty for audio.
 	Resolution string `json:"resolution"`
+	// Audio is the audio stream it came from, "Opus 129 kbps".
+	Audio string `json:"audio"`
 	// FinishedAt is Unix milliseconds, matching core.Item.AddedAt — Wails
 	// cannot model a time.Time and would emit an untyped value for it.
 	FinishedAt int64 `json:"finishedAt"`
@@ -72,6 +74,7 @@ func FromItem(item core.Item) (Entry, bool) {
 		Duration:   item.Duration,
 		Thumbnail:  item.Thumbnail,
 		Resolution: item.Resolution,
+		Audio:      item.Audio,
 		FinishedAt: time.Now().UnixMilli(),
 	}, true
 }

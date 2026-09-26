@@ -110,6 +110,10 @@ type Item struct {
 	// Resolution labels the finished file, e.g. "1080p", empty for audio. The
 	// pick is what was asked for; this is what came out.
 	Resolution string `json:"resolution"`
+	// Audio is the audio stream the file came from, "Opus 129 kbps", as
+	// yt-dlp reported it. For a converted file it is the source, not the
+	// conversion: yt-dlp still names the stream it started from.
+	Audio string `json:"audio"`
 	// Bytes is the finished file's size on disk.
 	Bytes int64 `json:"bytes"`
 
@@ -437,6 +441,7 @@ func (q *Queue) Retry(id string) error {
 	item.Notice = ""
 	item.FilePath = ""
 	item.Resolution = ""
+	item.Audio = ""
 	item.Bytes = 0
 	snapshot := *item
 	q.cond.Broadcast()
@@ -735,10 +740,10 @@ func (q *Queue) run(ctx context.Context, id string) {
 		notice = "You already had this file, so nothing was downloaded again."
 	}
 	if notice != "" {
-		q.finishWithNotice(id, path, result.Resolution, notice, detail)
+		q.finishWithNotice(id, path, result.Resolution, result.Audio, notice, detail)
 		return
 	}
-	q.finish(id, path, result.Resolution)
+	q.finish(id, path, result.Resolution, result.Audio)
 }
 
 // remux moves an AVI or FLV into MP4 so macOS opens it, returning the path to
@@ -807,6 +812,8 @@ type attemptResult struct {
 	FilePath string
 	// Resolution labels the finished file, empty for audio.
 	Resolution string
+	// Audio names the audio stream it came from.
+	Audio string
 	// Existing is the file having been there already, so nothing downloaded.
 	Existing bool
 	// Chapters are the per-track files --split-chapters wrote.
@@ -841,6 +848,7 @@ func (q *Queue) attempt(ctx context.Context, id string, o Options) (error, attem
 		Output:     joinLines(errLines),
 		FilePath:   parser.OutputPath(),
 		Resolution: parser.OutputResolution(),
+		Audio:      parser.OutputAudio().Label(),
 		Existing:   parser.Existing(),
 		Chapters:   parser.ChapterFiles(),
 	}
@@ -915,7 +923,7 @@ func (q *Queue) fail(id, output string, err error, ctx context.Context) {
 }
 
 // finishWithNotice completes an item that succeeded with a caveat.
-func (q *Queue) finishWithNotice(id, filePath, resolution, notice, detail string) {
+func (q *Queue) finishWithNotice(id, filePath, resolution, audio, notice, detail string) {
 	q.mu.Lock()
 	if item, ok := q.items[id]; ok {
 		item.Notice = notice
@@ -923,10 +931,10 @@ func (q *Queue) finishWithNotice(id, filePath, resolution, notice, detail string
 	}
 	q.mu.Unlock()
 
-	q.finish(id, filePath, resolution)
+	q.finish(id, filePath, resolution, audio)
 }
 
-func (q *Queue) finish(id, filePath, resolution string) {
+func (q *Queue) finish(id, filePath, resolution, audio string) {
 	// The file on disk, not the transfer: merging, remuxing and extracting
 	// audio all change the size after the last progress line.
 	var size int64
@@ -942,6 +950,7 @@ func (q *Queue) finish(id, filePath, resolution string) {
 	}
 	item.FilePath = filePath
 	item.Resolution = resolution
+	item.Audio = audio
 	item.Bytes = size
 	item.State = StateDone
 	item.Progress.Stage = StagePostProcessing

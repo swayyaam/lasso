@@ -245,14 +245,14 @@ func TestFromItemKeepsWhatTheRowShows(t *testing.T) {
 	item := core.Item{
 		ID: "1", Title: "Clip", State: core.StateDone,
 		Uploader: "Someone", Duration: 61, Thumbnail: "https://i.example.com/t.jpg",
-		Resolution: "1080p", Bytes: 4096,
+		Resolution: "1080p", Audio: "Opus 129 kbps", Bytes: 4096,
 		Progress: core.Progress{Downloaded: 1000},
 	}
 	entry, ok := FromItem(item)
 	if !ok {
 		t.Fatal("a finished item should make an entry")
 	}
-	if entry.Uploader != "Someone" || entry.Duration != 61 || entry.Thumbnail != item.Thumbnail || entry.Resolution != "1080p" {
+	if entry.Uploader != "Someone" || entry.Duration != 61 || entry.Thumbnail != item.Thumbnail || entry.Resolution != "1080p" || entry.Audio != "Opus 129 kbps" {
 		t.Errorf("entry lost the item's source: %+v", entry)
 	}
 	if entry.Bytes != 4096 {
