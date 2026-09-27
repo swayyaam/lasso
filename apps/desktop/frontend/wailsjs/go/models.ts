@@ -318,6 +318,7 @@ export namespace core {
 	export class Music {
 	    tags: boolean;
 	    splitChapters: boolean;
+	    addToMusic: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Music(source);
@@ -327,6 +328,7 @@ export namespace core {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.tags = source["tags"];
 	        this.splitChapters = source["splitChapters"];
+	        this.addToMusic = source["addToMusic"];
 	    }
 	}
 	export class Playlist {
@@ -842,6 +844,7 @@ export namespace main {
 	    cookies: string;
 	    appearance: string;
 	    tagAudio: boolean;
+	    addToMusic: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -854,6 +857,7 @@ export namespace main {
 	        this.cookies = source["cookies"];
 	        this.appearance = source["appearance"];
 	        this.tagAudio = source["tagAudio"];
+	        this.addToMusic = source["addToMusic"];
 	    }
 	}
 

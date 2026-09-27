@@ -50,7 +50,14 @@ export function SettingsSheet({
   const [updateResult, setUpdateResult] = useState<binaries.UpdateResult | null>(null);
   const [updateError, setUpdateError] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Whether Music has made its "Automatically Add" folder yet. Asked each
+  // time the sheet opens: opening Music for the first time is the fix.
+  const [musicReady, setMusicReady] = useState(true);
   const openDoctor = useDoctor();
+
+  useEffect(() => {
+    api.MusicReady().then(setMusicReady, () => setMusicReady(false));
+  }, []);
 
   // Shallow and key-driven rather than field-by-field, so a new setting is
   // covered the day it is added rather than the day someone remembers this.
@@ -241,6 +248,31 @@ export function SettingsSheet({
                         key={label}
                         selected={(draft.tagAudio ?? true) === value}
                         onClick={() => setDraft({ ...draft, tagAudio: value })}
+                      >
+                        {label}
+                      </Chip>
+                    ))}
+                  </div>
+                }
+              />
+
+              <Row
+                label="Add audio to Music"
+                hint={
+                  musicReady
+                    ? "A copy goes to the Music app, which files it in your library. The download stays where it is."
+                    : "Open the Music app once first: it makes the folder Lasso hands files to."
+                }
+                control={
+                  <div className="flex gap-xxs">
+                    {[
+                      { value: true, label: "On" },
+                      { value: false, label: "Off" },
+                    ].map(({ value, label }) => (
+                      <Chip
+                        key={label}
+                        selected={(draft.addToMusic ?? false) === value}
+                        onClick={() => setDraft({ ...draft, addToMusic: value })}
                       >
                         {label}
                       </Chip>

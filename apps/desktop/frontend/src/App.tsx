@@ -143,6 +143,7 @@ export function App() {
                 onQueued={link.clear}
                 downloadRequests={downloadRequests}
                 tagAudio={settings?.tagAudio ?? true}
+                addToMusic={settings?.addToMusic ?? false}
               />
             ) : home === "downloads" ? (
               <DownloadsScreen items={items} onSubmit={open} disabled={!ready} />

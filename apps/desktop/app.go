@@ -185,6 +185,7 @@ func (a *App) startQueue(ctx context.Context, manager *binaries.Manager, concurr
 		SavePath:    filepath.Join(manager.Paths().Support, "queue.json"),
 		Tagger:      &core.FFmpegTagger{Path: manager.Path(binaries.FFmpeg)},
 		Remuxer:     &core.FFmpegRemuxer{Path: manager.Path(binaries.FFmpeg)},
+		Music:       musicLibrary(),
 		Concurrency: concurrency,
 		OnState: func(item core.Item) {
 			runtime.EventsEmit(ctx, EventQueueItem, item)

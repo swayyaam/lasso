@@ -489,6 +489,29 @@ SoundCloud), emitting `entries:found` for each as it arrives. It covers the
 first `MaxEntryLookup` (100) tracks, is cancelled when the link changes, and
 goes through `IncomingLink` like any link the page hands over.
 
+**Add to Music** (`Music.AddToMusic`, off by default, `Settings.AddToMusic`
+sets it the way TagAudio sets the tag switches) copies finished audio into
+Music's "Automatically Add to Music" folder, and Music files it. Four things
+are deliberate:
+
+- **A copy, renamed in whole.** Music imports whatever appears in that folder,
+  so the copy is written beside it (in Music's media folder, same volume) and
+  renamed in; a half-written file must never appear there. The download stays
+  where it landed, which is what history points at. A name still waiting in
+  the folder gets " 2", not replaced.
+- **Only what Music opens** (`MusicOpens`): MP3, AAC/M4A, AIFF, WAV. Handed
+  Opus or FLAC, Music moves it to a "Not Added" folder and says nothing, so
+  Lasso never hands them over and the item says why instead.
+- **Split chapters send the tracks**, not the hour-long recording beside them.
+- **Found on every add** (`MusicFolder.Find`), under `~/Music`, including a
+  library carried over from iTunes. Music makes the folder on first launch,
+  which can be after Lasso's; Settings asks `MusicReady` and says to open
+  Music once. A failure is a notice, never a failed download.
+
+Notices on a playlist's tracks show on the track's row, and the card's summary
+counts them ("1 with a note"), since a finished card shows no rows until
+opened.
+
 **Audio quality.** `PickAudioOriginal` extracts the site's own stream and
 changes only its container. Every other audio pick re-encodes, and re-encoding
 a lossy stream loses a second time — asking for FLAC from a source that serves

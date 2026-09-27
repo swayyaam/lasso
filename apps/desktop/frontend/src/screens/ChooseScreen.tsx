@@ -51,20 +51,31 @@ function canCarryCover(pick: string, quality?: core.QualityOptions): boolean {
   return pick !== "audio-original" || Boolean(quality?.originalTakesCover);
 }
 
-/** withAudioTags sets the tag toggles for an audio pick from the setting. */
-function withAudioTags(o: core.Options, pick: string, tagAudio: boolean, quality?: core.QualityOptions): core.Options {
+/** AudioDefaults are the Settings that set More options' switches for audio. */
+interface AudioDefaults {
+  tagAudio: boolean;
+  addToMusic: boolean;
+}
+
+/** withAudioTags sets the tag and Music switches for an audio pick from Settings. */
+function withAudioTags(o: core.Options, pick: string, defaults: AudioDefaults, quality?: core.QualityOptions): core.Options {
   return {
     ...o,
     enhancements: {
       ...o.enhancements,
-      embedMetadata: tagAudio,
-      embedThumbnail: tagAudio && canCarryCover(pick, quality),
+      embedMetadata: defaults.tagAudio,
+      embedThumbnail: defaults.tagAudio && canCarryCover(pick, quality),
     },
+    music: { ...o.music, addToMusic: defaults.addToMusic },
   } as core.Options;
 }
 
 function withoutAudioTags(o: core.Options): core.Options {
-  return { ...o, enhancements: { ...o.enhancements, embedMetadata: false, embedThumbnail: false } } as core.Options;
+  return {
+    ...o,
+    enhancements: { ...o.enhancements, embedMetadata: false, embedThumbnail: false },
+    music: { ...o.music, addToMusic: false },
+  } as core.Options;
 }
 
 /** clipFraction is how much of the video a clip is, 1 for all of it. */
@@ -201,6 +212,7 @@ export function ChooseScreen({
   onQueued,
   downloadRequests,
   tagAudio,
+  addToMusic,
 }: {
   link: Link;
   presets: presetModels.Preset[] | null;
@@ -211,7 +223,10 @@ export function ChooseScreen({
   downloadRequests: number;
   /** Settings' "Tag audio files": title, artist and cover art for audio. */
   tagAudio: boolean;
+  /** Settings' "Add audio to Music". */
+  addToMusic: boolean;
 }) {
+  const audioDefaults: AudioDefaults = { tagAudio, addToMusic };
   const { metadata, resolving, error } = link;
   const [options, setOptions] = useState<core.Options>(EMPTY_OPTIONS);
   const [activePreset, setActivePreset] = useState("");
@@ -255,7 +270,7 @@ export function ChooseScreen({
       const pick = validPick(o.pick as string, metadata.quality);
       const next = { ...o, pick, clip: WHOLE } as core.Options;
       // Staying on audio for a new link: its Original may be a different codec.
-      return kindOf(pick) === "audio" ? withAudioTags(next, pick, tagAudio, metadata.quality) : next;
+      return kindOf(pick) === "audio" ? withAudioTags(next, pick, audioDefaults, metadata.quality) : next;
     });
     setClipProblem("");
     // Only a new link resets the choice; editing options must not.
@@ -273,7 +288,7 @@ export function ChooseScreen({
   function choose(pick: string) {
     setOptions((o) => {
       const next = { ...o, pick } as core.Options;
-      if (kindOf(pick) === "audio") return withAudioTags(next, pick, tagAudio, quality);
+      if (kindOf(pick) === "audio") return withAudioTags(next, pick, audioDefaults, quality);
       // Back to video: its defaults are untagged, and a WebM cannot take a
       // cover, which would fail the download at the very end.
       if (kindOf(o.pick as string) === "audio") return withoutAudioTags(next);

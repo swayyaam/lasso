@@ -230,6 +230,7 @@ export function AdvancedDrawer({
         summary={summarise([
           options.music?.tags ? "tagging" : "",
           options.music?.splitChapters ? "split into tracks" : "",
+          audioOnly && options.music?.addToMusic ? "adding to Music" : "",
         ])}
       >
         <Checkbox
@@ -245,6 +246,17 @@ export function AdvancedDrawer({
           onChange={(e) =>
             patch({ music: { ...options.music, splitChapters: e.target.checked } } as Partial<core.Options>)
           }
+        />
+        <Checkbox
+          label="Add to Music"
+          hint={
+            audioOnly
+              ? "A copy goes to the Music app too; this one stays in your download folder. Music cannot open Opus or FLAC."
+              : "For audio downloads."
+          }
+          disabled={!audioOnly}
+          checked={audioOnly && (options.music?.addToMusic ?? false)}
+          onChange={(e) => patch({ music: { ...options.music, addToMusic: e.target.checked } } as Partial<core.Options>)}
         />
       </Disclosure>
 

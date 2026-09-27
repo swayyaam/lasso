@@ -82,6 +82,10 @@ export function LookUpEntries(arg1) {
   return window['go']['main']['App']['LookUpEntries'](arg1);
 }
 
+export function MusicReady() {
+  return window['go']['main']['App']['MusicReady']();
+}
+
 export function OpenDocument(arg1) {
   return window['go']['main']['App']['OpenDocument'](arg1);
 }

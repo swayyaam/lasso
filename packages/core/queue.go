@@ -156,6 +156,10 @@ type QueueConfig struct {
 	// Without one, splitting still works but every track keeps the whole
 	// recording's title, so the feature is off when this is nil.
 	Tagger Tagger
+
+	// Music receives finished audio whose options ask for it. nil, as on a
+	// system with no Music app, leaves Music.AddToMusic doing nothing.
+	Music MusicLibrary
 }
 
 // DefaultSubtitleRetryDelay is the pause before a second attempt at subtitles.
@@ -181,6 +185,7 @@ type Queue struct {
 	runner   Runner
 	tagger   Tagger
 	remuxer  Remuxer
+	music    MusicLibrary
 	emitter  *ProgressEmitter
 	onState  func(Item)
 	onRemove func(ids []string)
@@ -244,6 +249,7 @@ func NewQueue(cfg QueueConfig) (*Queue, error) {
 		runner:         cfg.Runner,
 		tagger:         cfg.Tagger,
 		remuxer:        cfg.Remuxer,
+		music:          cfg.Music,
 		onState:        cfg.OnState,
 		onRemove:       cfg.OnRemove,
 		savePath:       cfg.SavePath,
@@ -739,6 +745,18 @@ func (q *Queue) run(ctx context.Context, id string) {
 		// seconds for a download that never ran needs saying.
 		notice = "You already had this file, so nothing was downloaded again."
 	}
+	if musicNotice, musicDetail := q.addToMusic(ctx, opts, path, result.Chapters); musicNotice != "" {
+		if notice == "" {
+			notice, detail = musicNotice, musicDetail
+		} else {
+			notice = notice + " " + musicNotice
+			if detail == "" {
+				detail = musicDetail
+			} else if musicDetail != "" {
+				detail = joinLines([]string{detail, musicDetail})
+			}
+		}
+	}
 	if notice != "" {
 		q.finishWithNotice(id, path, result.Resolution, result.Audio, notice, detail)
 		return
@@ -761,6 +779,55 @@ func (q *Queue) remux(ctx context.Context, path string) (string, string, string)
 		return path, fmt.Sprintf("Kept as %s, which needs IINA or VLC to play", kind), err.Error()
 	}
 	return out, "", ""
+}
+
+// addToMusic hands the finished audio to Music, when the download asked for
+// it, and returns a notice when some or all of it could not go.
+//
+// Split chapters send the tracks and not the whole recording: the tracks are
+// the album, and the recording beside them would be one more "song" an hour
+// long. Like tagging, a failure never fails the download — the file is in the
+// download folder either way.
+func (q *Queue) addToMusic(ctx context.Context, o Options, path string, chapters []ChapterFile) (string, string) {
+	if q.music == nil || !o.Music.AddToMusic || !o.Pick.IsAudioOnly() || ctx.Err() != nil {
+		return "", ""
+	}
+	files := []string{path}
+	if len(chapters) > 0 {
+		files = files[:0]
+		for _, chapter := range chapters {
+			files = append(files, chapter.Path)
+		}
+	}
+
+	added := 0
+	var unplayable string
+	var failures []string
+	for _, file := range files {
+		if file == "" {
+			continue
+		}
+		if !MusicOpens(file) {
+			unplayable = musicFormatName(file)
+			continue
+		}
+		if err := q.music.Add(file); err != nil {
+			failures = append(failures, err.Error())
+			continue
+		}
+		added++
+	}
+
+	switch {
+	case added == len(files):
+		return "", ""
+	case unplayable != "" && len(failures) == 0 && added == 0:
+		return fmt.Sprintf("Not added to Music, which cannot open %s.", unplayable), ""
+	case added == 0:
+		return "Could not add this to Music.", joinLines(failures)
+	default:
+		return fmt.Sprintf("Added %d of %d tracks to Music.", added, len(files)), joinLines(failures)
+	}
 }
 
 // retagChapters gives each split-out track its own title, number and album.

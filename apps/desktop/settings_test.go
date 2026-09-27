@@ -269,3 +269,29 @@ func TestAudioIsTaggedUnlessTurnedOff(t *testing.T) {
 		t.Error("turning it off did not last")
 	}
 }
+
+func TestAddToMusicIsOffUntilChosenAndLasts(t *testing.T) {
+	// A copy in someone's music library is theirs to ask for.
+	dir := t.TempDir()
+	store, err := NewSettingsStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Get().AddToMusic {
+		t.Error("AddToMusic is on for someone who never chose it")
+	}
+
+	on := store.Get()
+	on.DownloadFolder = dir
+	on.AddToMusic = true
+	if _, err := store.Save(on); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewSettingsStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.Get().AddToMusic {
+		t.Error("turning it on did not last")
+	}
+}

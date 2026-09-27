@@ -80,6 +80,11 @@ know what each file is. **Settings → Tag audio files** turns that off, and
 Original in a format that cannot hold a picture (a WAV, say), which gets its
 tags and no cover rather than failing over it.
 
+**Settings → Add audio to Music** also puts a copy of each audio download in
+the Music app, which files it in your library; **More options → Music** turns
+it on or off for one download. The file stays in your download folder too.
+Music cannot open Opus or FLAC, so those stay out of it, and Lasso says so.
+
 That is worth knowing before you pick **FLAC**. FLAC is a lossless *format*, but
 it cannot recover what a site already threw away — asking for it from YouTube
 gives you a much larger file of exactly the same sound. Lasso tells you when

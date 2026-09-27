@@ -220,6 +220,9 @@ function GroupCard({ group }: { group: Group }) {
 
   const done = items.filter((i) => i.state === "done").length;
   const failed = items.filter((i) => i.state === "failed");
+  // Finished with a caveat, such as a track Music cannot open. A finished
+  // card shows no rows until opened, so the summary is what says so.
+  const noted = items.filter((i) => i.state === "done" && i.notice).length;
   const downloading = items.filter((i) => i.state === "downloading");
   const paused = items.filter((i) => i.state === "paused");
   const finished = items.every((i) => FINISHED.has(i.state));
@@ -244,6 +247,7 @@ function GroupCard({ group }: { group: Group }) {
     describePick(items[0]?.options?.pick),
     `${done} of ${items.length} done`,
     failed.length ? `${failed.length} ${failed.length === 1 ? "needs" : "need"} attention` : "",
+    noted ? `${noted} with a note` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -358,6 +362,13 @@ function QueueLine({ item, flush = false }: { item: core.Item; /** First in its 
           <span className="flex min-w-0 items-center gap-xxs text-body-sm text-warning-strong" title={item.message}>
             <Icon.Warn className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
             <span className="truncate">{item.message || "Did not finish"}</span>
+          </span>
+        )}
+        {item.state === "done" && item.notice && (
+          // As in FinishedRow: a caveat, not a failure, with the reason kept.
+          <span className="flex min-w-0 items-center gap-xxs text-body-sm text-warning-strong" title={item.detail || item.notice}>
+            <Icon.Info className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+            <span className="truncate">{item.notice}</span>
           </span>
         )}
         {actionError && <span className="truncate text-body-sm text-danger-strong">{actionError}</span>}

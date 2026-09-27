@@ -1,6 +1,6 @@
 # Privacy policy
 
-*Effective 26 September 2026. Applies to Lasso 0.2 and later.*
+*Effective 28 September 2026. Applies to Lasso 0.2 and later.*
 
 Lasso is an app that runs on your Mac. It has no accounts, no servers of its
 own, no analytics, no crash reporting and no advertising. The developer never
@@ -18,7 +18,7 @@ readable only by your macOS user account.
 
 | File | What it holds |
 |---|---|
-| `settings.json` | Your download folder, how many downloads run at once, which browser (if any) to take cookies from, whether Lasso is light, dark or follows your Mac, and whether audio files get their title, artist and cover art. The browser's *name*, never its cookies. |
+| `settings.json` | Your download folder, how many downloads run at once, which browser (if any) to take cookies from, whether Lasso is light, dark or follows your Mac, whether audio files get their title, artist and cover art, and whether audio also goes to the Music app. The browser's *name*, never its cookies. |
 | `history.json` | Each finished download: its title, link, channel, length, the file it produced and where, its size, the choices used, and when it finished. |
 | `queue.json` | Downloads not yet finished, so they carry on after Lasso quits. |
 | `presets.json` | Choices you have saved under a name. |
@@ -27,7 +27,10 @@ readable only by your macOS user account.
 | `lasso.lock` | Stops two copies of Lasso running at once. |
 | `bin/` | Lasso's helper programs: yt-dlp, ffmpeg, ffprobe and deno. |
 
-The files you download go to the folder you chose, and are yours.
+The files you download go to the folder you chose, and are yours. With **Add
+to Music** on, Lasso also puts a copy of each audio download in the Music app's
+"Automatically Add to Music" folder, and Music files it in your library.
+Nothing about it leaves your Mac, unless you have Music sync your library.
 
 **Removing it.** History → Clear history forgets the list; Settings changes
 the rest. To remove everything, quit Lasso and delete the folder above.

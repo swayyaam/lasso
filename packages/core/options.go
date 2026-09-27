@@ -186,6 +186,10 @@ type Music struct {
 	// kept alongside the tracks: yt-dlp does not remove it, and deleting a
 	// file the user did not ask to lose is not Lasso's call.
 	SplitChapters bool `json:"splitChapters"`
+	// AddToMusic hands the finished audio to the Music app as well, through
+	// its "Automatically Add to Music" folder. The download stays where it
+	// landed. Audio picks only: a video pick ignores it.
+	AddToMusic bool `json:"addToMusic"`
 }
 
 // WantsMusic reports whether either music option is on.

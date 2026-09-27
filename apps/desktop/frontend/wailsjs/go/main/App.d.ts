@@ -48,6 +48,8 @@ export function InstallUpdate():Promise<updater.Result>;
 
 export function LookUpEntries(arg1:string):Promise<void>;
 
+export function MusicReady():Promise<boolean>;
+
 export function OpenDocument(arg1:string):Promise<void>;
 
 export function OpenFile(arg1:string):Promise<void>;

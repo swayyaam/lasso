@@ -32,6 +32,10 @@ type Settings struct {
 	// which Music and a phone show as "Unknown Artist". It sets the two
 	// toggles in More options, so one download can still go without.
 	TagAudio bool `json:"tagAudio"`
+	// AddToMusic hands audio downloads to the Music app as well. Off by
+	// default: a copy in someone's music library is theirs to ask for. Like
+	// TagAudio it sets the More options switch, per download.
+	AddToMusic bool `json:"addToMusic"`
 }
 
 // Appearance is the window's light or dark choice.
