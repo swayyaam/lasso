@@ -47,14 +47,13 @@ const (
 	iconSize = 128
 
 	// The arrow runs between the two icons, clear of both.
-	arrowFromX = 258
-	arrowToX   = 382
+	arrowFromX = 276
+	arrowToX   = 364
 )
 
 // Colours from DESIGN-webflow.md, which is also what the app is drawn with.
 var (
 	canvas    = color.RGBA{0xff, 0xff, 0xff, 0xff}
-	surface   = color.RGBA{0xf5, 0xf5, 0xf5, 0xff}
 	ink       = color.RGBA{0x08, 0x08, 0x08, 0xff}
 	inkSubtle = color.RGBA{0x5a, 0x5a, 0x5a, 0xff}
 	hairline  = color.RGBA{0xd8, 0xd8, 0xd8, 0xff}
@@ -105,26 +104,18 @@ func render(scale float64) image.Image {
 	return img
 }
 
-// drawBackdrop lays down the canvas with a shallow vertical gradient.
+// drawBackdrop lays down flat canvas white, to the very edge.
 //
-// Flat white is correct per the design system but reads as unfinished at this
-// size, where there is nothing else on screen. Two stops of the same neutral
-// give the window a floor to sit on without introducing a colour.
+// It used to shade towards grey at the bottom. That looked finished in the
+// install window, but Finder does not always open one: a disk image opened
+// while a Finder window is full screen becomes a tab of it (macOS's default,
+// "Prefer tabs: In Full Screen"), and a tab keeps neither the window's size
+// nor its hidden sidebar. The picture then sits in the corner of a larger
+// white view, and a grey edge marked exactly where it stopped. Flat white
+// runs on into the white Finder fills beyond it, so the install window works
+// at any size; the icon wells give it its structure.
 func drawBackdrop(img *image.RGBA, scale float64) {
-	bounds := img.Bounds()
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		t := float64(y) / float64(bounds.Dy())
-		// Ease so most of the panel stays canvas-white and the shading
-		// gathers towards the bottom.
-		t = t * t
-		row := color.RGBA{
-			R: lerp(canvas.R, surface.R, t),
-			G: lerp(canvas.G, surface.G, t),
-			B: lerp(canvas.B, surface.B, t),
-			A: 0xff,
-		}
-		draw.Draw(img, image.Rect(bounds.Min.X, y, bounds.Max.X, y+1), &image.Uniform{row}, image.Point{}, draw.Src)
-	}
+	draw.Draw(img, img.Bounds(), &image.Uniform{canvas}, image.Point{}, draw.Src)
 }
 
 // drawIconWells puts a soft rounded panel behind each icon.
@@ -323,10 +314,6 @@ func strokeLine(r *vector.Rasterizer, x1, y1, x2, y2, width float64) {
 	r.LineTo(float32(x2-nx), float32(y2-ny))
 	r.LineTo(float32(x1-nx), float32(y1-ny))
 	r.ClosePath()
-}
-
-func lerp(from, to uint8, t float64) uint8 {
-	return uint8(math.Round(float64(from) + (float64(to)-float64(from))*t))
 }
 
 func withAlpha(c color.RGBA, a uint8) color.RGBA {
