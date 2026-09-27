@@ -164,8 +164,11 @@ func formatArgs(o Options) []string {
 			// an encode this Mac plays if there is one, and otherwise
 			// whatever the rung comes in. Someone who picked 4K on a Mac that
 			// cannot play VP9 still gets 4K; the interface says what it needs.
-			rung := capped + "[height>=" + strconv.Itoa(int(float64(height)*tierTolerance)) + "]"
-			return []string{"-f", playableFirst(rung, o.Playback) + "/" + fallback}
+			var rungs []string
+			for _, rung := range rungFilters(height) {
+				rungs = append(rungs, playableFirst(rung, o.Playback))
+			}
+			return []string{"-f", strings.Join(rungs, "/") + "/" + fallback}
 		}
 		return []string{"-f", fallback}
 	}
@@ -177,6 +180,19 @@ func formatArgs(o Options) []string {
 		return []string{"-f", playableFirst("", o.Playback) + "/bv*+ba/b"}
 	}
 	return []string{"-f", "bv*+ba/b"}
+}
+
+// rungFilters are the format filters for one rung, one per shape of picture,
+// matching how AnalyseFormats sorts formats into rungs (NominalSide): by
+// height, and for a picture wider than 16:9 by width, since a 2.39:1 film's
+// 4K is 3840x2026. The cap on height applies to both; a wide picture is
+// shorter than a 16:9 one, never taller.
+func rungFilters(height int) []string {
+	capped := "[height<=" + strconv.Itoa(height) + "]"
+	return []string{
+		capped + "[height>=" + strconv.Itoa(int(float64(height)*tierTolerance)) + "]",
+		capped + "[width>=" + strconv.Itoa(int(float64(height)*16/9*tierTolerance)) + "]",
+	}
 }
 
 // playableFirst prefers, within filter, video this Mac plays joined to AAC

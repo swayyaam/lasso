@@ -133,18 +133,33 @@ func (f Format) IsStoryboard() bool {
 	return f.Ext == "mhtml" || containsFold(f.Note, "storyboard")
 }
 
-// ShortSide is the smaller of the two dimensions.
+// NominalSide is the resolution a format is named by, the way YouTube names
+// it: the short side, or for a picture wider than 16:9, the height a 16:9
+// picture of the same width would have.
 //
-// Classifying on the short side is what makes a vertical video correct: a
-// 1080x1920 Short is 1080p, not 1920p.
-func (f Format) ShortSide() int {
-	if f.Height <= 0 {
+// The short side is what makes a vertical video correct: a 1080x1920 Short
+// is 1080p, not 1920p.
+//
+// Measuring the short side alone put a film's 4K in the 1440p row. A 2.39:1
+// film in 4K is 3840x2026 — the full 4K width, letterbox trimmed — and 2026
+// is 94% of 2160, just under the rung. Its 1440p is 2560x1350 and its 1080p
+// 1920x1012, both named by their width in the same way.
+func (f Format) NominalSide() int {
+	return nominalSide(f.Width, f.Height)
+}
+
+func nominalSide(width, height int) int {
+	if height <= 0 {
 		return 0
 	}
-	if f.Width > 0 && f.Width < f.Height {
-		return f.Width
+	short, long := height, width
+	if width > 0 && width < height {
+		short, long = width, height
 	}
-	return f.Height
+	if byWidth := long * 9 / 16; byWidth > short {
+		return byWidth
+	}
+	return short
 }
 
 // IsHDR reports whether a format carries high dynamic range.
@@ -240,7 +255,7 @@ func AnalyseFormats(formats []Format, playback Playback) QualityOptions {
 			continue
 		}
 
-		short := f.ShortSide()
+		short := f.NominalSide()
 		if short <= 0 {
 			// A video format with no dimensions tells us nothing about which
 			// rung it belongs to, so it must not create one.

@@ -311,6 +311,8 @@ func TestCompletedLineLabelsTheResolution(t *testing.T) {
 	}{
 		{`{"stage":"complete","path":"/tmp/a.mp4","width":3840,"height":2160}`, "4K"},
 		{`{"stage":"complete","path":"/tmp/b.mp4","width":2026,"height":1036}`, "1080p"},
+		// A 2.39:1 film is named by its width, as the picker names it.
+		{`{"stage":"complete","path":"/tmp/f.mp4","width":3840,"height":2026}`, "4K"},
 		// A Short: yt-dlp's height is the long side.
 		{`{"stage":"complete","path":"/tmp/c.mp4","width":1080,"height":1920}`, "1080p"},
 		{`{"stage":"complete","path":"/tmp/d.mp4","width":256,"height":144}`, "144p"},

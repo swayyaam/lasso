@@ -767,6 +767,11 @@ func TestAutoPicksPreferWhatThisMacPlays(t *testing.T) {
 			"bv*[height<=1080][height>=1026]" + plays + "+ba[acodec^=mp4a]" +
 				"/bv*[height<=1080][height>=1026]" + plays + "+ba" +
 				"/b[height<=1080][height>=1026]" + plays +
+				// A picture wider than 16:9 is at the rung by its width:
+				// a 2.39:1 film's 1080p is 1920x1012.
+				"/bv*[height<=1080][width>=1824]" + plays + "+ba[acodec^=mp4a]" +
+				"/bv*[height<=1080][width>=1824]" + plays + "+ba" +
+				"/b[height<=1080][width>=1824]" + plays +
 				"/bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b"},
 	}
 	for _, tc := range cases {

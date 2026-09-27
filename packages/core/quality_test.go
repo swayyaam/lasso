@@ -2,6 +2,7 @@ package core
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -259,15 +260,44 @@ func TestRealFixtureAnalysis(t *testing.T) {
 	}
 }
 
-func TestShortSideAndStoryboardHelpers(t *testing.T) {
-	if got := videoFormat("1", 1080, 1920, 30, "").ShortSide(); got != 1080 {
-		t.Errorf("ShortSide = %d, want the smaller dimension", got)
+// A film wider than 16:9 is named by its width at every rung, the way YouTube
+// names it. Measured by height, every rung of this real ladder (a 2.39:1
+// music video) fell one step: its 4K offered as 1440p, and no 4K at all.
+func TestAWideFilmIsNamedByItsWidth(t *testing.T) {
+	var formats []Format
+	for i, size := range [][2]int{{3840, 2026}, {2560, 1350}, {1920, 1012}, {1280, 676}, {854, 450}, {640, 338}} {
+		f := videoFormat(strconv.Itoa(400+i), size[0], size[1], 24, "")
+		f.VCodec = "av01.0.12M.08"
+		formats = append(formats, f)
 	}
-	if got := videoFormat("1", 1920, 1080, 30, "").ShortSide(); got != 1080 {
-		t.Errorf("ShortSide = %d", got)
+	got := AnalyseFormats(formats, Playback{AV1: true})
+	var heights []int
+	for _, tier := range got.Tiers {
+		heights = append(heights, tier.Height)
 	}
-	if got := (Format{}).ShortSide(); got != 0 {
-		t.Errorf("ShortSide = %d for an empty format", got)
+	if want := []int{2160, 1440, 1080, 720, 480, 360}; !slices.Equal(heights, want) {
+		t.Errorf("rungs = %v, want %v", heights, want)
+	}
+	if got.BestHeight != 2160 || got.BestLabel != "4K" {
+		t.Errorf("Best = %d %q, want 2160 4K on a Mac that plays AV1", got.BestHeight, got.BestLabel)
+	}
+}
+
+func TestNominalSideAndStoryboardHelpers(t *testing.T) {
+	for _, c := range []struct {
+		w, h, want int
+		why        string
+	}{
+		{1920, 1080, 1080, "16:9"},
+		{1080, 1920, 1080, "a vertical Short is named by its short side"},
+		{1440, 1080, 1080, "4:3 is named by its height"},
+		{3840, 2026, 2160, "a 2.39:1 film's 4K is named by its width"},
+		{1920, 800, 1080, "2.40:1 at 1080p"},
+		{0, 0, 0, "an empty format"},
+	} {
+		if got := videoFormat("1", c.w, c.h, 30, "").NominalSide(); got != c.want {
+			t.Errorf("%dx%d: NominalSide = %d, want %d (%s)", c.w, c.h, got, c.want, c.why)
+		}
 	}
 	if !storyboard("sb").IsStoryboard() {
 		t.Error("mhtml should be a storyboard")

@@ -408,6 +408,13 @@ that is 1080p H.264 on an M1 and 4K AV1 on an M3 or later.
   yt-dlp's `--remux-video`, which fails the whole download when the streams
   do not fit MP4 (DivX 3 does not). A failed remux keeps the original with a
   notice, never fails the download, and never overwrites an existing file.
+- **A rung is named the way YouTube names it** (`NominalSide`): the short
+  side, or for a picture wider than 16:9, the height of a 16:9 picture that
+  wide. A 2.39:1 film's 4K is 3840x2026, and measured by height every rung
+  of it fell one step — its 4K offered as 1440p, no 4K row at all. The
+  selector matches the same way (`rungFilters`): a rung by height, or by
+  width under the same height cap. Check a selector change against a saved
+  info JSON with `--load-info-json`, which asks the site nothing.
 - **An unstated codec is unknown, not absent.** archive.org names no codecs;
   treating that as "no video, no audio" is what made its quality picker
   vanish. `vcodec: "none"` still means none.

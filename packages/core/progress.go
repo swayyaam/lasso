@@ -172,14 +172,11 @@ func (p *ProgressParser) Existing() bool { return p.existing }
 // OutputResolution labels the file OutputPath names, e.g. "1080p", or "" for
 // audio and when yt-dlp did not say.
 //
-// It is measured on the short side, as the quality picker is: yt-dlp's height
-// is the long side of a vertical video, and a 1080x1920 Short is 1080p.
+// It is measured as the quality picker measures (NominalSide): yt-dlp's height
+// is the long side of a vertical video, and a 1080x1920 Short is 1080p; a
+// 3840x2026 film is 4K.
 func (p *ProgressParser) OutputResolution() string {
-	short := p.outputHeight
-	if p.outputWidth > 0 && p.outputWidth < short {
-		short = p.outputWidth
-	}
-	return ResolutionLabel(short)
+	return ResolutionLabel(nominalSide(p.outputWidth, p.outputHeight))
 }
 
 // OutputAudio is the audio stream the finished file came from, zero when
