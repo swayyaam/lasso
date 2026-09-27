@@ -14,20 +14,29 @@ type AudioStream struct {
 	Kbps int `json:"kbps"`
 	// Bytes is the stream's size, 0 when unknown.
 	Bytes int64 `json:"bytes"`
+	// Premium is a stream a paid account unlocked, which yt-dlp marks in its
+	// format note: SoundCloud Go+'s 256 kbps AAC, when the cookies are from
+	// a subscriber. Said only when yt-dlp says it; nothing guesses it.
+	Premium bool `json:"premium"`
 }
 
 // IsZero reports whether nothing is known about the stream.
 func (a AudioStream) IsZero() bool { return a.Codec == "" }
 
-// Label is "Opus 129 kbps", "MP3" without a bitrate, or "".
+// Label is "Opus 129 kbps", "AAC 256 kbps · Premium", "MP3" without a
+// bitrate, or "".
 func (a AudioStream) Label() string {
 	if a.Codec == "" {
 		return ""
 	}
+	label := a.Codec
 	if a.Kbps > 0 {
-		return fmt.Sprintf("%s %d kbps", a.Codec, a.Kbps)
+		label = fmt.Sprintf("%s %d kbps", a.Codec, a.Kbps)
 	}
-	return a.Codec
+	if a.Premium {
+		label += " · Premium"
+	}
+	return label
 }
 
 // TakesCover reports whether a file of this codec can hold cover art. yt-dlp
@@ -101,5 +110,7 @@ func originalAudio(formats []rawFormat) AudioStream {
 	if !found || deref(best.ABR) <= 0 {
 		return AudioStream{}
 	}
-	return audioStream(best.ACodec, deref(best.ABR), max(deref(best.Filesize), deref(best.FilesizeApprox)))
+	stream := audioStream(best.ACodec, deref(best.ABR), max(deref(best.Filesize), deref(best.FilesizeApprox)))
+	stream.Premium = containsFold(best.FormatNote, "premium")
+	return stream
 }

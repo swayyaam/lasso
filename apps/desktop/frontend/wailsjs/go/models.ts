@@ -99,6 +99,7 @@ export namespace core {
 	    codec: string;
 	    kbps: number;
 	    bytes: number;
+	    premium: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AudioStream(source);
@@ -109,6 +110,7 @@ export namespace core {
 	        this.codec = source["codec"];
 	        this.kbps = source["kbps"];
 	        this.bytes = source["bytes"];
+	        this.premium = source["premium"];
 	    }
 	}
 	export class Clip {

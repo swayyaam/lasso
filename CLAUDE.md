@@ -472,7 +472,11 @@ running app, and pinned by a test.
 **Original's label is the stream `-S abr` picks**, the audio-only format with
 the highest bitrate (`originalAudio`), not yt-dlp's default choice, which
 ranks codec first: on YouTube that is Opus 106 kbps while Original saves AAC
-130. Finished files record the stream they came from (`Item.Audio`); after a
+130. A stream yt-dlp marks "Premium" in its format note (SoundCloud Go+'s hq,
+with a subscriber's cookies) is labelled so, `AudioStream.Premium`, and
+nothing else claims an account would help: as a guest, neither SoundCloud nor
+YouTube says per track whether better exists (`docs/v0.3.md`, Phase 3).
+Finished files record the stream they came from (`Item.Audio`); after a
 conversion yt-dlp still names the source, so History says "MP3 from AAC 130
 kbps", which is also the honest thing to say.
 

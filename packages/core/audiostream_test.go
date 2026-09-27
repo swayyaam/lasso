@@ -25,6 +25,9 @@ func TestAudioStreamLabel(t *testing.T) {
 	if got := (AudioStream{Codec: "MP3"}).Label(); got != "MP3" {
 		t.Errorf("Label without a bitrate = %q, want the codec alone", got)
 	}
+	if got := (AudioStream{Codec: "AAC", Kbps: 256, Premium: true}).Label(); got != "AAC 256 kbps · Premium" {
+		t.Errorf("Label of a premium stream = %q", got)
+	}
 	if got := (AudioStream{}).Label(); got != "" {
 		t.Errorf("empty stream labelled %q", got)
 	}
@@ -108,5 +111,33 @@ func TestWhichCodecsTakeACover(t *testing.T) {
 		if got := (AudioStream{Codec: codec}).TakesCover(); got != want {
 			t.Errorf("%q TakesCover = %v, want %v", codec, got, want)
 		}
+	}
+}
+
+// A stream a paid account unlocked says so, in the shape yt-dlp's SoundCloud
+// extractor gives Go+'s hq transcoding: abr 256, format note "Premium". Not
+// seen live — nobody here subscribes — so the fixture follows yt-dlp's code;
+// the guest formats beside it are a real guest listing.
+func TestAPremiumStreamIsNamed(t *testing.T) {
+	raw := `{"id":"257939729","title":"Remix","formats":[` +
+		`{"format_id":"hls_mp3_0_1","vcodec":"none","acodec":"mp3","abr":128},` +
+		`{"format_id":"hls_aac_96k","vcodec":"none","acodec":"mp4a.40.2","abr":96},` +
+		`{"format_id":"hls_aac_160k","vcodec":"none","acodec":"mp4a.40.2","abr":160},` +
+		`{"format_id":"hls_aac_hq","vcodec":"none","acodec":"mp4a.40.2","abr":256,"format_note":"Premium"}]}`
+	m, err := ParseMetadata([]byte(raw), Playback{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Quality.OriginalAudio.Label(); got != "AAC 256 kbps · Premium" {
+		t.Errorf("Original = %q, want the premium stream named as one", got)
+	}
+
+	guest := raw[:strings.Index(raw, `,{"format_id":"hls_aac_hq"`)] + `]}`
+	m, err = ParseMetadata([]byte(guest), Playback{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Quality.OriginalAudio.Label(); got != "AAC 160 kbps" {
+		t.Errorf("guest Original = %q, want the plain best a guest gets", got)
 	}
 }

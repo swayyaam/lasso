@@ -1079,9 +1079,11 @@ function audioChoices(quality?: core.QualityOptions): Choice[] {
 }
 
 /** audioLabel is "Opus 129 kbps", "MP3", or "" when the stream is unknown. */
+/** audioLabel is core.AudioStream.Label: "AAC 256 kbps · Premium". */
 function audioLabel(stream?: core.AudioStream): string {
   if (!stream?.codec) return "";
-  return stream.kbps > 0 ? `${stream.codec} ${stream.kbps} kbps` : stream.codec;
+  const label = stream.kbps > 0 ? `${stream.codec} ${stream.kbps} kbps` : stream.codec;
+  return stream.premium ? `${label} · Premium` : label;
 }
 
 function TierTags({ tier }: { tier: core.ResolutionTier }) {
