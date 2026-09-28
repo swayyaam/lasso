@@ -11,15 +11,18 @@
 #   SHA256SUMS      digests for people checking by hand — and for Lasso 0.1.2
 #                   to 0.1.5, which verify against it. Keep publishing it.
 #
-# The zip is the interesting one. Contents/Resources/bin is 328 MB of the
-# bundle's 329 MB and changes only when binaries.lock.json does, so it is left
-# out and the installed copy is carried across during the update instead —
-# about 15 MB downloaded rather than 150.
+# The zip is the interesting one. Contents/Resources/bin is 268 MB of the
+# bundle's 280 MB and changes only when binaries.lock.json does, and Lasso
+# runs the copies installed in Application Support, never the bundle's. So it
+# is left out — about 5 MB downloaded rather than 147 — and the thin bundle is
+# signed as it is, with the same certificate as the DMG's app. The updater
+# installs it untouched: re-signing on the user's Mac is what made every
+# update a new app to macOS, with every permission to give again.
 #
 # manifest.json stays behind in the emptied directory. That is what lets the
-# updater tell whether carrying the old helpers across is honest: if the
-# release wants different versions, the manifests disagree and it refuses
-# rather than installing an update that silently keeps the old ffmpeg.
+# updater tell whether leaving the helpers out is honest: if the release wants
+# different versions, the manifests disagree and it refuses rather than
+# installing an update that silently keeps the old ffmpeg.
 #
 # Usage: NOTES=path/to/notes.md scripts/make-release-assets.sh [path/to/Lasso.app] [output-dir]
 #
@@ -39,10 +42,18 @@ die() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 [ -d "$APP" ] || die "no app bundle at $APP — run \`make build\` first"
 [ -f "$APP/Contents/Resources/bin/manifest.json" ] || die "$APP has no helper manifest; run \`make build\`"
 
-# The updater re-signs what it installs, but a release asset that is already
-# broken would only be found by whoever downloaded it.
+# The updater installs what it downloads as it is, so a release asset that is
+# broken, or signed ad hoc, would only be found by whoever downloaded it.
 codesign --verify --deep --strict "$APP" >/dev/null 2>&1 \
 	|| die "$APP is not validly signed; run scripts/sign-app.sh"
+
+# Ad hoc, every user would give Lasso its permissions again after updating.
+identity="$(codesign -d -r- "$APP" 2>&1 | sed -n 's/^designated => //p')"
+case "$identity" in
+*certificate*) ;;
+*) die "$APP is signed ad hoc. Releases are signed with the \"Lasso Signing\" certificate
+  so macOS keeps each user's permissions across updates; see scripts/make-signing-identity.sh" ;;
+esac
 
 DMG="$OUTDIR/Lasso.dmg"
 ZIP="$OUTDIR/Lasso-app.zip"
@@ -63,6 +74,14 @@ manifest="$(cat "$thin_bin/manifest.json")"
 rm -rf "$thin_bin"
 mkdir -p "$thin_bin"
 printf '%s\n' "$manifest" > "$thin_bin/manifest.json"
+
+# Signed as it will be installed, by the same certificate, and proven to carry
+# the DMG app's identity: an update that did not would be a new app to macOS,
+# and the updater refuses it.
+LASSO_REQUIRE_IDENTITY=1 "$REPO_ROOT/scripts/sign-app.sh" "$staging/$(basename "$APP")" >/dev/null \
+	|| die "could not sign the update's app"
+codesign --verify -R="$identity" "$staging/$(basename "$APP")" \
+	|| die "the update's app does not carry the same identity as the DMG's"
 
 rm -f "$ZIP"
 ditto -c -k --sequesterRsrc --keepParent "$staging/$(basename "$APP")" "$ZIP" \

@@ -20,10 +20,24 @@
 # it is the one the README describes. v0.1.0 shipped with the first, because
 # nothing checked.
 #
-# The signature is ad-hoc — there is no Developer ID yet — which is enough to
-# make the bundle coherent and to satisfy Apple Silicon's requirement that
-# every executable be signed at all. It is not enough to be trusted, and is not
-# meant to be.
+# Which signature: a certificate named "Lasso Signing" when the keychain has
+# one (scripts/make-signing-identity.sh makes it), ad hoc otherwise. Neither is
+# trusted by Gatekeeper — that needs a paid Developer ID — and both get the
+# same "cannot check it" prompt on a first download. What differs is
+# identity. macOS keeps what a person allowed an app (Full Disk Access,
+# keychain items, the Downloads folder) against its designated requirement.
+# Ad hoc, that is a hash of this one build, so every release is a stranger
+# and every permission must be given again. With the certificate it is
+# 'identifier "com.swayyaam.lasso" and certificate leaf = H"…"', which every
+# release signed with the same key satisfies.
+#
+# A release must never go out ad hoc, so make-release-assets.sh runs this
+# with LASSO_REQUIRE_IDENTITY=1. A local build may: it only costs the person
+# running it their own permissions.
+#
+#   LASSO_SIGN_IDENTITY     a certificate's SHA-1 or name, instead of looking
+#   LASSO_SIGN_KEYCHAIN     a keychain file to use instead of the search list
+#   LASSO_REQUIRE_IDENTITY  1 to fail rather than sign ad hoc
 #
 # Usage: scripts/sign-app.sh [path/to/Lasso.app]
 
@@ -42,8 +56,30 @@ die() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 # and re-signing those would swap real signatures for weaker ad-hoc ones to no
 # purpose. Sealing the outer bundle covers them as resources, which is what
 # was missing.
-codesign --force --sign - "$APP" >/dev/null 2>&1 \
-	|| die "could not sign $APP"
+identity="${LASSO_SIGN_IDENTITY:-}"
+if [ -z "$identity" ]; then
+	# Untrusted, so not among find-identity's "valid" ones: take the SHA-1 of
+	# the first certificate by that name from the whole list.
+	identity="$(security find-identity -p codesigning ${LASSO_SIGN_KEYCHAIN:+"$LASSO_SIGN_KEYCHAIN"} 2>/dev/null \
+		| awk '/"Lasso Signing"/ { print $2; exit }')"
+fi
+
+keychain=()
+[ -n "${LASSO_SIGN_KEYCHAIN:-}" ] && keychain=(--keychain "$LASSO_SIGN_KEYCHAIN")
+
+if [ -n "$identity" ]; then
+	codesign --force --sign "$identity" ${keychain[@]+"${keychain[@]}"} "$APP" >/dev/null 2>&1 \
+		|| die "could not sign $APP with $identity"
+	how="Lasso Signing"
+elif [ "${LASSO_REQUIRE_IDENTITY:-}" = 1 ]; then
+	die "no \"Lasso Signing\" certificate in the keychain. A release signed ad hoc makes every
+  user give Lasso its permissions again. Make one with scripts/make-signing-identity.sh,
+  or restore the one releases are signed with"
+else
+	codesign --force --sign - "$APP" >/dev/null 2>&1 \
+		|| die "could not sign $APP"
+	how="ad-hoc"
+fi
 
 # Verified the way Gatekeeper verifies it, so a broken seal fails the build
 # here rather than on a stranger's Mac.
@@ -52,5 +88,10 @@ if ! output="$(codesign --verify --deep --strict --verbose=2 "$APP" 2>&1)"; then
 	die "the signature does not verify; this build would open as \"damaged\""
 fi
 
-printf 'Signed %s (ad-hoc)\n' "$(basename "$APP")"
+printf 'Signed %s (%s)\n' "$(basename "$APP")" "$how"
 printf '  seal verifies; downloads will show the “unidentified developer” prompt, not “damaged”\n'
+if [ "$how" = ad-hoc ]; then
+	printf '  ad hoc: macOS will treat this build as a new app and forget its permissions\n'
+else
+	printf '  %s\n' "$(codesign -d -r- "$APP" 2>&1 | sed -n 's/^designated => //p')"
+fi

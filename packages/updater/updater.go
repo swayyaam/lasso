@@ -11,12 +11,20 @@
 // prove it is sound, and only then swap. A failed or interrupted update leaves
 // the working copy exactly where it was.
 //
-// What it downloads is the app *without* its helper programs. They are 328 MB
-// of the 329 MB bundle and they rarely change, so they are carried across from
-// the copy already installed — which turns a 150 MB download into about 15 MB.
-// When a release does change them, the manifests disagree and the update is
-// refused with an explanation rather than quietly installing helpers the user
-// did not get.
+// What it downloads is the app *without* its helper programs. They are 268 MB
+// of the 280 MB bundle, they rarely change, and Lasso never runs them from the
+// bundle: it runs the copies in Application Support, installed from the disk
+// image the first time. So the update installs as it comes, with only their
+// manifest — 5 MB rather than 147. When a release changes them, the manifests
+// disagree and the update is refused with an explanation rather than leaving
+// the user on helpers the release did not mean.
+//
+// It installs the bundle exactly as it was signed. macOS remembers what a
+// person allowed an app — Full Disk Access, keychain items, the Downloads
+// folder — against the app's signing identity, and an ad-hoc signature's
+// identity is a hash of that one build. Up to 0.2.8 the updater wrote the
+// helpers in and re-signed ad hoc, so every update was a stranger to macOS
+// and every permission had to be given again.
 //
 // It never uses GitHub's API. Everything it reads comes from the release
 // download CDN — the latest release's latest.json, then the archive at an
@@ -49,7 +57,7 @@ const (
 	DefaultReleasesURL = "https://github.com/swayyaam/lasso/releases"
 
 	// ReleasesEnv overrides DefaultReleasesURL. It exists so the whole update —
-	// download, verify, carry the helpers across, reseal, swap — can be run
+	// download, verify, check the helpers and the signature, swap — can be run
 	// against a local server laid out like GitHub, on a real bundle, rather
 	// than only ever being tried for the first time by someone's installation.
 	//
@@ -81,9 +89,15 @@ const (
 	maxDownloadSize = 128 << 20
 )
 
-// ErrHelpersChanged means the release ships different helper programs, so the
-// small update cannot carry the installed ones across.
+// ErrHelpersChanged means the release ships different helper programs, which
+// the small update does not carry.
 var ErrHelpersChanged = errors.New("this release updates the helper programs too")
+
+// ErrNotSameSigner means the update is not signed with the identity of the
+// copy installing it. Installing it would make it a different app to macOS,
+// which forgets every permission, and a release signed by someone else is not
+// Lasso's to install.
+var ErrNotSameSigner = errors.New("the update is not signed by the same developer as this copy of Lasso")
 
 // Manifest is latest.json: what a release says about itself.
 //
@@ -317,7 +331,7 @@ func (u *Updater) Install(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 
-	if err := u.carryHelpers(ctx, staged); err != nil {
+	if err := u.checkHelpers(staged); err != nil {
 		return Result{}, err
 	}
 	if err := u.prepare(ctx, staged); err != nil {
@@ -446,14 +460,14 @@ func sameHelpers(a, b manifest) bool {
 	return true
 }
 
-// carryHelpers moves the installed helper programs into the staged bundle.
+// checkHelpers refuses a release that wants different helper programs.
 //
-// They are the whole reason the download is small. The staged bundle arrives
-// with only a manifest where they should be; this puts the real ones back —
-// but only after checking that the release wants the same versions. If it
-// wants different ones, installing the old helpers would leave the user on a
+// The staged bundle arrives with only their manifest. Lasso runs the copies in
+// Application Support, installed from the bundle that shipped them, so the
+// update needs none — as long as the release wants the versions already
+// there. If it wants different ones, installing it would leave the user on a
 // build that says it updated and did not.
-func (u *Updater) carryHelpers(ctx context.Context, staged string) error {
+func (u *Updater) checkHelpers(staged string) error {
 	wanted, err := readManifest(staged)
 	if err != nil {
 		return fmt.Errorf("the update does not say which helper programs it needs: %w", err)
@@ -462,47 +476,61 @@ func (u *Updater) carryHelpers(ctx context.Context, staged string) error {
 	if err != nil {
 		return fmt.Errorf("cannot read the installed helper programs: %w", err)
 	}
-
 	if !sameHelpers(wanted, have) {
 		return fmt.Errorf("%w, so it has to be installed from the disk image: %s",
 			ErrHelpersChanged, "download it from the release page")
 	}
-
-	from := filepath.Join(u.cfg.BundlePath, "Contents", "Resources", "bin")
-	to := filepath.Join(staged, "Contents", "Resources", "bin")
-	if err := os.RemoveAll(to); err != nil {
-		return err
-	}
-	if _, err := u.cfg.Run(ctx, "/usr/bin/ditto", from, to); err != nil {
-		return fmt.Errorf("could not carry the helper programs across: %w", err)
-	}
-
-	u.note("carried the helper programs across, unchanged")
+	u.note("the helper programs already installed are the ones it needs")
 	return nil
 }
 
-// prepare makes the staged bundle launchable, and refuses to go further if it
-// is not.
+// prepare makes sure the staged bundle is sound and is the same app, and
+// refuses to go further if it is not. It never signs anything: re-signing is
+// what made every update a new app to macOS.
 func (u *Updater) prepare(ctx context.Context, staged string) error {
 	// Downloaded by this process rather than a browser, so it should carry no
 	// quarantine — but an archive can, and a quarantined replacement would put
 	// the user back in front of Gatekeeper, which is the thing this avoids.
+	// The flag is not part of the signature, so clearing it changes nothing
+	// the seal covers.
 	if _, err := u.cfg.Run(ctx, "/usr/bin/xattr", "-d", "-r", "com.apple.quarantine", staged); err != nil {
 		// Almost always "no such xattr", which is the good case.
 		u.note("no quarantine flag to clear")
 	}
 
-	// Re-sealed because the helpers were just written into a bundle that was
-	// signed without them. An unsealed bundle opens as "damaged".
-	if _, err := u.cfg.Run(ctx, "/usr/bin/codesign", "--force", "--sign", "-", staged); err != nil {
-		return fmt.Errorf("could not sign the updated app: %w", err)
-	}
 	if out, err := u.cfg.Run(ctx, "/usr/bin/codesign", "--verify", "--deep", "--strict", staged); err != nil {
 		return fmt.Errorf("the updated app is not correctly signed, so it was not installed: %s", strings.TrimSpace(out))
 	}
 
-	u.note("signed and verified the new copy")
+	// Signed by a certificate, this copy has an identity that outlives a
+	// build, and an update must carry it. Signed ad hoc — up to 0.2.8 — its
+	// identity is its own hash, which no other build can match, so there is
+	// nothing to hold the update to and it goes through as before.
+	if requirement := u.identity(ctx, u.cfg.BundlePath); requirement != "" {
+		if out, err := u.cfg.Run(ctx, "/usr/bin/codesign", "--verify", "-R="+requirement, staged); err != nil {
+			return fmt.Errorf("%w, so it was not installed: %s", ErrNotSameSigner, strings.TrimSpace(out))
+		}
+		u.note("signed by the same developer as this copy")
+	}
+
+	u.note("verified the new copy's signature")
 	return nil
+}
+
+// identity is a bundle's designated requirement when it names a certificate,
+// and "" when it is only a hash of the build (ad hoc), which codesign prints
+// as an implicit requirement: "# designated => cdhash H\"…\"".
+func (u *Updater) identity(ctx context.Context, bundle string) string {
+	out, err := u.cfg.Run(ctx, "/usr/bin/codesign", "-d", "-r-", bundle)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if requirement, ok := strings.CutPrefix(strings.TrimSpace(line), "designated => "); ok && strings.Contains(requirement, "certificate") {
+			return requirement
+		}
+	}
+	return ""
 }
 
 // swap puts the staged bundle where the old one was.

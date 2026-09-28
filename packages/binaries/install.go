@@ -167,7 +167,11 @@ func copyTree(src, dst string) error {
 	info, err := os.Lstat(src)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("%s is missing from the bundled binaries", filepath.Base(src))
+			// Most often a copy of Lasso that updated itself: updates arrive
+			// without the helpers, which the disk image installed the first
+			// time, so there is nothing here to put back a deleted one.
+			return fmt.Errorf("%s is missing, and this copy of Lasso has no copy of it to restore. "+
+				"Install Lasso again from the disk image on its release page to put it back", filepath.Base(src))
 		}
 		return err
 	}

@@ -277,3 +277,59 @@ func TestSelfUpdatedYtDlpSurvivesRelaunch(t *testing.T) {
 		t.Error("the updated version was rolled back")
 	}
 }
+
+// thinSource is a bundle as an update installs it: the helper manifest and
+// nothing else. Lasso runs the copies in Application Support, so it needs no
+// more — the release's signature is only intact if nothing is written in.
+func thinSource(t *testing.T, full string) string {
+	t.Helper()
+	thin := t.TempDir()
+	manifest, err := os.ReadFile(filepath.Join(full, manifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(thin, manifestName), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return thin
+}
+
+func TestAnUpdatedAppRunsTheInstalledHelpers(t *testing.T) {
+	m, paths := newFakeManager(t)
+	if _, err := m.Install(context.Background()); err != nil {
+		t.Fatalf("first Install: %v", err)
+	}
+
+	paths.Source = thinSource(t, paths.Source)
+	updated, err := New(paths)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	report, err := updated.Install(context.Background())
+	if err != nil {
+		t.Fatalf("Install from an updated app: %v", err)
+	}
+	if report.Changed() || len(report.Skipped) != len(requiredBinaries) {
+		t.Errorf("report %+v, want every helper left as installed", report)
+	}
+}
+
+func TestAMissingHelperWithNothingToRestoreSaysWhatToDo(t *testing.T) {
+	m, paths := newFakeManager(t)
+	if _, err := m.Install(context.Background()); err != nil {
+		t.Fatalf("first Install: %v", err)
+	}
+	if err := os.Remove(m.Path(FFmpeg)); err != nil {
+		t.Fatal(err)
+	}
+
+	paths.Source = thinSource(t, paths.Source)
+	updated, err := New(paths)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = updated.Install(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "ffmpeg") || !strings.Contains(err.Error(), "disk image") {
+		t.Errorf("Install = %v, want it to name ffmpeg and say to install from the disk image", err)
+	}
+}

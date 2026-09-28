@@ -193,7 +193,18 @@ type fakeRunner struct {
 	stagedHelpers map[string]string
 	// failVerify makes codesign --verify reject the staged bundle.
 	failVerify bool
-	t          *testing.T
+	// installedSigner and stagedSigner are the certificates the two bundles
+	// are signed with; empty is ad hoc, whose identity is only its own hash.
+	installedSigner, stagedSigner string
+	t                             *testing.T
+}
+
+// requirementFor is what codesign -d -r- prints for a bundle signed by signer.
+func requirementFor(signer string) string {
+	if signer == "" {
+		return `# designated => cdhash H"538cfba82e296a0315616bf231d2e24b0a700762"`
+	}
+	return `designated => identifier "com.swayyaam.lasso" and certificate leaf = H"` + signer + `"`
 }
 
 func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string, error) {
@@ -218,6 +229,19 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 	case base == "ditto" && len(args) == 2:
 		// Carrying the helpers across.
 		return "", copyTree(args[0], args[1])
+
+	case base == "codesign" && len(args) > 1 && args[0] == "-d" && args[1] == "-r-":
+		signer := f.stagedSigner
+		if !strings.Contains(args[len(args)-1], ".lasso-update-") {
+			signer = f.installedSigner
+		}
+		return "Executable=" + args[len(args)-1] + "\n" + requirementFor(signer) + "\n", nil
+
+	case base == "codesign" && len(args) > 1 && args[0] == "--verify" && strings.HasPrefix(args[1], "-R="):
+		if args[1] != "-R="+strings.TrimPrefix(requirementFor(f.stagedSigner), "designated => ") {
+			return "test-requirement: code failed to satisfy specified code requirement(s)", errors.New("exit status 3")
+		}
+		return "", nil
 
 	case base == "codesign" && len(args) > 0 && args[0] == "--verify":
 		if f.failVerify {
@@ -408,43 +432,84 @@ func TestInstallReplacesTheApp(t *testing.T) {
 		t.Errorf("installed binary is %q, want the new version", binary)
 	}
 
-	// And the helpers came across, which is the whole point of the small
-	// download: the archive never contained them.
-	for name, version := range helpers {
-		raw, err := os.ReadFile(filepath.Join(h.bundle, "Contents", "Resources", "bin", name))
-		if err != nil {
-			t.Fatalf("helper %s is missing after the update: %v", name, err)
+	// Installed as it came: the manifest, and no helpers written in, since
+	// writing them in is what broke the seal and needed a re-signing. Lasso
+	// runs the copies in Application Support.
+	entries, err := os.ReadDir(filepath.Join(h.bundle, "Contents", "Resources", "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "manifest.json" {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
 		}
-		if want := "helper-" + name + "-" + version; string(raw) != want {
-			t.Errorf("helper %s = %q, want %q", name, raw, want)
-		}
+		t.Errorf("bin holds %v, want only the manifest the release shipped", names)
 	}
 }
 
-func TestInstallResealsTheBundle(t *testing.T) {
-	// The helpers are written into a bundle that was signed without them, so
-	// the seal has to be replaced or the app opens as "damaged" — the exact
-	// bug that broke v0.1.0.
+func TestInstallNeverResignsTheBundle(t *testing.T) {
+	// macOS keeps what a person allowed an app — Full Disk Access, keychain
+	// items — against its signing identity. Re-signing ad hoc gave every
+	// update a new one, so every permission had to be given again. The
+	// release's own signature is installed untouched, and only checked.
 	h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
 
 	if _, err := h.u.Install(context.Background()); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 
-	var signed, verified bool
+	var verified bool
 	for _, call := range h.runner.calls {
-		if strings.Contains(call, "codesign --force --sign -") {
-			signed = true
+		if strings.Contains(call, "codesign --force") || strings.Contains(call, "codesign --sign") {
+			t.Errorf("the update was re-signed: %s", call)
 		}
-		if strings.Contains(call, "codesign --verify") {
+		if strings.Contains(call, "codesign --verify --deep --strict") {
 			verified = true
 		}
 	}
-	if !signed {
-		t.Error("the updated bundle was never re-signed")
-	}
 	if !verified {
 		t.Error("the updated bundle was never verified")
+	}
+}
+
+func TestAnUpdateMustKeepTheInstalledSigner(t *testing.T) {
+	cases := []struct {
+		name              string
+		installed, staged string
+		wantInstalled     bool
+	}{
+		// The ordinary case from 0.2.9 on: the same certificate both sides,
+		// so macOS sees the same app and keeps its permissions.
+		{"same certificate", "95e4cb35", "95e4cb35", true},
+		// Someone else's build, or a new key: a different app to macOS, and
+		// not this developer's release to install.
+		{"another certificate", "95e4cb35", "0badc0de", false},
+		{"ad hoc over a certificate", "95e4cb35", "", false},
+		// Up to 0.2.8 the installed copy is ad hoc, whose identity no other
+		// build can match; the update is how it gets a certificate at all.
+		{"certificate over ad hoc", "", "95e4cb35", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, "0.1.0", "v0.2.0", map[string]string{"yt-dlp": "1"})
+			h.runner.installedSigner, h.runner.stagedSigner = tc.installed, tc.staged
+
+			_, err := h.u.Install(context.Background())
+			binary, _ := os.ReadFile(filepath.Join(h.bundle, "Contents", "MacOS", "Lasso"))
+			if tc.wantInstalled {
+				if err != nil || string(binary) != "binary-0.2.0" {
+					t.Errorf("Install = %v, binary %q; want the update installed", err, binary)
+				}
+				return
+			}
+			if !errors.Is(err, ErrNotSameSigner) {
+				t.Errorf("Install = %v, want ErrNotSameSigner", err)
+			}
+			if string(binary) != "binary-0.1.0" {
+				t.Errorf("binary is %q, want the installed copy untouched", binary)
+			}
+		})
 	}
 }
 

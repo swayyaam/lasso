@@ -272,8 +272,10 @@ downloaded. ffmpeg, ffprobe and deno are arm64 already.
 
 ## Deferred: distribution
 
-- Code signing and notarisation are not set up. The build is ad-hoc signed
-  only, so a downloaded copy is quarantined.
+- A Developer ID and notarisation are not set up. Releases are signed with
+  the self-signed "Lasso Signing" certificate, which keeps permissions across
+  updates but is not trusted by Gatekeeper, so a downloaded copy is
+  quarantined. A local `make build` without the certificate is signed ad hoc.
 
 ## Design
 
@@ -553,13 +555,42 @@ the app installs is never quarantined.
 The downloaded asset is **the app without its helper programs**. They are
 268 MB of the 280 MB bundle and change only when `binaries.lock.json` does, so
 `Contents/Resources/bin` is emptied down to its `manifest.json` in
-`Lasso-app.zip` and the installed copies are carried across during the update.
-5.5 MB rather than 147.
+`Lasso-app.zip`, 5 MB rather than 147. Nothing puts them back: Lasso runs the
+copies in Application Support, which the DMG's app installed, so an updated
+bundle simply has none. If those copies are ever deleted, startup says to
+install from the disk image again.
 
 That manifest is the safety catch. If the release pins different helper
-versions, carrying the old ones across would leave someone on a build that
-says it updated and did not, so the update is refused with `ErrHelpersChanged`
-and the DMG is the way through.
+versions, installing it would leave someone on a build that says it updated
+and did not, so the update is refused with `ErrHelpersChanged` and the DMG is
+the way through.
+
+**Permissions survive an update because the signature does.** macOS keeps
+what a person allowed an app — Full Disk Access for Safari's cookies, keychain
+items, the Downloads folder — against its designated requirement. Ad hoc,
+that is `cdhash H"…"`, a hash of one build, so up to 0.2.8 every update was a
+stranger and every permission had to be given again (the updater also
+re-signed ad hoc after writing the helpers in, which would have undone any
+certificate). Now:
+
+- **Releases are signed with the "Lasso Signing" certificate**
+  (`scripts/make-signing-identity.sh`, self-signed, in the releasing Mac's
+  login keychain). The requirement becomes `identifier "com.swayyaam.lasso"
+  and certificate leaf = H"…"`, which every release satisfies. Gatekeeper
+  trusts it no more than ad hoc, so a first download is unchanged.
+- **The updater never signs.** `prepare` clears quarantine and verifies; the
+  zip is signed as it ships by `make-release-assets.sh`, which refuses an
+  ad-hoc app.
+- **An update must carry the installed copy's identity** when that copy has a
+  certificate (`ErrNotSameSigner`), checked with `codesign --verify -R=`, the
+  same test macOS applies. An ad-hoc copy has nothing to hold it to.
+- **The key is the identity.** Lose it and the next release is a new app:
+  everyone allows Lasso again, and the updater refuses it, so it goes out as a
+  DMG. It is backed up off this Mac; do not make a second one.
+
+Copies from 0.2.8 and earlier still run their own updater, which re-signs ad
+hoc; the first certificate-signed copy they get is the DMG's, or the release
+after the one that brought the new updater.
 
 **Every release publishes `latest.json`.** It is what the updater reads —
 version, notes, and each file's size and SHA-256 — from
@@ -578,10 +609,10 @@ update to whatever comes next.
 
 Two things are easy to get wrong here, and one of them already shipped:
 
-- **Reseal after carrying the helpers in.** They are written into a bundle
-  that was signed without them, so the seal no longer matches and the app
-  opens as "damaged". `prepare` re-signs and then verifies, and refuses to
-  install anything that does not.
+- **Install the bundle exactly as it was signed.** Writing anything into it
+  breaks the seal ("damaged", which 0.1.0 shipped), and re-signing to repair
+  that gives it a new identity (every permission lost, which 0.1.x to 0.2.8
+  shipped). `prepare` verifies and refuses anything that does not.
 - **Swap with two renames on the same volume**, old copy kept until the new
   one is in place and moved back if it is not. `os.MkdirTemp` stages beside
   the bundle for exactly this reason — the system temp directory is usually
@@ -656,7 +687,8 @@ The version lives in `apps/desktop/wails.json` (`info.productVersion`) and
 reaches Info.plist, where the updater and the release manifest both read it.
 
 1. Bump the version, commit `chore: <version>`, push.
-2. `make release-assets NOTES=notes.md` — build, reseal, DMG, update zip,
+2. `make release-assets NOTES=notes.md` — build, sign with the "Lasso
+   Signing" certificate (refused without it), DMG, update zip,
    `latest.json`, `SHA256SUMS`. The notes are shown in the app before
    installing, so write them for someone deciding whether to update.
 3. Verify before tagging, because a pushed tag cannot be moved: version,
